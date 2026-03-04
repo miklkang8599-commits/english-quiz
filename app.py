@@ -3,7 +3,7 @@ import pandas as pd
 import random
 import re
 
-st.set_page_config(page_title="英文重組練習 - 測驗防護版", layout="wide")
+st.set_page_config(page_title="英文重組練習 - 嚴格測驗版", layout="wide")
 
 # CSS 樣式
 st.markdown("""
@@ -42,6 +42,7 @@ def reset_all_state():
     st.session_state.history = {}
     st.session_state.finished = False
     st.session_state.is_correct = False
+    st.session_state.has_started_quiz = False # 新增：紀錄是否已進入測驗
 
 # 初始化 Session State
 if 'q_idx' not in st.session_state: st.session_state.q_idx = 0
@@ -51,6 +52,7 @@ if 'shuf' not in st.session_state: st.session_state.shuf = []
 if 'history' not in st.session_state: st.session_state.history = {}
 if 'finished' not in st.session_state: st.session_state.finished = False
 if 'is_correct' not in st.session_state: st.session_state.is_correct = False
+if 'has_started_quiz' not in st.session_state: st.session_state.has_started_quiz = False
 
 df = load_data()
 
@@ -71,7 +73,7 @@ if df is not None:
         
         filtered_df = base_df[base_df['句編號'] >= start_id]
         total_available = len(filtered_df)
-        num_q = st.sidebar.slider("4. 練習題數", 1, total_available, min(5, total_available))
+        num_q = st.sidebar.slider("4. 練習題數", 1, total_available, min(10, total_available))
         
         quiz_list = filtered_df.head(num_q).to_dict('records')
         
@@ -82,34 +84,32 @@ if df is not None:
             reset_all_state()
             st.rerun()
 
-        # --- 側邊欄：預習模式邏輯優化 ---
+        # --- 預習/測驗 嚴格切換邏輯 ---
         st.sidebar.write("---")
-        # 如果學生已經開始點選單字，且還沒完成，則禁用預習模式按鈕
-        is_in_middle_of_quiz = len(st.session_state.ans) > 0 and not st.session_state.is_correct
         
-        if is_in_middle_of_quiz:
-            st.sidebar.warning("⚠️ 作答中無法切換至預習模式，請先『全部重填』。")
-        
-        is_study_mode = st.sidebar.checkbox(
-            "📖 開啟預習模式", 
-            value=False, 
-            disabled=is_in_middle_of_quiz
-        )
+        # 只要開始點過任何一個字，或者已經答對任何一題，就視為「已開始測驗」
+        if len(st.session_state.ans) > 0 or st.session_state.q_idx > 0 or st.session_state.history:
+            st.session_state.has_started_quiz = True
 
-        # --- 預習模式畫面 ---
+        if st.session_state.has_started_quiz and not st.session_state.finished:
+            st.sidebar.warning("🔒 測驗已開始，預習模式已鎖定。")
+            is_study_mode = False # 強制關閉預習
+        else:
+            is_study_mode = st.sidebar.checkbox("📖 開啟預習模式", value=False)
+
+        # --- 預習模式 ---
         if is_study_mode:
-            st.header("📖 課文預習")
+            st.header("📖 課文預習模式")
+            st.caption("請在開始測驗前完成預習。一旦開始作答，此功能將無法再次開啟。")
             for item in quiz_list:
-                with st.container():
-                    col_t, col_s = st.columns([5, 1])
-                    col_t.markdown(f"**[{item['句編號']}] {item['英文']}**")
-                    col_t.caption(f"中文：{item['中文']}")
-                    if col_s.button("🔊 發音", key=f"sp_{item['句編號']}"):
-                        t_url = f"https://translate.google.com/translate_tts?ie=UTF-8&tl=en&client=tw-ob&q={str(item['英文']).replace(' ', '%20')}"
-                        st.markdown(f'<audio autoplay src="{t_url}"></audio>', unsafe_allow_html=True)
-                    st.write("---")
+                with st.expander(f"句編號 {item['句編號']}：{item['中文']}", expanded=True):
+                    col_txt, col_btn = st.columns([4, 1])
+                    col_txt.write(f"### {item['英文']}")
+                    t_url = f"https://translate.google.com/translate_tts?ie=UTF-8&tl=en&client=tw-ob&q={str(item['英文']).replace(' ', '%20')}"
+                    col_btn.write(f'[🔊 播放]({t_url})')
+            st.write("---")
 
-        # --- 測驗模式畫面 ---
+        # --- 測驗主畫面 ---
         elif not st.session_state.finished and st.session_state.q_idx < len(quiz_list):
             q = quiz_list[st.session_state.q_idx]
             eng_raw = str(q['英文']).strip()
@@ -125,7 +125,7 @@ if df is not None:
 
             st.write("### 拼湊結果：")
             res_str = " ".join(st.session_state.ans)
-            st.markdown(f'<div class="answer-box">{res_str if res_str else "請點選下方單字..."}</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="answer-box">{res_str if res_str else "點選單字按鈕..."}</div>', unsafe_allow_html=True)
 
             c1, c2, c3 = st.columns([1, 1, 2])
             if not st.session_state.is_correct:
@@ -142,7 +142,7 @@ if df is not None:
             if c3.button("⏭️ 跳過此題", use_container_width=True):
                 st.session_state.history[st.session_state.q_idx] = {
                     "題號": st.session_state.q_idx + 1, "中文提示": q['中文'], "正確答案": eng_raw,
-                    "你的拼湊": " ".join(st.session_state.ans) if st.session_state.ans else "(未作答)", "狀態": "❌ 跳過"
+                    "你的拼湊": " ".join(st.session_state.ans) if st.session_state.ans else "(已跳過)", "狀態": "❌ 跳過"
                 }
                 st.session_state.q_idx += 1
                 st.session_state.ans, st.session_state.used_history, st.session_state.shuf = [], [], []
@@ -160,13 +160,11 @@ if df is not None:
                                 st.session_state.used_history.append(i)
                                 st.rerun()
 
-            st.write("---")
             if len(st.session_state.ans) == len(correct_tokens):
                 if not st.session_state.is_correct:
                     if st.button("✅ 檢查答案", type="primary", use_container_width=True):
                         is_ok = [t.lower() for t in st.session_state.ans] == [t.lower() for t in correct_tokens]
                         st.session_state.is_correct = is_ok
-                        
                         st.session_state.history[st.session_state.q_idx] = {
                             "題號": st.session_state.q_idx + 1, "中文提示": q['中文'], "正確答案": eng_raw,
                             "你的拼湊": " ".join(st.session_state.ans), "狀態": "✅ 正確" if is_ok else "❌ 錯誤"
@@ -195,19 +193,16 @@ if df is not None:
                 st.session_state.finished = True
                 st.rerun()
 
-        # --- 成果回顧表格 ---
+        # --- 成果回顧 ---
         else:
             st.header("🎊 練習成果回顧")
             if st.session_state.history:
                 final_history = [v for k, v in sorted(st.session_state.history.items())]
                 report_df = pd.DataFrame(final_history)
-                # 使用 HTML 渲染表格讓內容更清晰
                 st.table(report_df)
             else:
                 st.write("目前無紀錄。")
 
-            if st.button("🔄 重新開始練習 (回初始設定)"):
+            if st.button("🔄 重新開始練習 (徹底清空進度)"):
                 reset_all_state()
                 st.rerun()
-    else:
-        st.warning("查無內容。")
