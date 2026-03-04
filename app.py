@@ -3,9 +3,9 @@ import pandas as pd
 import random
 import re
 
-st.set_page_config(page_title="英文重組練習 - 預習與測驗版", layout="wide")
+st.set_page_config(page_title="英文重組練習 - 完整紀錄版", layout="wide")
 
-# CSS 樣式優化
+# CSS 樣式
 st.markdown("""
     <style>
     .stButton > button { border-radius: 8px; font-weight: bold; }
@@ -14,10 +14,8 @@ st.markdown("""
         padding: 20px; border-radius: 12px; border: 2px dashed #3b82f6;
         margin-bottom: 20px; min-height: 80px;
     }
-    .study-card {
-        padding: 15px; border-bottom: 1px solid #eee; background-color: #f9f9f9;
-        margin-bottom: 10px; border-radius: 8px;
-    }
+    .status-pass { color: #28a745; font-weight: bold; }
+    .status-fail { color: #dc3545; font-weight: bold; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -40,9 +38,9 @@ def load_data():
 # 初始化 Session State
 if 'q_idx' not in st.session_state: st.session_state.q_idx = 0
 if 'ans' not in st.session_state: st.session_state.ans = []
-if 'used_history' not in st.session_state: st.session_state.used_history = [] # 紀錄點選順序以便退回
+if 'used_history' not in st.session_state: st.session_state.used_history = []
 if 'shuf' not in st.session_state: st.session_state.shuf = []
-if 'history' not in st.session_state: st.session_state.history = []
+if 'history' not in st.session_state: st.session_state.history = {} # 改用字典存，方便更新題號紀錄
 if 'finished' not in st.session_state: st.session_state.finished = False
 
 df = load_data()
@@ -69,7 +67,7 @@ if df is not None:
         
         quiz_list = filtered_df.head(num_q).to_dict('records')
 
-        # --- 新增：預習功能開關 ---
+        # 預習開關
         st.sidebar.write("---")
         is_study_mode = st.sidebar.checkbox("📖 開啟預習模式", value=False)
         
@@ -81,14 +79,13 @@ if df is not None:
             st.session_state.ans = []
             st.session_state.used_history = []
             st.session_state.shuf = []
-            st.session_state.history = []
+            st.session_state.history = {}
             st.session_state.finished = False
             st.rerun()
 
-        # --- 預習模式畫面 ---
+        # --- 預習模式 ---
         if is_study_mode:
-            st.header("📖 課文預習 (Study Mode)")
-            st.write(f"正在預習：第 {sel_b} 冊 第 {sel_l} 課，共 {len(quiz_list)} 題")
+            st.header("📖 課文預習")
             for item in quiz_list:
                 with st.container():
                     col_t, col_s = st.columns([5, 1])
@@ -98,9 +95,8 @@ if df is not None:
                         t_url = f"https://translate.google.com/translate_tts?ie=UTF-8&tl=en&client=tw-ob&q={str(item['英文']).replace(' ', '%20')}"
                         st.markdown(f'<audio autoplay src="{t_url}"></audio>', unsafe_allow_html=True)
                     st.write("---")
-            st.sidebar.info("熟悉內容後，請關閉預習模式開始測驗！")
 
-        # --- 測驗模式畫面 ---
+        # --- 測驗模式 ---
         elif not st.session_state.finished and st.session_state.q_idx < len(quiz_list):
             q = quiz_list[st.session_state.q_idx]
             eng_raw = str(q['英文']).strip()
@@ -118,7 +114,7 @@ if df is not None:
             res_str = " ".join(st.session_state.ans)
             st.markdown(f'<div class="answer-box">{res_str if res_str else "請點選下方單字..."}</div>', unsafe_allow_html=True)
 
-            # 操作按鈕：全部重填 & 退回一步
+            # 按鈕列
             c1, c2, c3 = st.columns([1, 1, 2])
             if c1.button("🔄 全部重填", use_container_width=True):
                 st.session_state.ans = []
@@ -127,15 +123,19 @@ if df is not None:
             
             if c2.button("⬅️ 退回一步", use_container_width=True):
                 if st.session_state.used_history:
-                    st.session_state.used_history.pop() # 移除最後一個紀錄的索引
-                    st.session_state.ans.pop() # 移除最後一個顯示的單字
+                    st.session_state.used_history.pop()
+                    st.session_state.ans.pop()
                     st.rerun()
 
-            if c3.button("⏭️ 跳過此題", help="直接看答案並進入下一題"):
-                st.session_state.history.append({
-                    "no": st.session_state.q_idx + 1,
-                    "chinese": q['中文'], "correct": eng_raw, "user": "*(已跳過)*", "status": "❌ 跳過"
-                })
+            if c3.button("⏭️ 跳過此題", help="直接進入下一題"):
+                # 跳過也要存紀錄
+                st.session_state.history[st.session_state.q_idx] = {
+                    "題號": st.session_state.q_idx + 1,
+                    "中文提示": q['中文'],
+                    "正確答案": eng_raw,
+                    "你的拼湊": " ".join(st.session_state.ans) if st.session_state.ans else "(未作答)",
+                    "狀態": "❌ 跳過"
+                }
                 st.session_state.q_idx += 1
                 st.session_state.ans = []
                 st.session_state.used_history = []
@@ -146,7 +146,6 @@ if df is not None:
             # 顯示單字按鈕
             cols = st.columns(6)
             for i, t in enumerate(st.session_state.shuf):
-                # 只有不在已選紀錄中的按鈕才顯示
                 if i not in st.session_state.used_history:
                     with cols[i % 6]:
                         if st.button(t, key=f"b_{i}", use_container_width=True):
@@ -155,18 +154,24 @@ if df is not None:
                             st.rerun()
 
             st.write("---")
+            # 檢查答案：一按就紀錄
             if len(st.session_state.ans) == len(correct_tokens):
                 if st.button("✅ 檢查答案", type="primary", use_container_width=True):
-                    if st.session_state.ans == correct_tokens:
+                    is_correct = (st.session_state.ans == correct_tokens)
+                    
+                    # 不管對錯，點擊檢查就存入紀錄
+                    st.session_state.history[st.session_state.q_idx] = {
+                        "題號": st.session_state.q_idx + 1,
+                        "中文提示": q['中文'],
+                        "正確答案": eng_raw,
+                        "你的拼湊": " ".join(st.session_state.ans),
+                        "狀態": "✅ 正確" if is_correct else "❌ 錯誤"
+                    }
+
+                    if is_correct:
                         st.success("完全正確！🎉")
                         t_url = f"https://translate.google.com/translate_tts?ie=UTF-8&tl=en&client=tw-ob&q={eng_raw.replace(' ', '%20')}"
                         st.markdown(f'<audio autoplay src="{t_url}"></audio>', unsafe_allow_html=True)
-                        
-                        st.session_state.history.append({
-                            "no": st.session_state.q_idx + 1, "chinese": q['中文'], "correct": eng_raw, 
-                            "user": " ".join(st.session_state.ans), "status": "✅ 正確"
-                        })
-                        
                         if st.button("下一題 Next ➡️", type="primary"):
                             st.session_state.q_idx += 1
                             st.session_state.ans = []
@@ -174,26 +179,26 @@ if df is not None:
                             st.session_state.shuf = []
                             st.rerun()
                     else:
-                        st.error("順序不對喔！")
+                        st.error("順序不對喔！紀錄已更新。")
 
             if st.sidebar.button("🛑 提前結束並查看結果"):
                 st.session_state.finished = True
                 st.rerun()
 
-        # --- 顯示總結報告 ---
+        # --- 成果回顧 ---
         else:
-            st.balloons()
             st.header("🎊 練習成果回顧")
             if st.session_state.history:
-                report_df = pd.DataFrame(st.session_state.history)
-                report_df.columns = ["題號", "中文提示", "正確完整句子", "你的拼湊", "狀態"]
+                # 將字典轉為清單並排序
+                final_history = [v for k, v in sorted(st.session_state.history.items())]
+                report_df = pd.DataFrame(final_history)
                 st.table(report_df)
             else:
-                st.write("沒有答題紀錄。")
+                st.write("沒有任何作答紀錄（需點擊「檢查答案」或「跳過」）。")
 
             if st.button("🔄 重新開始練習"):
                 st.session_state.q_idx = 0
-                st.session_state.history = []
+                st.session_state.history = {}
                 st.session_state.finished = False
                 st.rerun()
     else:
