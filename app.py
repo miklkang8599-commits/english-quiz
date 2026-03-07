@@ -1,13 +1,13 @@
 # ==============================================================================
 # 🧩 程式版本資訊 (VERSION HISTORY)
 # ==============================================================================
-# 版本編號: 1.5.3
+# 版本編號: 1.6.0
 # 更新日期: 2026-03-07
 # 功能說明:
-# 1. 空間優化：將「上一題/下一題」與「退回/重填」改為緊湊的兩列式佈局，節省手機畫面空間。
-# 2. 移除冗餘間距，讓單字按鈕區更接近輸入區。
-# 3. 修正拼湊顯示區的 HTML 渲染邏輯，防止代碼洩漏。
-# 4. 版本資訊保留於程式碼註解中，執行畫面僅顯示簡約版號。
+# 1. 介面進化：參考日文版版面，優化拼湊空格區與單字按鈕排列。
+# 2. 導覽強化：底部四功能鍵（退回、重填、上一題、下一題）採等寬併排，符合手機操作。
+# 3. 邏輯修正：確保上一題/下一題在切換時能精確重置當前題目狀態。
+# 4. 數據篩選：保留「年度、冊別、單元、課次」多階層下拉選單。
 # ==============================================================================
 
 import streamlit as st
@@ -15,42 +15,67 @@ import pandas as pd
 import random
 import re
 
-VERSION = "1.5.3"
+VERSION = "1.6.0"
 
 st.set_page_config(page_title=f"英文重組 V{VERSION}", layout="centered")
 
-# CSS 極致節省空間樣式
+# CSS 強制仿製截圖版面
 st.markdown(f"""
     <style>
-    .stButton > button {{
-        width: 100%;
-        border-radius: 10px;
-        font-weight: bold;
-        height: 48px;
-        font-size: 15px !important;
-        padding: 0px;
+    /* 全域字體優化 */
+    html, body, [class*="css"] {{
+        font-family: "Microsoft JhengHei", sans-serif;
     }}
-    .answer-box {{
-        font-size: 20px;
-        color: #1e40af;
-        background-color: #eff6ff;
+    /* 中文提示區塊 */
+    .hint-box {{
+        background-color: #e3f2fd;
         padding: 15px;
-        border-radius: 12px;
-        border: 2px dashed #3b82f6;
-        margin: 5px 0;
+        border-radius: 10px;
+        color: #1565c0;
+        font-weight: bold;
+        font-size: 18px;
+        margin-bottom: 10px;
+        border: 1px solid #bbdefb;
+    }}
+    /* 拼湊空格區塊 */
+    .answer-display {{
+        background-color: #ffffff;
+        padding: 20px;
+        border-radius: 10px;
+        border: 2px solid #e0e0e0;
         min-height: 80px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: center;
+        justify-content: center;
+        font-size: 22px;
+        color: #333;
+        margin-bottom: 20px;
+        box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
     }}
-    .ver-tag {{
-        text-align: right;
-        color: #9ca3af;
-        font-size: 10px;
-        margin-top: 20px;
+    /* 功能鍵列按鈕 */
+    .stButton > button {{
+        border-radius: 8px;
+        font-weight: normal;
+        height: 45px;
+        font-size: 14px !important;
+        padding: 0px;
+        border: 1px solid #d1d5db;
+        background-color: #ffffff;
+        color: #374151;
     }}
-    /* 縮減區塊間距 */
-    .block-container {{
-        padding-top: 2rem !important;
-        padding-bottom: 1rem !important;
+    /* 單字按鈕樣式 */
+    .word-btn > div > button {{
+        background-color: #ffffff !important;
+        border: 2px solid #e5e7eb !important;
+        color: #111827 !important;
+        font-size: 18px !important;
+        height: 50px !important;
+        border-radius: 12px !important;
     }}
+    /* 隱藏預設元件間距 */
+    .block-container {{ padding-top: 1rem; }}
     </style>
 """, unsafe_allow_html=True)
 
@@ -84,13 +109,9 @@ if 'q_idx' not in st.session_state: reset_all_state()
 
 df = load_data()
 
-# --- 主標題與版號 ---
-st.title("🧩 英文句子重組")
-st.caption(f"Ver {VERSION}")
-
 if df is not None:
-    # --- 範圍設定 (預設收合以節省空間) ---
-    with st.expander("📖 範圍設定", expanded=not st.session_state.get('history')):
+    # --- 頂部範圍下拉選單 ---
+    with st.expander("🎯 練習範圍設定", expanded=not st.session_state.get('history')):
         c1, c2 = st.columns(2)
         years = sorted(df['年度'].unique().astype(int).tolist()) if '年度' in df.columns else [0]
         sel_y = c1.selectbox("年度", years)
@@ -132,61 +153,67 @@ if df is not None:
                 random.shuffle(tmp)
                 st.session_state.shuf = tmp
 
-            st.write(f"**Q{st.session_state.q_idx + 1}/{len(quiz_list)}** | {q['中文']}")
+            # 1. 中文提示區
+            st.markdown(f'<div class="hint-box">第 {q.get("單元","")} 章 | Q{st.session_state.q_idx + 1} | {q["中文"]}</div>', unsafe_allow_html=True)
 
-            # 拼湊顯示區
+            # 2. 拼湊顯示區
             res_str = " ".join(st.session_state.ans)
-            display_text = res_str if res_str else "請點選單字..."
-            st.markdown(f'<div class="answer-box">{display_text}</div>', unsafe_allow_html=True)
+            display_text = res_str if res_str else "——"
+            st.markdown(f'<div class="answer-display">{display_text}</div>', unsafe_allow_html=True)
 
-            # --- 核心功能鍵：同一排佈局 ---
-            # 第一排：導覽 (上一題 / 下一題)
-            n1, n2 = st.columns(2)
-            with n1:
-                if st.button("⬅️ 上一題", key="top_prev", disabled=(st.session_state.q_idx == 0)):
-                    st.session_state.q_idx -= 1
-                    st.session_state.ans, st.session_state.used_history, st.session_state.shuf, st.session_state.is_correct, st.session_state.check_clicked = [], [], [], False, False
-                    st.rerun()
-            with n2:
-                btn_label = "下一題 ➡️" if st.session_state.q_idx + 1 < len(quiz_list) else "🏁 完成"
-                if st.button(btn_label, key="top_next"):
-                    if st.session_state.q_idx + 1 < len(quiz_list):
-                        st.session_state.q_idx += 1
-                        st.session_state.ans, st.session_state.used_history, st.session_state.shuf, st.session_state.is_correct, st.session_state.check_clicked = [], [], [], False, False
-                        st.rerun()
-                    else:
-                        st.session_state.finished = True
-                        st.rerun()
-
-            # 第二排：編輯 (退回 / 重填)
-            e1, e2 = st.columns(2)
-            with e1:
-                if st.button("↺ 退回一步", key="undo"):
-                    if st.session_state.used_history:
-                        st.session_state.used_history.pop()
-                        st.session_state.ans.pop()
-                        st.session_state.check_clicked = False
-                        st.rerun()
-            with e2:
-                if st.button("🗑️ 全部重填", key="clear"):
-                    st.session_state.ans, st.session_state.used_history, st.session_state.check_clicked = [], [], False
-                    st.rerun()
-
-            st.write("---")
-            # 單字按鈕
-            if not st.session_state.is_correct:
-                btn_cols = st.columns(3)
-                for idx, token in enumerate(st.session_state.shuf):
-                    if idx not in st.session_state.used_history:
-                        if btn_cols[idx % 3].button(token, key=f"t_{idx}"):
+            # 3. 單字按鈕區 (點選單字按鈕提示)
+            st.caption("▼ 請點選單字按鈕")
+            btn_cols = st.columns(2) # 手機版改為兩列大按鈕
+            for idx, token in enumerate(st.session_state.shuf):
+                if idx not in st.session_state.used_history:
+                    with btn_cols[idx % 2]:
+                        st.markdown('<div class="word-btn">', unsafe_allow_html=True)
+                        if st.button(token, key=f"t_{idx}", use_container_width=True):
                             st.session_state.ans.append(token)
                             st.session_state.used_history.append(idx)
                             st.session_state.check_clicked = False
                             st.rerun()
+                        st.markdown('</div>', unsafe_allow_html=True)
 
-            # 檢查按鈕
+            st.write("---")
+            
+            # 4. 底部功能鍵 (等寬四列)
+            nav_cols = st.columns(4)
+            
+            # 退回
+            if nav_cols[0].button("⬅ 退回", key="f_undo"):
+                if st.session_state.used_history:
+                    st.session_state.used_history.pop()
+                    st.session_state.ans.pop()
+                    st.session_state.check_clicked = False
+                    st.rerun()
+            
+            # 重填
+            if nav_cols[1].button("🔄 重填", key="f_clear"):
+                st.session_state.ans, st.session_state.used_history, st.session_state.check_clicked = [], [], False
+                st.rerun()
+            
+            # 上一題
+            if nav_cols[2].button("⏮ 上一題", key="f_prev", disabled=(st.session_state.q_idx == 0)):
+                st.session_state.q_idx -= 1
+                st.session_state.ans, st.session_state.used_history, st.session_state.shuf, st.session_state.is_correct, st.session_state.check_clicked = [], [], [], False, False
+                st.rerun()
+                
+            # 下一題
+            next_label = "⏭ 下一題" if st.session_state.q_idx + 1 < len(quiz_list) else "🏁 完成"
+            if nav_cols[3].button(next_label, key="f_next"):
+                if st.session_state.q_idx + 1 < len(quiz_list):
+                    st.session_state.q_idx += 1
+                    st.session_state.ans, st.session_state.used_history, st.session_state.shuf, st.session_state.is_correct, st.session_state.check_clicked = [], [], [], False, False
+                    st.rerun()
+                else:
+                    st.session_state.finished = True
+                    st.rerun()
+
+            # 5. 檢查答案 (置中大按鈕)
             if len(st.session_state.ans) == len(correct_tokens) and not st.session_state.is_correct:
-                if st.button("✅ 檢查答案", type="primary"):
+                st.write("")
+                if st.button("✅ 檢查答案", type="primary", use_container_width=True):
                     st.session_state.check_clicked = True
                     user_f = "".join(st.session_state.ans).lower()
                     target_f = eng_raw.replace(" ", "").lower()
@@ -202,14 +229,13 @@ if df is not None:
             if st.session_state.is_correct:
                 st.success("Correct! 🎉")
 
-            if st.button("🛑 提前看報告", type="secondary"):
-                st.session_state.finished = True
-                st.rerun()
+        else:
+            st.session_state.finished = True
 
-    else:
+    if st.session_state.finished:
         st.header("🎊 練習成果回顧")
         if st.session_state.history:
             st.table(pd.DataFrame([v for k, v in sorted(st.session_state.history.items())]))
         if st.button("🔄 重新開始練習"): reset_all_state(); st.rerun()
 
-st.markdown(f'<p class="ver-tag">App Ver {VERSION}</p>', unsafe_allow_html=True)
+st.caption(f"Ver {VERSION}")
