@@ -1,222 +1,237 @@
 # ==============================================================================
-# 🧩 程式版本資訊 (VERSION HISTORY)
+# 🧩 英文重組練習旗艦版 V1.7.0
 # ==============================================================================
-# 版本編號: 1.6.6
-# 更新日期: 2026-03-07
 # 功能說明:
-# 1. 版面優化：將「題號/句編號」與「題目內容」恢復至同一列顯示以節省空間。
-# 2. 間距調整：在編號與內容之間加入三個全形空格，解決視覺過於擁擠的問題。
-# 3. 穩定讀取：延續 V1.6.4 的「句編號」精確抓取與欄位標準化邏輯。
-# 4. 介面同步：底部四功能鍵【退回、重填、上一題、下一題】維持手機最優併排佈局。
+# 1. 學生帳號登入系統 (EA+4位數)，支援分組識別。
+# 2. 全校做題跑馬燈：即時抓取最新 logs 並滾動顯示。
+# 3. 行為全紀錄：記錄作答結果、點擊功能鍵(退回/重填/換題)及花費時間。
+# 4. 同組學習足跡：折疊式選單查看組員詳細進度與競爭榮譽榜。
 # ==============================================================================
 
 import streamlit as st
 import pandas as pd
 import random
 import re
+from datetime import datetime
+from streamlit_gsheets import GSheetsConnection
 
-VERSION = "1.6.6"
+VERSION = "1.7.0"
 
-st.set_page_config(page_title=f"英文重組 V{VERSION}", layout="centered")
+st.set_page_config(page_title=f"英文重組旗艦版 V{VERSION}", layout="centered")
 
-# CSS 樣式優化
+# --- 1. 連線 Google Sheets ---
+conn = st.connection("gsheets", type=GSheetsConnection)
+
+# --- 2. CSS 樣式 (含跑馬燈動畫) ---
 st.markdown(f"""
     <style>
-    .hint-box {{
-        background-color: #f8f9fa;
-        padding: 15px 20px;
-        border-radius: 10px;
-        color: #333;
-        font-weight: bold;
-        border-left: 6px solid #1e88e5;
-        font-size: 18px;
-        margin-bottom: 15px;
-        line-height: 1.4;
+    @keyframes marquee {{
+        0% {{ transform: translateX(100%); }}
+        100% {{ transform: translateX(-100%); }}
     }}
-    .q-meta {{
-        color: #1e88e5;
+    .marquee-container {{
+        background: #333; color: #00ff00; padding: 5px 0;
+        overflow: hidden; white-space: nowrap; font-family: monospace;
+    }}
+    .marquee-text {{
+        display: inline-block; animation: marquee 20s linear infinite;
         font-size: 16px;
-        margin-right: 15px; /* 增加編號後的右側間距 */
     }}
-    .answer-display {{
-        background-color: #ffffff;
-        padding: 20px;
-        border-radius: 10px;
-        border: 1px solid #dee2e6;
-        min-height: 80px;
-        display: flex;
-        flex-wrap: wrap;
-        gap: 10px;
-        align-items: center;
-        justify-content: center;
-        font-size: 22px;
-        margin-bottom: 15px;
+    .hint-box {{
+        background-color: #f8f9fa; padding: 15px; border-radius: 10px;
+        border-left: 6px solid #1e88e5; font-size: 18px; margin-bottom: 15px;
     }}
-    .word-btn > div > button {{
-        font-size: 19px !important;
-        height: 52px !important;
-        background-color: #fdfdfd !important;
-        border: 2px solid #eaebed !important;
-    }}
+    .stButton > button {{ border-radius: 8px; height: 48px; }}
     </style>
 """, unsafe_allow_html=True)
 
-# 1. 資料讀取
-SHEET_ID = "1zVUNGboZALvK3val1RSbCQvEESLRSNEulqpNSzsPJ14"
-GID = "176577556"
-url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID}"
+# --- 3. 核心功能函數 ---
 
-@st.cache_data(ttl=30)
-def load_data():
+def load_all_data():
+    """讀取題目與學生資料"""
     try:
-        df = pd.read_csv(url)
-        df.columns = [str(c).strip() for c in df.columns]
-        for col in ['年度', '冊編號', '課編號', '句編號']:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col].astype(str).str.strip(), errors='coerce')
-        return df.dropna(subset=['英文', '中文'])
-    except: return None
+        df_q = conn.read(worksheet="questions", ttl=30)
+        df_s = conn.read(worksheet="students", ttl=30)
+        return df_q.dropna(subset=['英文', '中文']), df_s
+    except:
+        st.error("讀取 Google Sheets 失敗，請檢查分頁名稱是否為 'questions' 與 'students'")
+        return None, None
 
-def reset_all_state():
+def log_event(action_type, detail="", result="-", duration=0):
+    """背景寫入紀錄到 logs 分頁"""
+    if not st.session_state.get('logged_in'): return
+    try:
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        qid = st.session_state.get('current_qid', "N/A")
+        new_row = pd.DataFrame([{
+            "時間": now,
+            "帳號": st.session_state.user_id,
+            "姓名": st.session_state.user_name,
+            "分組": st.session_state.group_id,
+            "題目ID": qid,
+            "動作": action_type,
+            "內容": detail,
+            "結果": result,
+            "費時": duration
+        }])
+        # 使用 append 模式寫入 (需要實作或是使用 conn.create 邏輯)
+        # 註: st.connection 的寫入邏輯視版本而定，以下為常見寫法
+        existing_logs = conn.read(worksheet="logs", ttl=0)
+        updated_logs = pd.concat([existing_logs, new_row], ignore_index=True)
+        conn.update(worksheet="logs", data=updated_logs)
+    except Exception as e:
+        pass # 避免寫入失敗卡住學生
+
+def get_marquee_text():
+    """抓取最新 5 筆 ✅ 的紀錄做跑馬燈"""
+    try:
+        logs = conn.read(worksheet="logs", ttl=10)
+        recent = logs[logs['結果'] == '✅'].tail(5)
+        texts = [f"🔥 {row['姓名']}({row['分組']}) 剛答對了題號 {row['題目ID']}!" for _, row in recent.iterrows()]
+        return " | ".join(texts) if texts else "🏃 大家都還在熱身中，加油！"
+    except: return "跑馬燈連線中..."
+
+# --- 4. 登入邏輯 ---
+if 'logged_in' not in st.session_state:
+    st.session_state.logged_in = False
+
+if not st.session_state.logged_in:
+    st.title("🧩 學生學習系統登入")
+    st.info("請輸入您的 4 位數帳號與密碼")
+    
+    col1, col2 = st.columns([1, 4])
+    col1.markdown("### EA")
+    input_id = col2.text_input("帳號 (4位數字)", max_chars=4, placeholder="0003")
+    input_pw = st.text_input("密碼 (4位數字)", type="password", max_chars=4)
+    
+    if st.button("確認登入", type="primary", use_container_width=True):
+        _, df_s = load_all_data()
+        if df_s is not None:
+            # 轉換為字串比對，避免格式問題
+            user = df_s[df_s['帳號'].astype(str).str.zfill(4) == input_id.zfill(4)]
+            if not user.empty and str(user.iloc[0]['密碼']).zfill(4) == input_pw.zfill(4):
+                st.session_state.logged_in = True
+                st.session_state.user_id = f"EA{input_id.zfill(4)}"
+                st.session_state.user_name = user.iloc[0]['姓名']
+                st.session_state.group_id = user.iloc[0]['分組']
+                st.rerun()
+            else:
+                st.error("帳號或密碼錯誤，請重新輸入")
+    st.stop()
+
+# --- 5. 正式練習畫面 ---
+
+# 跑馬燈
+marquee_content = get_marquee_text()
+st.markdown(f'<div class="marquee-container"><div class="marquee-text">{marquee_content}</div></div>', unsafe_allow_html=True)
+
+df_q, _ = load_all_data()
+
+# 初始化練習狀態
+if 'q_idx' not in st.session_state:
     st.session_state.q_idx = 0
     st.session_state.ans = []
     st.session_state.used_history = []
     st.session_state.shuf = []
     st.session_state.history = {}
     st.session_state.finished = False
-    st.session_state.is_correct = False
-    st.session_state.check_clicked = False
+    st.session_state.start_time = datetime.now()
 
-if 'q_idx' not in st.session_state: reset_all_state()
+# 範圍篩選
+with st.sidebar:
+    st.title(f"👋 你好, {st.session_state.user_name}")
+    st.write(f"分組: **{st.session_state.group_id}**")
+    st.divider()
+    
+    if st.button("🚪 登出"):
+        st.session_state.logged_in = False
+        st.rerun()
 
-df = load_data()
+    st.subheader("📊 組員足跡")
+    with st.expander("查看同組動態"):
+        try:
+            all_logs = conn.read(worksheet="logs", ttl=10)
+            group_logs = all_logs[all_logs['分組'] == st.session_state.group_id].tail(10)
+            st.table(group_logs[['姓名', '動作', '結果']])
+        except: st.write("尚無足跡紀錄")
 
-st.title("🧩 英文句子重組練習")
+if df_q is not None:
+    # 練習範圍設定 (簡化版，連動 Session)
+    with st.expander("⚙️ 練習範圍與題數設定", expanded=False):
+        lessons = sorted(df_q['課編號'].unique().tolist())
+        sel_l = st.selectbox("選擇課次", lessons)
+        quiz_list = df_q[df_q['課編號'] == sel_l].to_dict('records')
 
-if df is not None:
-    # --- 範圍設定 ---
-    with st.expander("⚙️ 練習範圍設定", expanded=True):
-        c1, c2 = st.columns(2)
-        years = sorted(df['年度'].dropna().unique().astype(int).tolist()) if '年度' in df.columns else [0]
-        sel_y = c1.selectbox("年度", years)
-        df_y = df[df['年度'] == sel_y]
+    if quiz_list and not st.session_state.finished:
+        q = quiz_list[st.session_state.q_idx]
+        # 產生唯一識別碼 QID
+        qid = f"{q.get('年度','0')}_{q.get('冊編號','0')}_{q.get('課編號','0')}_{q.get('句編號','0')}"
+        st.session_state.current_qid = qid
         
-        books = sorted(df_y['冊編號'].dropna().unique().astype(int).tolist())
-        sel_b = c2.selectbox("冊別", books)
-        df_b = df_y[df_y['冊編號'] == sel_b]
-        
-        c3, c4 = st.columns(2)
-        units = sorted(df_b['單元'].dropna().unique().tolist()) if '單元' in df.columns else ["預設"]
-        sel_u = c3.selectbox("單元", units)
-        df_u = df_b[df_b['單元'] == sel_u]
-        
-        lessons = sorted(df_u['課編號'].dropna().unique().astype(int).tolist())
-        sel_l = c4.selectbox("課次", lessons)
-        
-        base_df = df_u[df_u['課編號'] == sel_l].sort_values('句編號')
-        
-        if not base_df.empty:
-            min_s = int(base_df['句編號'].min())
-            max_s = int(base_df['句編號'].max())
-            start_id = st.number_input(f"起始句編號", min_s, max_s, min_s)
-            
-            valid_quiz = base_df[base_df['句編號'] >= start_id]
-            num_q = st.slider("測驗題數", 1, len(valid_quiz), min(10, len(valid_quiz)))
-            quiz_list = valid_quiz.head(num_q).to_dict('records')
+        eng_raw = str(q['英文']).strip()
+        correct_tokens = re.findall(r"[\w']+|[^\w\s]", eng_raw)
 
-            curr_key = f"{sel_y}-{sel_b}-{sel_u}-{sel_l}-{start_id}-{num_q}"
-            if st.session_state.get('last_config_key') != curr_key:
-                st.session_state.last_config_key = curr_key
-                reset_all_state()
+        if not st.session_state.shuf:
+            tmp = correct_tokens.copy()
+            random.shuffle(tmp)
+            st.session_state.shuf = tmp
+
+        # 題目區
+        st.markdown(f'<div class="hint-box">題號 {st.session_state.q_idx + 1} (句編號 {q.get("句編號")}) &nbsp;&nbsp; {q["中文"]}</div>', unsafe_allow_html=True)
+        
+        # 拼湊顯示
+        res_str = " ".join(st.session_state.ans)
+        st.markdown(f'<div style="background:#fff; padding:20px; border-radius:10px; border:1px solid #ddd; min-height:80px; font-size:22px; margin-bottom:15px; text-align:center;">{res_str if res_str else "......"}</div>', unsafe_allow_html=True)
+
+        # 底部功能鍵 (記錄行為)
+        nav_cols = st.columns(4)
+        if nav_cols[0].button("退回"):
+            if st.session_state.ans:
+                st.session_state.ans.pop(); st.session_state.used_history.pop()
+                log_event("按鍵:退回")
+                st.rerun()
+        if nav_cols[1].button("重填"):
+            st.session_state.ans, st.session_state.used_history = [], []
+            log_event("按鍵:重填")
+            st.rerun()
+        if nav_cols[2].button("上一題", disabled=(st.session_state.q_idx == 0)):
+            st.session_state.q_idx -= 1
+            st.session_state.ans, st.session_state.used_history, st.session_state.shuf = [], [], []
+            log_event("導覽:上一題")
+            st.rerun()
+        if nav_cols[3].button("下一題"):
+            if st.session_state.q_idx + 1 < len(quiz_list):
+                st.session_state.q_idx += 1
+                st.session_state.ans, st.session_state.used_history, st.session_state.shuf = [], [], []
+                log_event("導覽:下一題")
                 st.rerun()
 
-    if not base_df.empty and not st.session_state.finished:
-        if st.session_state.q_idx < len(quiz_list):
-            q = quiz_list[st.session_state.q_idx]
-            eng_raw = str(q['英文']).strip()
-            correct_tokens = re.findall(r"[\w']+|[^\w\s]", eng_raw)
-
-            if not st.session_state.shuf:
-                tmp = correct_tokens.copy()
-                random.shuffle(tmp)
-                st.session_state.shuf = tmp
-
-            # --- 題目顯示區：單列寬間距格式 ---
-            q_num = st.session_state.q_idx + 1
-            s_num = int(q['句編號']) if pd.notnull(q.get('句編號')) else 0
-            
-            # 使用 &nbsp; (不換行空格) 來增加間距
-            st.markdown(f"""
-                <div class="hint-box">
-                    <span class="q-meta">題號 {q_num} (句編號 {s_num})</span>&nbsp;&nbsp;&nbsp;{q['中文']}
-                </div>
-            """, unsafe_allow_html=True)
-
-            # 拼湊顯示區
-            res_str = " ".join(st.session_state.ans)
-            st.markdown(f'<div class="answer-display">{res_str if res_str else "......"}</div>', unsafe_allow_html=True)
-
-            # 功能鍵
-            nav_cols = st.columns(4)
-            with nav_cols[0]:
-                if st.button("退回", key="btn_undo"):
-                    if st.session_state.used_history:
-                        st.session_state.used_history.pop(); st.session_state.ans.pop()
-                        st.session_state.check_clicked = False; st.rerun()
-            with nav_cols[1]:
-                if st.button("重填", key="btn_clear"):
-                    st.session_state.ans, st.session_state.used_history, st.session_state.check_clicked = [], [], False
-                    st.rerun()
-            with nav_cols[2]:
-                if st.button("上一題", key="btn_prev", disabled=(st.session_state.q_idx == 0)):
-                    st.session_state.q_idx -= 1
-                    st.session_state.ans, st.session_state.used_history, st.session_state.shuf, st.session_state.is_correct, st.session_state.check_clicked = [], [], [], False, False
-                    st.rerun()
-            with nav_cols[3]:
-                if st.button("下一題", key="btn_next"):
-                    if st.session_state.q_idx + 1 < len(quiz_list):
-                        st.session_state.q_idx += 1
-                        st.session_state.ans, st.session_state.used_history, st.session_state.shuf, st.session_state.is_correct, st.session_state.check_clicked = [], [], [], False, False
+        # 單字按鈕
+        st.write("---")
+        btn_cols = st.columns(2)
+        for idx, token in enumerate(st.session_state.shuf):
+            if idx not in st.session_state.used_history:
+                with btn_cols[idx % 2]:
+                    if st.button(token, key=f"t_{idx}", use_container_width=True):
+                        st.session_state.ans.append(token)
+                        st.session_state.used_history.append(idx)
                         st.rerun()
-                    else:
-                        st.session_state.finished = True; st.rerun()
 
-            st.write("---")
-            # 單字按鈕
-            btn_cols = st.columns(2)
-            for idx, token in enumerate(st.session_state.shuf):
-                if idx not in st.session_state.used_history:
-                    with btn_cols[idx % 2]:
-                        st.markdown('<div class="word-btn">', unsafe_allow_html=True)
-                        if st.button(token, key=f"t_{idx}", use_container_width=True):
-                            st.session_state.ans.append(token)
-                            st.session_state.used_history.append(idx)
-                            st.session_state.check_clicked = False; st.rerun()
-                        st.markdown('</div>', unsafe_allow_html=True)
+        # 檢查答案
+        if len(st.session_state.ans) == len(correct_tokens):
+            if st.button("✅ 檢查答案", type="primary", use_container_width=True):
+                duration = (datetime.now() - st.session_state.start_time).seconds
+                is_ok = "".join(st.session_state.ans).lower() == eng_raw.replace(" ", "").lower()
+                result_tag = "✅" if is_ok else "❌"
+                
+                # 寫入日誌
+                log_event("作答", detail=" ".join(st.session_state.ans), result=result_tag, duration=duration)
+                
+                if is_ok:
+                    st.success("Correct! 🎉")
+                    st.balloons()
+                else:
+                    st.error(f"再試一次！正確答案是: {eng_raw}")
+                st.session_state.start_time = datetime.now() # 重置計時
 
-            # 檢查按鈕
-            if len(st.session_state.ans) == len(correct_tokens) and not st.session_state.is_correct:
-                if st.button("✅ 檢查答案", type="primary", use_container_width=True):
-                    st.session_state.check_clicked = True
-                    is_ok = "".join(st.session_state.ans).lower() == eng_raw.replace(" ", "").lower()
-                    st.session_state.is_correct = is_ok
-                    st.session_state.history[st.session_state.q_idx] = {
-                        "題目": q_num, "句編號": s_num, "狀態": "✅" if is_ok else "❌", "正確答案": eng_raw
-                    }
-                    if is_ok:
-                        t_url = f"https://translate.google.com/translate_tts?ie=UTF-8&tl=en&client=tw-ob&q={eng_raw.replace(' ', '%20')}"
-                        st.markdown(f'<audio autoplay src="{t_url}"></audio>', unsafe_allow_html=True)
-                    st.rerun()
-            
-            if st.session_state.is_correct:
-                st.success("Correct! 🎉")
-
-            if st.button("🏁 查看結果報告", type="secondary", use_container_width=True):
-                st.session_state.finished = True; st.rerun()
-    else:
-        st.header("🎊 練習成果回顧")
-        if st.session_state.history:
-            st.table(pd.DataFrame([v for k, v in sorted(st.session_state.history.items())]))
-        if st.button("🔄 重新開始練習"): reset_all_state(); st.rerun()
-
-st.caption(f"Ver {VERSION}")
+st.caption(f"Flagship Ver {VERSION}")
