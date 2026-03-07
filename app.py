@@ -1,13 +1,13 @@
 # ==============================================================================
 # 🧩 程式版本資訊 (VERSION HISTORY)
 # ==============================================================================
-# 版本編號: 1.6.4
+# 版本編號: 1.6.6
 # 更新日期: 2026-03-07
 # 功能說明:
-# 1. 精確名稱修正：將顯示文字從「句號」改為「句編號」，完全對應原始欄位名稱。
-# 2. 顯示格式校對：題號 X (句編號 Y) [空格] [中文內容]。
-# 3. 強化欄位讀取：針對「句編號」欄位進行深度清理與強制轉型。
-# 4. 版面與導覽：維持手機優化佈局與【退回、重填、上一題、下一題】功能鍵。
+# 1. 版面優化：將「題號/句編號」與「題目內容」恢復至同一列顯示以節省空間。
+# 2. 間距調整：在編號與內容之間加入三個全形空格，解決視覺過於擁擠的問題。
+# 3. 穩定讀取：延續 V1.6.4 的「句編號」精確抓取與欄位標準化邏輯。
+# 4. 介面同步：底部四功能鍵【退回、重填、上一題、下一題】維持手機最優併排佈局。
 # ==============================================================================
 
 import streamlit as st
@@ -15,22 +15,28 @@ import pandas as pd
 import random
 import re
 
-VERSION = "1.6.4"
+VERSION = "1.6.6"
 
 st.set_page_config(page_title=f"英文重組 V{VERSION}", layout="centered")
 
-# CSS 樣式設定
+# CSS 樣式優化
 st.markdown(f"""
     <style>
     .hint-box {{
         background-color: #f8f9fa;
-        padding: 15px;
-        border-radius: 8px;
+        padding: 15px 20px;
+        border-radius: 10px;
         color: #333;
         font-weight: bold;
-        font-size: 18px;
-        margin-bottom: 12px;
         border-left: 6px solid #1e88e5;
+        font-size: 18px;
+        margin-bottom: 15px;
+        line-height: 1.4;
+    }}
+    .q-meta {{
+        color: #1e88e5;
+        font-size: 16px;
+        margin-right: 15px; /* 增加編號後的右側間距 */
     }}
     .answer-display {{
         background-color: #ffffff;
@@ -45,10 +51,6 @@ st.markdown(f"""
         justify-content: center;
         font-size: 22px;
         margin-bottom: 15px;
-    }}
-    .stButton > button {{
-        border-radius: 8px;
-        height: 48px;
     }}
     .word-btn > div > button {{
         font-size: 19px !important;
@@ -68,9 +70,7 @@ url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid=
 def load_data():
     try:
         df = pd.read_csv(url)
-        # 欄位名稱標準化
         df.columns = [str(c).strip() for c in df.columns]
-        # 強制轉換關鍵欄位為數值
         for col in ['年度', '冊編號', '課編號', '句編號']:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col].astype(str).str.strip(), errors='coerce')
@@ -141,10 +141,16 @@ if df is not None:
                 random.shuffle(tmp)
                 st.session_state.shuf = tmp
 
-            # --- 題目顯示區 (精確修正為「句編號」) ---
+            # --- 題目顯示區：單列寬間距格式 ---
             q_num = st.session_state.q_idx + 1
             s_num = int(q['句編號']) if pd.notnull(q.get('句編號')) else 0
-            st.markdown(f'<div class="hint-box">題號 {q_num} (句編號 {s_num})  {q["中文"]}</div>', unsafe_allow_html=True)
+            
+            # 使用 &nbsp; (不換行空格) 來增加間距
+            st.markdown(f"""
+                <div class="hint-box">
+                    <span class="q-meta">題號 {q_num} (句編號 {s_num})</span>&nbsp;&nbsp;&nbsp;{q['中文']}
+                </div>
+            """, unsafe_allow_html=True)
 
             # 拼湊顯示區
             res_str = " ".join(st.session_state.ans)
@@ -195,7 +201,7 @@ if df is not None:
                     is_ok = "".join(st.session_state.ans).lower() == eng_raw.replace(" ", "").lower()
                     st.session_state.is_correct = is_ok
                     st.session_state.history[st.session_state.q_idx] = {
-                        "題目": q_num, "句編號": s_num, "狀態": "✅" if is_ok else "❌", "答案": eng_raw
+                        "題目": q_num, "句編號": s_num, "狀態": "✅" if is_ok else "❌", "正確答案": eng_raw
                     }
                     if is_ok:
                         t_url = f"https://translate.google.com/translate_tts?ie=UTF-8&tl=en&client=tw-ob&q={eng_raw.replace(' ', '%20')}"
@@ -205,7 +211,7 @@ if df is not None:
             if st.session_state.is_correct:
                 st.success("Correct! 🎉")
 
-            if st.button("🏁 查看報告", type="secondary", use_container_width=True):
+            if st.button("🏁 查看結果報告", type="secondary", use_container_width=True):
                 st.session_state.finished = True; st.rerun()
     else:
         st.header("🎊 練習成果回顧")
