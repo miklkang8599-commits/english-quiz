@@ -1,14 +1,13 @@
 # ==============================================================================
 # 🧩 程式版本資訊 (VERSION HISTORY)
 # ==============================================================================
-# 版本編號: 1.5.2
+# 版本編號: 1.5.3
 # 更新日期: 2026-03-07
 # 功能說明:
-# 1. 修復上一題、下一題按鈕邏輯，確保在所有狀態下皆可點選。
-# 2. 修改比對邏輯，完全忽略空格與大小寫，解決標點符號判錯問題。
-# 3. 版面針對手機直立優化，將範圍設定置頂並改為下拉摺疊。
-# 4. 強化退回與重填功能鍵，支援手機觸控高度。
-# 5. 隱藏主畫面詳細更新日誌，僅保留簡約版本編號。
+# 1. 空間優化：將「上一題/下一題」與「退回/重填」改為緊湊的兩列式佈局，節省手機畫面空間。
+# 2. 移除冗餘間距，讓單字按鈕區更接近輸入區。
+# 3. 修正拼湊顯示區的 HTML 渲染邏輯，防止代碼洩漏。
+# 4. 版本資訊保留於程式碼註解中，執行畫面僅顯示簡約版號。
 # ==============================================================================
 
 import streamlit as st
@@ -16,35 +15,41 @@ import pandas as pd
 import random
 import re
 
-VERSION = "1.5.2"
+VERSION = "1.5.3"
 
 st.set_page_config(page_title=f"英文重組 V{VERSION}", layout="centered")
 
-# CSS 手機版面優化
+# CSS 極致節省空間樣式
 st.markdown(f"""
     <style>
     .stButton > button {{
         width: 100%;
         border-radius: 10px;
         font-weight: bold;
-        height: 52px;
-        font-size: 16px !important;
+        height: 48px;
+        font-size: 15px !important;
+        padding: 0px;
     }}
     .answer-box {{
-        font-size: 22px;
+        font-size: 20px;
         color: #1e40af;
         background-color: #eff6ff;
-        padding: 18px;
+        padding: 15px;
         border-radius: 12px;
         border: 2px dashed #3b82f6;
-        margin: 10px 0;
-        min-height: 90px;
+        margin: 5px 0;
+        min-height: 80px;
     }}
     .ver-tag {{
         text-align: right;
         color: #9ca3af;
-        font-size: 11px;
-        margin-top: 30px;
+        font-size: 10px;
+        margin-top: 20px;
+    }}
+    /* 縮減區塊間距 */
+    .block-container {{
+        padding-top: 2rem !important;
+        padding-bottom: 1rem !important;
     }}
     </style>
 """, unsafe_allow_html=True)
@@ -75,18 +80,17 @@ def reset_all_state():
     st.session_state.is_correct = False
     st.session_state.check_clicked = False
 
-# 初始化
 if 'q_idx' not in st.session_state: reset_all_state()
 
 df = load_data()
 
-# --- 主標題 ---
-st.title("🧩 英文句子重組練習")
+# --- 主標題與版號 ---
+st.title("🧩 英文句子重組")
 st.caption(f"Ver {VERSION}")
 
 if df is not None:
-    # --- 頂部：範圍設定 (手機下拉) ---
-    with st.expander("📖 練習範圍設定", expanded=True):
+    # --- 範圍設定 (預設收合以節省空間) ---
+    with st.expander("📖 範圍設定", expanded=not st.session_state.get('history')):
         c1, c2 = st.columns(2)
         years = sorted(df['年度'].unique().astype(int).tolist()) if '年度' in df.columns else [0]
         sel_y = c1.selectbox("年度", years)
@@ -111,7 +115,6 @@ if df is not None:
             num_q = st.slider("題數", 1, len(base_df[base_df['句編號']>=start_id]), 5)
             quiz_list = base_df[base_df['句編號']>=start_id].head(num_q).to_dict('records')
 
-            # 範圍變動重置
             key = f"{sel_y}-{sel_b}-{sel_u}-{sel_l}-{start_id}-{num_q}"
             if st.session_state.get('last_key') != key:
                 st.session_state.last_key = key
@@ -129,43 +132,45 @@ if df is not None:
                 random.shuffle(tmp)
                 st.session_state.shuf = tmp
 
-            st.write(f"**Q {st.session_state.q_idx + 1} / {len(quiz_list)}**")
-            st.info(f"💡 {q['中文']}")
+            st.write(f"**Q{st.session_state.q_idx + 1}/{len(quiz_list)}** | {q['中文']}")
 
             # 拼湊顯示區
             res_str = " ".join(st.session_state.ans)
-            display_text = res_str if res_str else "請按下方單字..."
+            display_text = res_str if res_str else "請點選單字..."
             st.markdown(f'<div class="answer-box">{display_text}</div>', unsafe_allow_html=True)
 
-            # --- 核心功能鍵：上一題 / 下一題 (獨立最上方導覽) ---
-            nav_prev, nav_next = st.columns(2)
-            if st.session_state.q_idx > 0:
-                if nav_prev.button("⬅️ 上一題", key="top_prev"):
+            # --- 核心功能鍵：同一排佈局 ---
+            # 第一排：導覽 (上一題 / 下一題)
+            n1, n2 = st.columns(2)
+            with n1:
+                if st.button("⬅️ 上一題", key="top_prev", disabled=(st.session_state.q_idx == 0)):
                     st.session_state.q_idx -= 1
                     st.session_state.ans, st.session_state.used_history, st.session_state.shuf, st.session_state.is_correct, st.session_state.check_clicked = [], [], [], False, False
                     st.rerun()
-            
-            if st.session_state.q_idx + 1 < len(quiz_list):
-                if nav_next.button("下一題 ➡️", key="top_next"):
-                    st.session_state.q_idx += 1
-                    st.session_state.ans, st.session_state.used_history, st.session_state.shuf, st.session_state.is_correct, st.session_state.check_clicked = [], [], [], False, False
-                    st.rerun()
-            else:
-                if nav_next.button("🏁 完成練習", key="top_finish"):
-                    st.session_state.finished = True
-                    st.rerun()
+            with n2:
+                btn_label = "下一題 ➡️" if st.session_state.q_idx + 1 < len(quiz_list) else "🏁 完成"
+                if st.button(btn_label, key="top_next"):
+                    if st.session_state.q_idx + 1 < len(quiz_list):
+                        st.session_state.q_idx += 1
+                        st.session_state.ans, st.session_state.used_history, st.session_state.shuf, st.session_state.is_correct, st.session_state.check_clicked = [], [], [], False, False
+                        st.rerun()
+                    else:
+                        st.session_state.finished = True
+                        st.rerun()
 
-            # --- 操作功能鍵：退回 / 重填 ---
-            f1, f2 = st.columns(2)
-            if f1.button("Undo 退回", key="undo"):
-                if st.session_state.used_history:
-                    st.session_state.used_history.pop()
-                    st.session_state.ans.pop()
-                    st.session_state.check_clicked = False
+            # 第二排：編輯 (退回 / 重填)
+            e1, e2 = st.columns(2)
+            with e1:
+                if st.button("↺ 退回一步", key="undo"):
+                    if st.session_state.used_history:
+                        st.session_state.used_history.pop()
+                        st.session_state.ans.pop()
+                        st.session_state.check_clicked = False
+                        st.rerun()
+            with e2:
+                if st.button("🗑️ 全部重填", key="clear"):
+                    st.session_state.ans, st.session_state.used_history, st.session_state.check_clicked = [], [], False
                     st.rerun()
-            if f2.button("Reset 重填", key="clear"):
-                st.session_state.ans, st.session_state.used_history, st.session_state.check_clicked = [], [], False
-                st.rerun()
 
             st.write("---")
             # 單字按鈕
@@ -197,15 +202,11 @@ if df is not None:
             if st.session_state.is_correct:
                 st.success("Correct! 🎉")
 
-            st.write("---")
-            if st.button("🛑 結束練習並看報告"):
+            if st.button("🛑 提前看報告", type="secondary"):
                 st.session_state.finished = True
                 st.rerun()
 
-        else:
-            st.session_state.finished = True
-
-    if st.session_state.finished:
+    else:
         st.header("🎊 練習成果回顧")
         if st.session_state.history:
             st.table(pd.DataFrame([v for k, v in sorted(st.session_state.history.items())]))
