@@ -1,16 +1,16 @@
 # ==============================================================================
 # 🧩 英文重組練習旗艦版 (English Sentence Scramble App)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 1.9.0
+# 📌 版本編號 (VERSION): 1.9.1
 # 📅 更新日期: 2026-03-08
 #
 # 📜 【GitHub 開發日誌】
 # ------------------------------------------------------------------------------
+# V1.9.1 [2026-03-08]: 
+#   - 老師後台分流：練習紀錄 (作答) 與 系統紀錄 (登入/出) 分開表格顯示，避免雜亂。
+#   - 移除練習紀錄中冗餘的動作欄位。
 # V1.9.0 [2026-03-08]: 
-#   - 時間格式優化：後台所有「費時」欄位改以「分秒」顯示 (例如 1分15秒)。
-#   - 強化後台篩選連動穩定性。
-# V1.8.9 [2026-03-08]: 
-#   - 老師後台優化：新增「先選組別、後選學生」的連動篩選功能。
+#   - 時間格式優化：後台所有「費時」改以「分秒」顯示。
 # ==============================================================================
 
 import streamlit as st
@@ -20,7 +20,7 @@ import re
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "1.9.0"
+VERSION = "1.9.1"
 
 st.set_page_config(page_title=f"英文重組 V{VERSION}", layout="wide")
 
@@ -51,16 +51,13 @@ def load_logs_data():
 
 # --- 2. 輔助函數 ---
 def format_duration(seconds):
-    """將秒數轉換為 分秒 格式"""
     try:
         s = int(float(seconds))
         if s <= 0: return "-"
         if s < 60: return f"{s}秒"
-        m = s // 60
-        sec = s % 60
+        m, sec = divmod(s, 60)
         return f"{m}分{sec}秒" if sec > 0 else f"{m}分"
-    except:
-        return "-"
+    except: return "-"
 
 def get_int_list(df, col):
     if df is None or df.empty: return []
@@ -131,13 +128,14 @@ st.markdown("""
     .hint-box { background-color: #f8f9fa; padding: 15px 20px; border-radius: 10px; border-left: 6px solid #1e88e5; font-size: 18px; margin-bottom: 10px; }
     .answer-display { background-color: #ffffff; padding: 15px; border-radius: 10px; border: 1px solid #dee2e6; min-height: 70px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center; font-size: 20px; margin-bottom: 10px; }
     .admin-box { background-color: #f1f8ff; padding: 20px; border-radius: 10px; border: 2px solid #0366d6; margin-bottom: 20px; }
+    .sub-header { color: #0366d6; border-bottom: 2px solid #eee; padding-bottom: 5px; margin-top: 15px; font-weight: bold; }
     </style>
 """, unsafe_allow_html=True)
 
 logs_df = load_logs_data()
 df_q, df_s = load_all_data()
 
-# --- 5. 導師管理後台 (僅限 ADMIN) ---
+# --- 5. 導師管理後台 ---
 if st.session_state.group_id == "ADMIN":
     with st.expander("👨‍🏫 導師管理後台 (Teacher Control Panel)", expanded=True):
         st.markdown('<div class="admin-box">', unsafe_allow_html=True)
@@ -145,9 +143,14 @@ if st.session_state.group_id == "ADMIN":
         
         with t_tab1:
             if logs_df is not None:
-                df_view = logs_df.copy().sort_values('時間', ascending=False).head(20)
-                df_view['費時'] = df_view['費時'].apply(format_duration)
-                st.dataframe(df_view, use_container_width=True)
+                st.markdown('<p class="sub-header">📝 全班練習紀錄 (作答)</p>', unsafe_allow_html=True)
+                quiz_logs = logs_df[logs_df['動作'] == '作答'].sort_values('時間', ascending=False).head(15).copy()
+                quiz_logs['費時'] = quiz_logs['費時'].apply(format_duration)
+                st.table(quiz_logs[['時間', '姓名', '分組', '題目ID', '結果', '費時']])
+                
+                st.markdown('<p class="sub-header">🔑 全班系統紀錄 (登入/出)</p>', unsafe_allow_html=True)
+                sys_logs = logs_df[logs_df['動作'].isin(['登入', '登出'])].sort_values('時間', ascending=False).head(10)
+                st.table(sys_logs[['時間', '姓名', '分組', '動作']])
         
         with t_tab2:
             if logs_df is not None:
@@ -178,15 +181,24 @@ if st.session_state.group_id == "ADMIN":
                 
                 if target_student:
                     selected_name = target_student.split(" (")[0]
-                    p_logs = logs_df[logs_df['姓名'] == selected_name].copy().sort_values('時間', ascending=False)
+                    p_all = logs_df[logs_df['姓名'] == selected_name].copy().sort_values('時間', ascending=False)
+                    
                     st.write(f"---")
-                    st.write(f"### 📋 {selected_name} 的詳細紀錄")
-                    if not p_logs.empty:
-                        p_logs['題目ID'] = p_logs['題目ID'].astype(str).str.replace('.0', '', regex=False)
-                        p_logs['費時'] = p_logs['費時'].apply(format_duration)
-                        st.table(p_logs[['時間', '動作', '題目ID', '結果', '內容', '費時']])
-                    else:
-                        st.info("該生目前尚無作答紀錄。")
+                    st.write(f"### 📋 {selected_name} 的紀錄回顧")
+                    
+                    st.markdown('<p class="sub-header">📝 練習表現</p>', unsafe_allow_html=True)
+                    p_quiz = p_all[p_all['動作'] == '作答'].copy()
+                    if not p_quiz.empty:
+                        p_quiz['題目ID'] = p_quiz['題目ID'].astype(str).str.replace('.0', '', regex=False)
+                        p_quiz['費時'] = p_quiz['費時'].apply(format_duration)
+                        st.table(p_quiz[['時間', '題目ID', '結果', '內容', '費時']])
+                    else: st.info("尚無練習紀錄")
+
+                    st.markdown('<p class="sub-header">🔑 登入歷史</p>', unsafe_allow_html=True)
+                    p_sys = p_all[p_all['動作'].isin(['登入', '登出'])]
+                    if not p_sys.empty:
+                        st.table(p_sys[['時間', '動作']])
+                    else: st.info("尚無登入紀錄")
         st.markdown('</div>', unsafe_allow_html=True)
 
 # 跑馬燈
