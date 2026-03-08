@@ -1,16 +1,14 @@
 # ==============================================================================
 # 🧩 英文重組練習旗艦版 (English Sentence Scramble App)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 1.8.3
+# 📌 版本編號 (VERSION): 1.8.4
 # 📅 更新日期: 2026-03-08
 #
-# 📜 【GitHub 開發日誌 & 版本功能說明】
+# 📜 【GitHub 開發日誌】
 # ------------------------------------------------------------------------------
-# V1.8.3 [2026-03-08]: 
-#   - 修正同組動態題號格式：統一改為「年度_冊_單元_課_句」且數字皆為整數。
-#   - 確保側邊欄即時狀態之題號顯示不含 .0。
-# V1.8.2 [2026-03-08]: 
-#   - 支援中文單元內容 (如：閱讀、對話)；整合 GitHub 內部版本說明。
+# V1.8.4 [2026-03-08]: 
+#   - 修正同組動態題號：統一改為「年度_冊_單元中文_課_句」格式。
+#   - 確保所有數字欄位顯示為整數，單元欄位顯示為中文。
 # ==============================================================================
 
 import streamlit as st
@@ -20,7 +18,7 @@ import re
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "1.8.3"
+VERSION = "1.8.4"
 
 st.set_page_config(page_title=f"英文重組 V{VERSION}", layout="wide")
 
@@ -32,12 +30,12 @@ def load_all_data():
     try:
         df_q = conn.read(worksheet="questions")
         df_s = conn.read(worksheet="students")
-        # 數字類欄位預處理
+        # 數字類欄位強制轉為數值型態 (以利整數化)
         num_cols = ['年度', '冊編號', '課編號', '句編號']
         for col in num_cols:
             if col in df_q.columns:
                 df_q[col] = pd.to_numeric(df_q[col], errors='coerce')
-        # 單元欄位保持字串，移除可能的 .0
+        # 單元欄位：保留原始中文，並清理可能的格式雜質
         if '單元' in df_q.columns:
             df_q['單元'] = df_q['單元'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
         return df_q.dropna(subset=['英文', '中文', '年度']), df_s
@@ -53,13 +51,13 @@ def load_logs_data():
 
 # --- 2. 輔助函數 ---
 def get_int_list(df, col):
-    """取得整數清單"""
+    """取得乾淨的整數清單"""
     if df is None or df.empty or col not in df.columns: return []
     vals = df[col].dropna().unique()
     return sorted([int(float(x)) for x in vals])
 
 def get_str_list(df, col):
-    """取得字串清單 (單元中文)"""
+    """取得原始字串清單 (單元)"""
     if df is None or df.empty or col not in df.columns: return []
     return sorted(df[col].dropna().unique().tolist())
 
@@ -111,7 +109,7 @@ if not st.session_state.logged_in:
             else: st.error("❌ 帳密錯誤")
     st.stop()
 
-# --- 4. 主介面 CSS ---
+# --- 4. CSS 與主介面 ---
 st.markdown("""
     <style>
     @keyframes marquee { 0% { transform: translateX(100%); } 100% { transform: translateX(-100%); } }
@@ -122,7 +120,6 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# 跑馬燈
 logs_df = load_logs_data()
 if logs_df is not None:
     recent = logs_df[logs_df['結果'] == '✅'].tail(3)
@@ -131,7 +128,7 @@ if logs_df is not None:
 
 df_q, _ = load_all_data()
 
-# 側邊欄
+# 側邊欄：同步修正題號格式
 with st.sidebar:
     st.title(f"👋 {st.session_state.user_name}")
     if st.button("🚪 登出系統"): log_event("登出"); st.session_state.logged_in = False; st.rerun()
@@ -144,10 +141,11 @@ with st.sidebar:
         st.write("🟢 在線組員：" + (", ".join(online_users) if len(online_users) > 0 else "僅您在線"))
         recent_2 = group_data[group_data['動作'] == '作答'].sort_values('時間', ascending=False).head(2)
         for _, row in recent_2.iterrows():
-            # 修正題號顯示邏輯：強制去除小數點
-            st.info(f"👤 {row['姓名']}\n\n題：{str(row['題目ID']).replace('.0', '')}")
+            # 確保顯示格式為 年度_冊_單元_課_句，且不含 .0
+            tid = str(row['題目ID']).replace('.0', '')
+            st.info(f"👤 {row['姓名']}\n\n題：{tid}")
 
-# --- 5. 範圍與連動選單 ---
+# --- 5. 練習邏輯與選單 ---
 if df_q is not None:
     with st.expander("⚙️ 範圍與題數設定", expanded=not st.session_state.get('quiz_loaded', False)):
         c1, c2, c3, c4 = st.columns(4)
@@ -155,8 +153,7 @@ if df_q is not None:
         df_f1 = df_q[df_q['年度'] == sel_y]
         sel_b = c2.selectbox("冊別", get_int_list(df_f1, '冊編號'))
         df_f2 = df_f1[df_f1['冊編號'] == sel_b]
-        u_list = get_str_list(df_f2, '單元')
-        sel_u = c3.selectbox("單元內容", u_list)
+        sel_u = c3.selectbox("單元內容", get_str_list(df_f2, '單元'))
         df_f3 = df_f2[df_f2['單元'] == sel_u]
         sel_l = c4.selectbox("課次", get_int_list(df_f3, '課編號'))
         
@@ -165,6 +162,7 @@ if df_q is not None:
         if not base_df.empty:
             s1, s2 = st.columns([1, 1])
             start_id = s1.number_input("起始句編號", int(base_df['句編號'].min()), int(base_df['句編號'].max()), step=1)
+            
             if 'num_q_tmp' not in st.session_state: st.session_state.num_q_tmp = 10
             sc1, sc2, sc3 = s2.columns([1, 2, 1])
             if sc1.button("➖"): st.session_state.num_q_tmp = max(1, st.session_state.num_q_tmp - 1)
@@ -177,12 +175,11 @@ if df_q is not None:
                 reset_quiz()
                 st.rerun()
 
-    # 題目主畫面
     if st.session_state.get('quiz_loaded') and not st.session_state.get('finished'):
         quiz_list = st.session_state.quiz_list
         if st.session_state.q_idx < len(quiz_list):
             q = quiz_list[st.session_state.q_idx]
-            # 修正 current_qid 格式：全整數化 (除單元外)
+            # 📌 格式修正：年度_冊_單元中文_課_句
             st.session_state.current_qid = f"{int(q['年度'])}_{int(q['冊編號'])}_{q['單元']}_{int(q['課編號'])}_{int(q['句編號'])}"
             
             st.markdown(f'<div class="hint-box"><span style="color:#1e88e5; font-weight:bold;">題號 {st.session_state.q_idx + 1} (句編號 {int(q["句編號"])})</span><br>{q["中文"]}</div>', unsafe_allow_html=True)
@@ -199,9 +196,9 @@ if df_q is not None:
                     st.session_state.q_idx += 1; st.session_state.ans, st.session_state.used_history, st.session_state.shuf = [], [], []; st.rerun()
                 else: st.session_state.finished = True; st.rerun()
 
-            tokens = re.findall(r"[\w']+|[^\w\s]", str(q['英文']).strip())
-            if not st.session_state.shuf:
-                st.session_state.shuf = tokens.copy(); random.shuffle(st.session_state.shuf)
+            eng_raw = str(q['英文']).strip()
+            tokens = re.findall(r"[\w']+|[^\w\s]", eng_raw)
+            if not st.session_state.shuf: st.session_state.shuf = tokens.copy(); random.shuffle(st.session_state.shuf)
 
             st.write("---")
             btn_cols = st.columns(2)
@@ -214,17 +211,15 @@ if df_q is not None:
             if len(st.session_state.ans) == len(tokens):
                 if st.button("✅ 檢查答案", type="primary", use_container_width=True):
                     dur = (datetime.now() - st.session_state.start_time).seconds
-                    is_ok = "".join(st.session_state.ans).lower() == str(q['英文']).strip().replace(" ", "").lower()
+                    is_ok = "".join(st.session_state.ans).lower() == eng_raw.replace(" ", "").lower()
                     log_event("作答", detail=" ".join(st.session_state.ans), result="✅" if is_ok else "❌", duration=dur)
                     if is_ok: st.success("Correct!"); st.balloons()
-                    else: st.error(f"錯誤！答案是: {q['英文']}")
+                    else: st.error(f"錯誤！答案是: {eng_raw}")
                     st.session_state.start_time = datetime.now()
 
     elif st.session_state.get('finished'):
         st.success("🎊 您已完成本次所有練習。")
         if st.button("🔄 重新載入設定"):
-            st.session_state.quiz_loaded = False
-            st.session_state.finished = False
-            st.rerun()
+            st.session_state.quiz_loaded = False; st.session_state.finished = False; st.rerun()
 
-st.caption(f"Ver {VERSION}")
+st.caption(f"Stable Ver {VERSION}")
