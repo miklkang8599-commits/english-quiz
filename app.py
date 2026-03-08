@@ -1,16 +1,16 @@
 # ==============================================================================
 # 🧩 英文重組練習旗艦版 (English Sentence Scramble App)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.3.0
+# 📌 版本編號 (VERSION): 2.3.1
 # 📅 更新日期: 2026-03-08
 #
 # 📜 【GitHub 開發日誌】
 # ------------------------------------------------------------------------------
+# V2.3.1 [2026-03-08]: 
+#   - 補回「項目」(單元) 篩選維度：支援依題型項目過濾錯題。
+#   - 優化導師後台篩選連動逻辑。
 # V2.3.0 [2026-03-08]: 
-#   - 整合所有管理功能：全班紀錄、排行、分組全覽、難題分析、多重指派、任務追蹤並存。
-#   - 強化錯題篩選器之資料匹配穩定性。
-# V2.2.0 [2026-03-08]: 
-#   - 引入多重篩選指派任務功能。
+#   - 整合所有管理功能分頁。
 # ==============================================================================
 
 import streamlit as st
@@ -21,7 +21,7 @@ import time
 from datetime import datetime
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "2.3.0"
+VERSION = "2.3.1"
 IDLE_TIMEOUT = 300 
 
 st.set_page_config(page_title=f"英文重組 V{VERSION}", layout="wide")
@@ -119,12 +119,14 @@ st.markdown("""
     .scroll-container { max-height: 350px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; border-radius: 5px; background: white; margin-bottom: 10px; }
     .student-card { border-left: 4px solid #0366d6; margin-bottom: 5px; padding-left: 10px; font-weight: bold; background: #f8f9fa; }
     .sub-header { color: #0366d6; border-bottom: 2px solid #eee; padding-bottom: 5px; margin-top: 15px; font-weight: bold; }
+    .hint-box { background-color: #f8f9fa; padding: 15px; border-radius: 10px; border-left: 6px solid #1e88e5; font-size: 18px; margin-bottom: 10px; }
+    .answer-display { background-color: #ffffff; padding: 15px; border-radius: 10px; border: 1px solid #dee2e6; min-height: 70px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center; font-size: 20px; margin-bottom: 10px; }
     </style>
 """, unsafe_allow_html=True)
 
 # --- 5. 導師全功能管理後台 ---
 if st.session_state.group_id == "ADMIN":
-    with st.expander("👨‍🏫 導師管理後台 V2.3 (全功能旗艦版)", expanded=True):
+    with st.expander("👨‍🏫 導師管理後台 V2.3.1", expanded=True):
         st.markdown('<div class="admin-box">', unsafe_allow_html=True)
         t_tabs = st.tabs(["📊 全班紀錄", "🏆 積分排行", "🔍 分組全覽", "⚠️ 難題分析", "🎯 多重錯題指派", "📌 任務進度追蹤"])
         
@@ -161,14 +163,20 @@ if st.session_state.group_id == "ADMIN":
                 wrong_counts.columns = ['題目ID', '錯誤次數']
                 st.bar_chart(wrong_counts.set_index('題目ID'))
 
-        with t_tabs[4]: # 多重錯題指派
-            st.subheader("🎯 篩選錯題並指派任務")
+        with t_tabs[4]: # 多重錯題指派 (補回「項目」)
+            st.subheader("🎯 依 冊/課/項目 篩選錯題並指派")
             if df_l is not None and not df_l.empty:
-                c1, c2, c3, c4 = st.columns(4)
+                c1, c2, c3, c4, c5 = st.columns(5)
                 f_y = c1.selectbox("年度", ["全部"] + sorted(list(df_q['年度'].unique())))
                 f_b = c2.selectbox("冊別", ["全部"] + sorted([int(x) for x in df_q['冊編號'].unique()]))
-                f_l_num = c3.selectbox("課次", ["全部"] + sorted([int(x) for x in df_q['課編號'].unique()]))
-                min_err = c4.number_input("錯誤門檻", min_value=1, value=1)
+                
+                # 動態篩選單元項目
+                u_df = df_q
+                if f_b != "全部": u_df = u_df[u_df['冊編號'] == f_b]
+                f_u = c3.selectbox("項目 (單元)", ["全部"] + sorted(list(u_df['單元'].unique())))
+                
+                f_l_num = c4.selectbox("課次", ["全部"] + sorted([int(x) for x in df_q['課編號'].unique()]))
+                min_err = c5.number_input("錯誤門檻", min_value=1, value=1)
                 
                 # 篩選邏輯
                 wrong_ids = df_l[df_l['結果'] == '❌']['題目ID'].value_counts()
@@ -178,24 +186,38 @@ if st.session_state.group_id == "ADMIN":
                 for qid in filtered_ids:
                     p = str(qid).split('_')
                     if len(p) >= 5:
-                        match = df_q[(df_q['年度'].astype(str).str.contains(p[0])) & (df_q['冊編號'].astype(str).str.contains(p[1])) & (df_q['單元']==p[2]) & (df_q['課編號'].astype(str).str.contains(p[3])) & (df_q['句編號'].astype(str).str.contains(p[4]))]
+                        match = df_q[(df_q['年度'].astype(str).str.contains(p[0])) & 
+                                     (df_q['冊編號'].astype(str).str.contains(p[1])) & 
+                                     (df_q['單元']==p[2]) & 
+                                     (df_q['課編號'].astype(str).str.contains(p[3])) & 
+                                     (df_q['句編號'].astype(str).str.contains(p[4]))]
                         if not match.empty:
                             row = match.iloc[0].to_dict()
-                            if (f_y == "全部" or row['年度'] == f_y) and (f_b == "全部" or row['冊編號'] == f_b) and (f_l_num == "全部" or row['課編號'] == f_l_num):
+                            # 進行多維度過濾
+                            if (f_y == "全部" or row['年度'] == f_y) and \
+                               (f_b == "全部" or row['冊編號'] == f_b) and \
+                               (f_u == "全部" or row['單元'] == f_u) and \
+                               (f_l_num == "全部" or row['課編號'] == f_l_num):
                                 row['題目ID'] = qid
                                 row['錯誤次數'] = wrong_ids[qid]
                                 final_q.append(row)
                 
                 if final_q:
                     df_final = pd.DataFrame(final_q)
-                    st.dataframe(df_final[['題目ID', '錯誤次數', '中文', '英文']], use_container_width=True)
-                    assign_to = st.selectbox("指派給：", ["全體"] + sorted(df_s['分組'].unique().tolist()) + sorted(df_s['姓名'].unique().tolist()))
-                    task_note = st.text_input("任務說明", value=f"錯題加強任務-{datetime.now().strftime('%m%d')}")
-                    if st.button("📢 發佈任務"):
+                    st.write(f"🔍 符合條件的錯題共 {len(df_final)} 題：")
+                    st.dataframe(df_final[['題目ID', '錯誤次數', '單元', '中文', '英文']], use_container_width=True)
+                    
+                    st.divider()
+                    col_tgt, col_msg = st.columns(2)
+                    assign_to = col_tgt.selectbox("指派給：", ["全體"] + sorted(df_s['分組'].unique().tolist()) + sorted(df_s['姓名'].unique().tolist()))
+                    task_note = col_msg.text_input("任務說明", value=f"{f_b if f_b!='全部' else ''}冊{f_u if f_u!='全部' else ''}錯題加強")
+                    
+                    if st.button("📢 確認發佈任務", type="primary"):
                         new_task = pd.DataFrame([{"對象 (分組/姓名)": assign_to, "任務類型": "錯題加強", "題目ID清單": ", ".join(df_final['題目ID'].tolist()), "說明文字": task_note, "指派時間": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}])
                         conn.update(worksheet="assignments", data=pd.concat([df_a, new_task], ignore_index=True))
-                        st.success("任務已指派！")
-                else: st.warning("查無符合條件錯題")
+                        st.success("✅ 任務已成功指派至 Google Sheets！")
+                        st.cache_data.clear()
+                else: st.warning("目前範圍內查無符合條件的錯題。")
 
         with t_tabs[5]: # 任務進度追蹤
             if not df_a.empty:
@@ -206,15 +228,15 @@ if st.session_state.group_id == "ADMIN":
                     st.dataframe(res[['時間', '姓名', '題目ID', '結果']], use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
-# --- 6. 學生端任務與練習邏輯 ---
+# --- 6. 學生端接收任務 ---
 st.title(f"👋 {st.session_state.user_name}")
 
 if df_a is not None:
     my_tasks = df_a[(df_a['對象 (分組/姓名)'] == st.session_state.user_name) | (df_a['對象 (分組/姓名)'] == st.session_state.group_id) | (df_a['對象 (分組/姓名)'] == "全體")]
     if not my_tasks.empty:
         task = my_tasks.iloc[-1]
-        st.info(f"🎯 **任務**：{task['說明文字']}")
-        if st.button("⚡ 開始執行任務"):
+        st.info(f"🎯 **老師指派任務**：{task['說明文字']}")
+        if st.button("⚡ 開始練習老師指派的任務", type="primary"):
             q_ids = str(task['題目ID清單']).split(', ')
             task_quiz = []
             for qid in q_ids:
@@ -223,7 +245,7 @@ if df_a is not None:
                 if not match.empty: task_quiz.append(match.iloc[0].to_dict())
             st.session_state.quiz_list = task_quiz; st.session_state.quiz_loaded = True; reset_quiz(); st.rerun()
 
-# [練習邏輯與 V2.2 相同，維持題目重組與檢查功能]
+# --- 7. 題目重組練習邏輯 ---
 if st.session_state.get('quiz_loaded') and not st.session_state.get('finished'):
     q = st.session_state.quiz_list[st.session_state.q_idx]
     st.session_state.current_qid = f"{int(q['年度'])}_{int(q['冊編號'])}_{q['單元']}_{int(q['課編號'])}_{int(q['句編號'])}"
@@ -240,9 +262,9 @@ if st.session_state.get('quiz_loaded') and not st.session_state.get('finished'):
                 st.session_state.ans.append(t); st.session_state.used_history.append(i); st.rerun()
 
     c_btns = st.columns(2)
-    if c_btns[0].button("🔄 重填"): st.session_state.ans, st.session_state.used_history = [], []; st.rerun()
+    if c_btns[0].button("🔄 重填", use_container_width=True): st.session_state.ans, st.session_state.used_history = [], []; st.rerun()
     if len(st.session_state.ans) == len(tokens):
-        if c_btns[1].button("✅ 檢查答案", type="primary"):
+        if c_btns[1].button("✅ 檢查答案", type="primary", use_container_width=True):
             is_ok = "".join(st.session_state.ans).lower() == str(q['英文']).replace(" ","").lower()
             log_event("作答", detail=" ".join(st.session_state.ans), result="✅" if is_ok else "❌")
             if is_ok:
@@ -252,6 +274,7 @@ if st.session_state.get('quiz_loaded') and not st.session_state.get('finished'):
             else: st.error(f"正確答案: {q['英文']}")
 
 elif st.session_state.get('finished'):
-    st.balloons(); st.success("任務完成！"); st.button("回選單", on_click=lambda: st.session_state.update({"quiz_loaded":False}))
+    st.balloons(); st.success("任務完成！"); 
+    if st.button("回選單"): st.session_state.quiz_loaded = False; st.rerun()
 
 st.caption(f"Ver {VERSION}")
