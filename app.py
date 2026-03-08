@@ -1,23 +1,22 @@
 # ==============================================================================
 # 🧩 英文重組練習旗艦版 (English Sentence Scramble App)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 1.7.6
+# 📌 版本編號 (VERSION): 1.7.7
 # 📅 更新日期: 2026-03-08
 #
 # 📜 【GitHub 開發日誌 & 版本功能說明】
 # ------------------------------------------------------------------------------
+# V1.7.7 [2026-03-08]: 
+#   - 修復 ValueError：強化數據過濾邏輯，自動跳過非數字儲存格。
+#   - 增強型 to_int_list 函數，確保下拉選單不因 Excel 雜質而崩潰。
 # V1.7.6 [2026-03-08]: 
-#   - 程式碼內部新增完整版本功能註解；優化設定區與題ID數字整數化顯示。
+#   - 內建版本功能說明區塊；全系統數字顯示整數化。
 # V1.7.5 [2026-03-07]: 
-#   - 修正同組狀態邏輯：精確列出 10 分鐘內在線組員與「最近 2 筆作答紀錄」。
+#   - 強化同組即時動態：精確顯示 10 分鐘內在線組員與「最近 2 筆作答紀錄」。
 # V1.7.4 [2026-03-07]: 
-#   - 效能大手術：改採非同步背景寫入與雙層快取，解決按鈕反應慢與 Crash 問題。
-# V1.7.3 [2026-03-07]: 
-#   - 視覺回歸：恢復 V1.6.7 的單列寬間距顯示與四功能鍵併排佈局。
+#   - 效能優化：改採非同步背景寫入與雙層快取，解決反應慢與 Crash 問題。
 # V1.7.0 [2026-03-06]: 
-#   - 系統旗艦化：新增 EA 帳號登入系統、全校跑馬燈、Google Sheets 雙向紀錄。
-# V1.6.7 [2026-03-05]: 
-#   - 優化操作感：新增 [ ➖ ] 與 [ ➕ ] 題數精確控制按鈕。
+#   - 系統旗艦化：新增 EA 登入系統、全校跑馬燈、Google Sheets 雙向紀錄。
 # ==============================================================================
 
 import streamlit as st
@@ -27,7 +26,7 @@ import re
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "1.7.6"
+VERSION = "1.7.7"
 
 st.set_page_config(page_title=f"英文重組 V{VERSION}", layout="centered")
 
@@ -74,7 +73,6 @@ def log_event(action_type, detail="", result="-", duration=0):
             "分組": st.session_state.group_id, "題目ID": qid, "動作": action_type,
             "內容": detail, "結果": result, "費時": duration
         }])
-        # 僅關鍵動作寫入雲端，減少延遲
         if action_type in ["作答", "登入", "登出"]:
             old_logs = conn.read(worksheet="logs", ttl=0)
             updated_logs = pd.concat([old_logs, new_row], ignore_index=True)
@@ -92,7 +90,7 @@ def reset_quiz_state():
 if 'logged_in' not in st.session_state: st.session_state.logged_in = False
 
 if not st.session_state.logged_in:
-    st.title("🧩 英文句子重組系統")
+    st.title("🧩 英文句子重組練習系統")
     st.write("---")
     col1, col2 = st.columns([1, 4])
     col1.markdown("### EA")
@@ -118,18 +116,16 @@ if not st.session_state.logged_in:
 # --- 5. 正式主畫面 ---
 st.title("🧩 英文句子重組練習")
 
-# 畫面上方的功能手冊
 with st.expander("ℹ️ 系統功能說明 (User Manual)", expanded=False):
     st.markdown(f"""
     ### V{VERSION} 功能簡介
-    1. **EA 登入系統**: 透過學號登入，系統將自動記錄您的練習進度。
-    2. **全校跑馬燈**: 頂端顯示最新答對動態，快來讓你的名字上榜！
-    3. **同組動態**: 側邊欄顯示目前在線同學及最近 2 筆作答紀錄。
-    4. **行為追蹤**: 自動紀錄「退回、換題、費時」等數據，協助老師優化教材。
-    5. **操作優化**: 支援 [ ➖ / ➕ ] 題數控制，單列寬間距顯示，手機操作更順手。
+    1. **EA 登入系統**: 學號登入，自動記錄練習進度與費時。
+    2. **數據防錯機制**: 強化 Google Sheets 讀取容錯，自動處理非數字儲存格。
+    3. **全校跑馬燈**: 頂端顯示最新答對英雄榜，營造熱烈氣氛。
+    4. **同組動態**: 側邊欄即時掌握組員在線狀態與最近 2 筆作答。
+    5. **操作優化**: 手機友善的 [ ➖ / ➕ ] 題數控制與寬間距按鈕設計。
     """)
 
-# 跑馬燈
 logs_df = load_logs_data()
 if logs_df is not None:
     recent_all = logs_df[logs_df['結果'] == '✅'].tail(3)
@@ -138,7 +134,6 @@ if logs_df is not None:
 
 df_q, _ = load_static_data()
 
-# 側邊欄
 with st.sidebar:
     st.title(f"👋 {st.session_state.user_name}")
     if st.button("🚪 登出系統"):
@@ -157,10 +152,22 @@ with st.sidebar:
             for _, row in recent_2.iterrows():
                 st.info(f"👤 {row['姓名']}\n\n⏰ {row['時間'].strftime('%H:%M')} | 題ID: {row['題目ID']} ({row['結果']})")
 
-# 練習邏輯
 if df_q is not None:
     with st.expander("⚙️ 範圍與題數設定", expanded=True):
-        def to_int_list(df, col): return sorted([int(x) for x in df[col].unique() if pd.notnull(x)])
+        # --- V1.7.7 強化防錯函數 ---
+        def to_int_list(df, col):
+            try:
+                raw_values = df[col].unique()
+                clean_values = []
+                for x in raw_values:
+                    if pd.notnull(x):
+                        try:
+                            clean_values.append(int(float(x)))
+                        except (ValueError, TypeError):
+                            continue 
+                return sorted(list(set(clean_values)))
+            except: return []
+
         c1, c2 = st.columns(2)
         sel_y = c1.selectbox("年度", to_int_list(df_q, '年度'))
         sel_b = c2.selectbox("冊別", to_int_list(df_q[df_q['年度']==sel_y], '冊編號'))
@@ -189,9 +196,8 @@ if df_q is not None:
     if not base_df.empty and not st.session_state.finished:
         if st.session_state.q_idx < len(quiz_list):
             q = quiz_list[st.session_state.q_idx]
-            # 題目ID 移除小數點
-            st.session_state.current_qid = f"{int(q['年度'])}_{int(q['冊編號'])}_{int(q['課編號'])}_{int(q['句編號'])}"
-            st.markdown(f'<div class="hint-box"><span class="q-meta">題號 {st.session_state.q_idx + 1} (句編號 {int(q["句編號"])})</span>&nbsp;&nbsp;&nbsp;{q["中文"]}</div>', unsafe_allow_html=True)
+            st.session_state.current_qid = f"{int(float(q['年度']))}_{int(float(q['冊編號']))}_{int(float(q['課編號']))}_{int(float(q['句編號']))}"
+            st.markdown(f'<div class="hint-box"><span class="q-meta">題號 {st.session_state.q_idx + 1} (句編號 {int(float(q["句編號"]))})</span>&nbsp;&nbsp;&nbsp;{q["中文"]}</div>', unsafe_allow_html=True)
             st.markdown(f'<div class="answer-display">{" ".join(st.session_state.ans) if st.session_state.ans else "......"}</div>', unsafe_allow_html=True)
 
             nav = st.columns(4)
