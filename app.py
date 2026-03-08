@@ -1,16 +1,15 @@
 # ==============================================================================
 # 🧩 英文重組練習旗艦版 (English Sentence Scramble App)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 1.8.5
+# 📌 版本編號 (VERSION): 1.8.6
 # 📅 更新日期: 2026-03-08
 #
 # 📜 【GitHub 開發日誌】
 # ------------------------------------------------------------------------------
-# V1.8.5 [2026-03-08]: 
-#   - 修正登入介面：縮小登入區域，使其置中美化，不再橫跨整頁。
-#   - 修正題號 ID：確保顯示完整格式「年度_冊_單元中文_課_句」，並去除所有 .0。
-# V1.8.4 [2026-03-08]: 
-#   - 強化單元文字保留邏輯，支援閱讀、對話等中文內容。
+# V1.8.6 [2026-03-08]: 
+#   - 修復 NameError: 統一資料讀取函數名稱為 load_all_data。
+#   - 精緻化登入介面：縮小寬度並置中顯示。
+#   - 題號 ID 格式化：確保顯示「年度_冊_單元中文_課_句」且無小數點。
 # ==============================================================================
 
 import streamlit as st
@@ -20,7 +19,7 @@ import re
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "1.8.5"
+VERSION = "1.8.6"
 
 st.set_page_config(page_title=f"英文重組 V{VERSION}", layout="wide")
 
@@ -36,7 +35,7 @@ def load_all_data():
         for col in ['年度', '冊編號', '課編號', '句編號']:
             if col in df_q.columns:
                 df_q[col] = pd.to_numeric(df_q[col], errors='coerce')
-        # 單元：保留中文
+        # 單元：保留中文並清理
         if '單元' in df_q.columns:
             df_q['單元'] = df_q['單元'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
         return df_q.dropna(subset=['英文', '中文', '年度']), df_s
@@ -82,24 +81,24 @@ def reset_quiz():
     st.session_state.start_time = datetime.now()
     st.session_state.finished = False
 
-# --- 3. 美化登入系統 ---
+# --- 3. 美化登入系統 (置中縮小) ---
 if 'logged_in' not in st.session_state: st.session_state.logged_in = False
 
 if not st.session_state.logged_in:
-    # 建立置中且縮小的登入區域
-    _, login_col, _ = st.columns([1, 1.5, 1])
-    with login_col:
+    # 建立 1:1.2:1 的比例讓中間登入框佔據約 1/3 寬度
+    left_space, center_login, right_space = st.columns([1, 1.2, 1])
+    
+    with center_login:
+        st.markdown("<br><br>", unsafe_allow_html=True) # 增加頂部間距
         st.title("🧩 學生登入系統")
-        st.markdown("---")
         with st.container(border=True):
-            col_id1, col_id2 = st.columns([1, 4])
-            col_id1.subheader("EA")
-            input_id = col_id2.text_input("帳號 (4位數字)", max_chars=4, label_visibility="collapsed")
+            col_ea, col_input = st.columns([1, 4])
+            col_ea.markdown("### EA")
+            input_id = col_input.text_input("帳號 (4位數字)", max_chars=4, label_visibility="collapsed", placeholder="學號後四碼")
             input_pw = st.text_input("密碼 (4位數字)", type="password", max_chars=4, placeholder="請輸入密碼")
             
             if st.button("🚀 確認登入", type="primary", use_container_width=True):
-                _, df_s = load_static_data() # 呼叫主資料
-                df_q, df_s = load_all_data()
+                _, df_s = load_all_data() # 修正後的呼叫名稱
                 if df_s is not None:
                     df_s['帳號_c'] = df_s['帳號'].astype(str).str.split('.').str[0].str.strip().str.zfill(4)
                     df_s['密碼_c'] = df_s['密碼'].astype(str).str.split('.').str[0].str.strip().str.zfill(4)
@@ -187,7 +186,7 @@ if df_q is not None:
         quiz_list = st.session_state.quiz_list
         if st.session_state.q_idx < len(quiz_list):
             q = quiz_list[st.session_state.q_idx]
-            # 📌 格式化 ID：確保年度_冊_單元_課_句 全部為整數格式字串
+            # 📌 格式化 ID：年度_冊_單元中文_課_句 (保證全整數/字串，無 .0)
             st.session_state.current_qid = f"{int(q['年度'])}_{int(q['冊編號'])}_{q['單元']}_{int(q['課編號'])}_{int(q['句編號'])}"
             
             st.markdown(f'<div class="hint-box"><span style="color:#1e88e5; font-weight:bold;">題號 {st.session_state.q_idx + 1} (句編號 {int(q["句編號"])})</span><br>{q["中文"]}</div>', unsafe_allow_html=True)
