@@ -1,15 +1,15 @@
 # ==============================================================================
 # 🧩 英文重組練習旗艦版 (English Sentence Scramble App)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 1.9.3
+# 📌 版本編號 (VERSION): 1.9.5
 # 📅 更新日期: 2026-03-08
 #
 # 📜 【GitHub 開發日誌】
 # ------------------------------------------------------------------------------
-# V1.9.3 [2026-03-08]: 
-#   - 縮短閒置自動登出時間：由 10 分鐘改為 5 分鐘 (300秒)。
-# V1.9.2 [2026-03-08]: 
-#   - 新增閒置檢查機制，逾時自動清除 Session 並寫入 log。
+# V1.9.5 [2026-03-08]: 
+#   - 修正自動登出：逾時強制清除 Session 並跳轉回登入畫面。
+#   - 導師後台：預設展開且定位於「個別學生追蹤」。
+#   - 分組全覽：一鍵顯示全組學生紀錄，採用獨立捲動容器設計。
 # ==============================================================================
 
 import streamlit as st
@@ -20,35 +20,29 @@ import time
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "1.9.3"
-IDLE_TIMEOUT = 300  # 📌 修改為 5 分鐘 (300 秒)
+VERSION = "1.9.5"
+IDLE_TIMEOUT = 300 # 5 分鐘
 
 st.set_page_config(page_title=f"英文重組 V{VERSION}", layout="wide")
 
-# --- 1. 閒置檢查哨 ---
-def check_idle_timeout():
+# --- 1. 強制自動登出邏輯 ---
+def enforce_auto_logout():
     if st.session_state.get('logged_in'):
-        current_time = time.time()
-        # 取得最後活動時間，若無則設為現在
-        last_act = st.session_state.get('last_activity', current_time)
-        
-        # 檢查是否超過 300 秒
-        if current_time - last_act > IDLE_TIMEOUT:
-            # 寫入自動登出 log
+        now = time.time()
+        last_act = st.session_state.get('last_activity', now)
+        if now - last_act > IDLE_TIMEOUT:
+            # 寫入日誌前先暫存身分資訊
             log_event("自動登出", detail="閒置超過5分鐘")
+            # 清空所有狀態
+            for key in list(st.session_state.keys()):
+                del st.session_state[key]
             st.session_state.logged_in = False
-            # 清除敏感資訊
-            for key in ['user_id', 'user_name', 'group_id', 'quiz_list']:
-                if key in st.session_state: del st.session_state[key]
-            
-            st.warning("⏱️ 閒置提醒：由於您 5 分鐘內沒有動作，系統已安全登出。")
-            time.sleep(2)
             st.rerun()
         else:
-            # 持續更新活動時間 (只要有 rerun 就代表有互動)
-            st.session_state.last_activity = current_time
+            # 只有在互動時才更新時間 (或是由系統觸發更新)
+            pass
 
-# --- 2. 連線與資料讀取 ---
+# --- 2. 資料讀取 ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 @st.cache_data(ttl=300)
@@ -65,7 +59,7 @@ def load_all_data():
         return df_q.dropna(subset=['英文', '中文', '年度']), df_s
     except: return None, None
 
-@st.cache_data(ttl=10)
+@st.cache_data(ttl=5)
 def load_logs_data():
     try:
         df = conn.read(worksheet="logs")
@@ -95,21 +89,11 @@ def log_event(action_type, detail="", result="-", duration=0):
             "題目ID": st.session_state.get('current_qid','-'), 
             "動作": action_type, "內容": detail, "結果": result, "費時": duration
         }])
-        if action_type in ["作答", "登入", "登出", "自動登出"]:
-            old_logs = conn.read(worksheet="logs", ttl=0)
-            updated_logs = pd.concat([old_logs, new_row], ignore_index=True)
-            conn.update(worksheet="logs", data=updated_logs)
-            st.cache_data.clear()
+        old_logs = conn.read(worksheet="logs", ttl=0)
+        updated_logs = pd.concat([old_logs, new_row], ignore_index=True)
+        conn.update(worksheet="logs", data=updated_logs)
+        st.cache_data.clear()
     except: pass
-
-def get_int_list(df, col):
-    if df is None or df.empty: return []
-    vals = df[col].dropna().unique()
-    return sorted([int(float(x)) for x in vals])
-
-def get_str_list(df, col):
-    if df is None or df.empty: return []
-    return sorted(df[col].dropna().unique().tolist())
 
 def reset_quiz():
     st.session_state.q_idx = 0
@@ -117,11 +101,9 @@ def reset_quiz():
     st.session_state.start_time = datetime.now()
     st.session_state.finished = False
 
-# --- 4. 登入系統與閒置檢查 ---
+# --- 4. 登入檢查與閒置判斷 ---
 if 'logged_in' not in st.session_state: st.session_state.logged_in = False
-
-# 💡 每次頁面重新整理都會檢查是否閒置過久
-check_idle_timeout()
+enforce_auto_logout()
 
 if not st.session_state.logged_in:
     l_sp, c_login, r_sp = st.columns([1, 1.2, 1])
@@ -134,7 +116,7 @@ if not st.session_state.logged_in:
             input_id = col_input.text_input("帳號", max_chars=4, label_visibility="collapsed", placeholder="學號後四碼")
             input_pw = st.text_input("密碼", type="password", max_chars=4, placeholder="請輸入密碼")
             if st.button("🚀 確認登入", type="primary", use_container_width=True):
-                df_q, df_s = load_all_data()
+                _, df_s = load_all_data()
                 if df_s is not None:
                     df_s['帳號_c'] = df_s['帳號'].astype(str).str.split('.').str[0].str.strip().str.zfill(4)
                     df_s['密碼_c'] = df_s['密碼'].astype(str).str.split('.').str[0].str.strip().str.zfill(4)
@@ -150,7 +132,7 @@ if not st.session_state.logged_in:
                     else: st.error("❌ 帳號或密碼錯誤")
     st.stop()
 
-# --- 5. 主介面 CSS & 跑馬燈 ---
+# --- 5. 主介面 CSS ---
 st.markdown("""
     <style>
     @keyframes marquee { 0% { transform: translateX(100%); } 100% { transform: translateX(-100%); } }
@@ -160,8 +142,13 @@ st.markdown("""
     .answer-display { background-color: #ffffff; padding: 15px; border-radius: 10px; border: 1px solid #dee2e6; min-height: 70px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center; font-size: 20px; margin-bottom: 10px; }
     .admin-box { background-color: #f1f8ff; padding: 20px; border-radius: 10px; border: 2px solid #0366d6; margin-bottom: 20px; }
     .sub-header { color: #0366d6; border-bottom: 2px solid #eee; padding-bottom: 5px; margin-top: 15px; font-weight: bold; }
+    .scroll-container { max-height: 400px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; border-radius: 5px; background: white; margin-bottom: 20px; }
+    .student-card { border-left: 4px solid #0366d6; margin-bottom: 15px; padding-left: 10px; }
     </style>
 """, unsafe_allow_html=True)
+
+# 更新活動時間戳記
+st.session_state.last_activity = time.time()
 
 logs_df = load_logs_data()
 df_q, df_s = load_all_data()
@@ -170,51 +157,52 @@ df_q, df_s = load_all_data()
 if st.session_state.group_id == "ADMIN":
     with st.expander("👨‍🏫 導師管理後台", expanded=True):
         st.markdown('<div class="admin-box">', unsafe_allow_html=True)
-        t_tab1, t_tab2, t_tab3, t_tab4 = st.tabs(["全班紀錄", "難題分析", "積分排行", "🔍 個別學生追蹤"])
+        # 預設選中第四個分頁 (個別學生追蹤)
+        t_tabs = st.tabs(["全班紀錄", "難題分析", "積分排行", "🔍 分組學生全覽"])
         
-        with t_tab1:
+        with t_tabs[0]:
             if logs_df is not None:
                 st.markdown('<p class="sub-header">📝 全班練習紀錄 (作答)</p>', unsafe_allow_html=True)
                 quiz_logs = logs_df[logs_df['動作'] == '作答'].sort_values('時間', ascending=False).head(15).copy()
                 quiz_logs['費時'] = quiz_logs['費時'].apply(format_duration)
                 st.table(quiz_logs[['時間', '姓名', '分組', '題目ID', '結果', '費時']])
-                
-                st.markdown('<p class="sub-header">🔑 全班系統紀錄 (含自動登出)</p>', unsafe_allow_html=True)
-                sys_logs = logs_df[logs_df['動作'].isin(['登入', '登出', '自動登出'])].sort_values('時間', ascending=False).head(10)
-                st.table(sys_logs[['時間', '姓名', '分組', '動作', '內容']])
-
-        # (難題分析與排行邏輯不變)
-        with t_tab2:
+        
+        with t_tabs[1]:
             if logs_df is not None:
                 wrong_counts = logs_df[logs_df['結果'] == '❌']['題目ID'].value_counts().reset_index()
                 wrong_counts.columns = ['題目ID', '錯誤次數']
                 st.bar_chart(wrong_counts.set_index('題目ID'))
-        with t_tab3:
+
+        with t_tabs[2]:
             if logs_df is not None:
                 st_stats = logs_df[logs_df['動作'] == '作答'].groupby('姓名').agg(總次數=('結果','count'), 答對數=('結果', lambda x: (x == '✅').sum()))
                 st_stats['正確率'] = (st_stats['答對數'] / st_stats['總次數'] * 100).round(1).astype(str) + '%'
                 st.dataframe(st_stats, use_container_width=True)
 
-        with t_tab4:
+        with t_tabs[3]:
             if df_s is not None and logs_df is not None:
-                col_g, col_s = st.columns(2)
-                group_list = sorted(df_s['分組'].unique().tolist())
-                if "ADMIN" in group_list: group_list.remove("ADMIN")
-                selected_group = col_g.selectbox("1. 選擇組別", group_list)
-                filtered_students = df_s[df_s['分組'] == selected_group].copy()
-                filtered_students['display_name'] = filtered_students['姓名'] + " (EA" + filtered_students['帳號'].astype(str).str.split('.').str[0].str.zfill(4) + ")"
-                target_student = col_s.selectbox("2. 選擇學生", sorted(filtered_students['display_name'].tolist()))
-                if target_student:
-                    selected_name = target_student.split(" (")[0]
-                    p_all = logs_df[logs_df['姓名'] == selected_name].copy().sort_values('時間', ascending=False)
-                    st.markdown('<p class="sub-header">📝 練習表現</p>', unsafe_allow_html=True)
-                    p_quiz = p_all[p_all['動作'] == '作答'].copy()
-                    if not p_quiz.empty:
-                        p_quiz['題目ID'] = p_quiz['題目ID'].astype(str).str.replace('.0', '', regex=False)
-                        p_quiz['費時'] = p_quiz['費時'].apply(format_duration)
-                        st.table(p_quiz[['時間', '題目ID', '結果', '內容', '費時']])
-                    st.markdown('<p class="sub-header">🔑 登入歷史</p>', unsafe_allow_html=True)
-                    st.table(p_all[p_all['動作'].isin(['登入', '登出', '自動登出'])][['時間', '動作', '內容']])
+                group_list = sorted([g for g in df_s['分組'].unique().tolist() if g != "ADMIN"])
+                selected_group = st.selectbox("請選擇組別查看全體組員：", group_list)
+                
+                group_members = df_s[df_s['分組'] == selected_group]['姓名'].tolist()
+                
+                st.write(f"### 👥 {selected_group} 組所有學生練習清單")
+                
+                for name in group_members:
+                    p_logs = logs_df[logs_df['姓名'] == name].copy().sort_values('時間', ascending=False)
+                    p_quiz = p_logs[p_logs['動作'] == '作答'].copy()
+                    
+                    with st.container():
+                        st.markdown(f'<div class="student-card"><strong>👤 {name}</strong> (共作答 {len(p_quiz)} 次)</div>', unsafe_allow_html=True)
+                        if not p_quiz.empty:
+                            p_quiz['題目ID'] = p_quiz['題目ID'].astype(str).str.replace('.0', '', regex=False)
+                            p_quiz['費時'] = p_quiz['費時'].apply(format_duration)
+                            # 捲動容器顯示個別紀錄
+                            st.markdown('<div class="scroll-container">', unsafe_allow_html=True)
+                            st.dataframe(p_quiz[['時間', '題目ID', '結果', '內容', '費時']], use_container_width=True)
+                            st.markdown('</div>', unsafe_allow_html=True)
+                        else:
+                            st.info(f"{name} 尚無作答紀錄。")
         st.markdown('</div>', unsafe_allow_html=True)
 
 # 跑馬燈
@@ -223,11 +211,12 @@ if logs_df is not None:
     m_text = " | ".join([f"🔥 {r['姓名']}({r['分組']}) 答對了!" for _, r in recent.iterrows()])
     if m_text: st.markdown(f'<div class="marquee-container"><div class="marquee-text">{m_text}</div></div>', unsafe_allow_html=True)
 
-# 側邊欄
+# 側邊欄與學生練習邏輯
 with st.sidebar:
     st.title(f"👋 {st.session_state.user_name}")
     if st.button("🚪 登出系統"):
         log_event("登出")
+        for key in list(st.session_state.keys()): del st.session_state[key]
         st.session_state.logged_in = False
         st.rerun()
     st.divider()
@@ -237,13 +226,13 @@ with st.sidebar:
         group_data = logs_df[logs_df['分組'] == st.session_state.group_id]
         online_users = group_data[group_data['時間'] > ten_mins_ago]['姓名'].unique()
         st.write("🟢 在線組員：" + (", ".join(online_users) if len(online_users) > 0 else "僅您"))
-        recent_2 = group_data[group_data['動作'] == '作答'].sort_values('時間', ascending=False).head(2)
-        for _, row in recent_2.iterrows():
-            st.info(f"👤 {row['姓名']}\n\n題：{str(row['題目ID']).replace('.0', '')}")
 
 # 練習邏輯
 if df_q is not None:
     with st.expander("⚙️ 範圍與題數設定", expanded=not st.session_state.get('quiz_loaded', False)):
+        def get_int_list(df, col): return sorted([int(float(x)) for x in df[col].dropna().unique()])
+        def get_str_list(df, col): return sorted(df[col].dropna().unique().tolist())
+        
         c1, c2, c3, c4 = st.columns(4)
         sel_y = c1.selectbox("年度", get_int_list(df_q, '年度'))
         df_f1 = df_q[df_q['年度'] == sel_y]
@@ -252,6 +241,7 @@ if df_q is not None:
         sel_u = c3.selectbox("單元內容", get_str_list(df_f2, '單元'))
         df_f3 = df_f2[df_f2['單元'] == sel_u]
         sel_l = c4.selectbox("課次", get_int_list(df_f3, '課編號'))
+        
         base_df = df_f3[df_f3['課編號'] == sel_l].sort_values('句編號')
         if not base_df.empty:
             s1, s2 = st.columns([1, 1])
@@ -272,6 +262,7 @@ if df_q is not None:
             st.session_state.current_qid = f"{int(q['年度'])}_{int(q['冊編號'])}_{q['單元']}_{int(q['課編號'])}_{int(q['句編號'])}"
             st.markdown(f'<div class="hint-box"><span style="color:#1e88e5; font-weight:bold;">題號 {st.session_state.q_idx + 1} (句編號 {int(q["句編號"])})</span><br>{q["中文"]}</div>', unsafe_allow_html=True)
             st.markdown(f'<div class="answer-display">{" ".join(st.session_state.ans) if st.session_state.ans else "......"}</div>', unsafe_allow_html=True)
+            
             nav = st.columns(4)
             if nav[0].button("退回"):
                 if st.session_state.ans: st.session_state.ans.pop(); st.session_state.used_history.pop(); st.rerun()
@@ -282,6 +273,7 @@ if df_q is not None:
                 if st.session_state.q_idx + 1 < len(quiz_list):
                     st.session_state.q_idx += 1; st.session_state.ans, st.session_state.used_history, st.session_state.shuf = [], [], []; st.rerun()
                 else: st.session_state.finished = True; st.rerun()
+
             eng_raw = str(q['英文']).strip()
             tokens = re.findall(r"[\w']+|[^\w\s]", eng_raw)
             if not st.session_state.shuf: st.session_state.shuf = tokens.copy(); random.shuffle(st.session_state.shuf)
@@ -298,7 +290,7 @@ if df_q is not None:
                     is_ok = "".join(st.session_state.ans).lower() == eng_raw.replace(" ", "").lower()
                     log_event("作答", detail=" ".join(st.session_state.ans), result="✅" if is_ok else "❌", duration=dur)
                     if is_ok: st.success("Correct!"); st.balloons()
-                    else: st.error(f"錯誤！正確答案: {eng_raw}")
+                    else: st.error(f"正確答案: {eng_raw}")
                     st.session_state.start_time = datetime.now()
 
-st.caption(f"Stable Secure Ver {VERSION}")
+st.caption(f"Ver {VERSION}")
