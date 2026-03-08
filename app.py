@@ -1,15 +1,15 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.6.9 主頁紀錄框強化版)
+# 🧩 英文全能練習系統 (V2.7.0 穩定紀錄版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.6.9
+# 📌 版本編號 (VERSION): 2.7.0
 # 📅 更新日期: 2026-03-08
 #
 # 📜 【GitHub 開發日誌】
 # ------------------------------------------------------------------------------
-# V2.6.9 [2026-03-08]: 
-#   - 移除側邊欄紀錄，將「個人學習紀錄」改至主畫面下方，並支援獨立捲動。
-#   - 優化 UI 配置，紀錄框採用倒序排列（最新紀錄置頂）。
-#   - 維持 V2.6.7 的極速回饋與 V2.6.6 的精確排序。
+# V2.7.0 [2026-03-08]: 
+#   - 修復 AttributeError: 增加題目ID解析安全性檢查，防止非題目紀錄導致崩潰。
+#   - 優化主頁紀錄框：修正時間顯示格式，強化 ✅/❌ 視覺對比。
+#   - 穩定手動範圍設定與自動排序。
 # ==============================================================================
 
 import streamlit as st
@@ -20,7 +20,7 @@ import time
 from datetime import datetime
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "2.6.9"
+VERSION = "2.7.0"
 IDLE_TIMEOUT = 300 
 
 st.set_page_config(page_title=f"英文練習系統 V{VERSION}", layout="wide")
@@ -46,7 +46,6 @@ def load_dynamic_data():
     except: return None, None
 
 def log_event_fast(action_type, detail="", result="-"):
-    """極速模式：計算費時並存入暫存"""
     now_ts = time.time()
     start_ts = st.session_state.get('start_time_ts', now_ts)
     duration = round(now_ts - start_ts, 1)
@@ -64,7 +63,6 @@ def log_event_fast(action_type, detail="", result="-"):
     }
 
 def flush_pending_log():
-    """背景寫入：跳題或完成時上傳"""
     if st.session_state.get('pending_log'):
         try:
             old_logs = conn.read(worksheet="logs", ttl=0)
@@ -102,23 +100,23 @@ if not st.session_state.logged_in:
 st.markdown("""
 <style>
     .log-container {
-        max-height: 300px;
-        overflow-y: scroll;
+        max-height: 250px;
+        overflow-y: auto;
         background-color: #ffffff;
-        border: 1px solid #e0e0e0;
-        border-radius: 8px;
+        border: 2px solid #eeeeee;
+        border-radius: 10px;
         padding: 15px;
-        font-family: monospace;
     }
     .log-entry {
-        border-bottom: 1px dotted #ccc;
-        padding: 5px 0;
+        border-bottom: 1px solid #f0f0f0;
+        padding: 8px 0;
         font-size: 14px;
         display: flex;
         justify-content: space-between;
+        font-family: 'Courier New', Courier, monospace;
     }
-    .res-ok { color: green; font-weight: bold; }
-    .res-no { color: red; font-weight: bold; }
+    .res-ok { color: #28a745; font-weight: bold; }
+    .res-no { color: #dc3545; font-weight: bold; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -126,18 +124,15 @@ st.markdown("""
 df_q, df_s = load_static_data()
 df_a, df_l = load_dynamic_data()
 
-st.title(f"👋 {st.session_state.user_name} (組別：{st.session_state.group_id})")
+st.title(f"👋 {st.session_state.user_name}")
 
-# 側邊欄僅保留登出與基本資訊
 with st.sidebar:
     if st.button("🚪 登出系統", use_container_width=True):
         st.session_state.logged_in = False
         st.rerun()
-    st.caption(f"系統版本: {VERSION}")
 
-# [手動設定區 (邏輯同 V2.6.7)]
+# [手動設定區]
 with st.expander("⚙️ 設定練習範圍", expanded=not st.session_state.get('quiz_loaded', False)):
-    # ... (此處保留原有的版本、單元、年度、起始編號選擇器邏輯)
     c = st.columns(5)
     sv = c[0].selectbox("版本", sorted(df_q['版本'].unique()), key="sv")
     su = c[1].selectbox("項目", sorted(df_q[df_q['版本']==sv]['單元'].unique()), key="su")
@@ -150,10 +145,10 @@ with st.expander("⚙️ 設定練習範圍", expanded=not st.session_state.get(
         base['句編號_int'] = pd.to_numeric(base['句編號'], errors='coerce')
         base = base.sort_values('句編號_int')
         nums = base['句編號_int'].dropna().unique().tolist()
-        st.info(f"📊 該範圍共有 {len(base)} 題 | 編號：{int(min(nums))} ~ {int(max(nums))}")
+        st.info(f"📊 範圍內共 {len(base)} 題 | 編號：{int(min(nums))} ~ {int(max(nums))}")
         sc = st.columns(2)
         start = sc[0].number_input("起始句編號", int(min(nums)), int(max(nums)), int(min(nums)))
-        num = sc[1].number_input("預計練習題數", 1, 50, 10)
+        num = sc[1].number_input("練習題數", 1, 50, 10)
         if st.button("🚀 開始練習", use_container_width=True):
             st.session_state.quiz_list = base[base['句編號_int'] >= start].head(int(num)).to_dict('records')
             st.session_state.update({"q_idx": 0, "quiz_loaded": True, "ans": [], "used_history": [], "shuf": [], "show_analysis": False, "start_time_ts": time.time()})
@@ -177,7 +172,7 @@ if st.session_state.get('quiz_loaded') and not st.session_state.get('finished'):
             if cols[i].button(opt, key=f"opt_{i}", use_container_width=True, disabled=st.session_state.get('show_analysis', False)):
                 is_ok = (opt == clean_ans)
                 log_event_fast("單選", detail=opt, result="✅" if is_ok else "❌")
-                st.session_state.current_res = ("✅ 正確！" if is_ok else f"❌ 錯誤！正確答案是 ({clean_ans})")
+                st.session_state.current_res = ("✅ 正確！" if is_ok else f"❌ 錯誤！答案是 ({clean_ans})")
                 st.session_state.show_analysis = True
                 st.rerun()
         if st.session_state.get('show_analysis'):
@@ -191,7 +186,7 @@ if st.session_state.get('quiz_loaded') and not st.session_state.get('finished'):
                     st.rerun()
                 else: st.session_state.finished = True; st.rerun()
     else:
-        # 重組邏輯 (略，同 V2.6.7)
+        # 重組邏輯
         st.markdown(f'<div style="background:white; padding:15px; border-radius:10px; border:1px solid #ddd; min-height:70px; display:flex; flex-wrap:wrap; gap:8px; align-items:center; justify-content:center; font-size:22px;">'
                     f'{" ".join(st.session_state.ans) if st.session_state.ans else "......"}</div>', unsafe_allow_html=True)
         tk = re.findall(r"[\w']+|[^\w\s]", clean_ans)
@@ -215,33 +210,42 @@ if st.session_state.get('quiz_loaded') and not st.session_state.get('finished'):
                     st.rerun()
                 else: st.session_state.finished = True; st.rerun()
 
-# --- 6. 個人學習紀錄框 (主畫面下方，可捲動) ---
+# --- 6. 個人學習紀錄框 (修復解析崩潰 Bug) ---
 st.divider()
-st.subheader("📜 我的學習紀錄 (最新紀錄在最上面)")
+st.subheader("📜 最近練習紀錄")
 
 if df_l is not None and not df_l.empty:
     my_logs = df_l[df_l['帳號'] == st.session_state.user_id].copy()
     if not my_logs.empty:
-        my_logs = my_logs.sort_index(ascending=False) # 倒序排列
+        my_logs = my_logs.sort_index(ascending=False)
         
-        # 💡 HTML 捲動框設計
         log_html = '<div class="log-container">'
         for _, row in my_logs.iterrows():
+            # 💡 安全解析題號
+            raw_qid = str(row['題目ID'])
+            if "_" in raw_qid:
+                item_display = f"題: {raw_qid.split('_')[-1]}"
+            else:
+                item_display = f"{row['動作']}" # 非題目時顯示動作(如登入)
+                
             res_class = "res-ok" if row['結果'] == "✅" else "res-no"
+            time_str = str(row['時間']).split(' ')[-1][:8] # 取得 00:00:00
+            
             log_html += f'''
             <div class="log-entry">
-                <span>🕒 {str(row['時間'])[11:19]} | <b>題號: {row['題目ID'].split('_')[-1]}</b></span>
-                <span>動作: {row['動作']} | 結果: <span class="{res_class}">{row['結果']}</span> | 費時: {row['費時']}s</span>
+                <span>🕒 {time_str} | <b>{item_display}</b></span>
+                <span>結果: <span class="{res_class}">{row['結果']}</span> | 費時: {row['費時']}s</span>
             </div>
             '''
         log_html += '</div>'
         st.markdown(log_html, unsafe_allow_html=True)
     else:
-        st.info("尚無練習紀錄，開始練習吧！")
+        st.info("尚無紀錄")
 
 if st.session_state.get('finished'):
-    st.balloons()
-    st.success("🎉 太棒了！已完成所有練習！")
-    if st.button("返回設定頁"):
+    st.balloons(); st.success("🎉 完成！")
+    if st.button("返回設定"):
         st.session_state.update({"quiz_loaded": False, "finished": False, "q_idx": 0})
         st.rerun()
+
+st.caption(f"Stable Log Ver {VERSION}")
