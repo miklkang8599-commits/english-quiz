@@ -1,16 +1,14 @@
 # ==============================================================================
 # 🧩 英文重組練習旗艦版 (English Sentence Scramble App)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 1.8.7
+# 📌 版本編號 (VERSION): 1.8.8
 # 📅 更新日期: 2026-03-08
 #
 # 📜 【GitHub 開發日誌】
 # ------------------------------------------------------------------------------
-# V1.8.7 [2026-03-08]: 
-#   - 新增「老師檢視模式」：限 ADMIN 權限帳號可開啟管理後台。
-#   - 老師後台功能：全班紀錄追蹤、單元錯誤分析、學生正確率統計。
-# V1.8.6 [2026-03-08]: 
-#   - 修復 NameError，優化登入畫面美化與置中。
+# V1.8.8 [2026-03-08]: 
+#   - 老師後台新增「個別學生追蹤」：可從選單挑選學生，查看其完整作答歷史紀錄。
+#   - 優化 ADMIN 權限下的資料過濾邏輯。
 # ==============================================================================
 
 import streamlit as st
@@ -20,7 +18,7 @@ import re
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "1.8.7"
+VERSION = "1.8.8"
 
 st.set_page_config(page_title=f"英文重組 V{VERSION}", layout="wide")
 
@@ -41,7 +39,7 @@ def load_all_data():
         return df_q.dropna(subset=['英文', '中文', '年度']), df_s
     except: return None, None
 
-@st.cache_data(ttl=10) # 老師看的時候縮短快取，增加即時感
+@st.cache_data(ttl=10)
 def load_logs_data():
     try:
         df = conn.read(worksheet="logs")
@@ -110,7 +108,7 @@ if not st.session_state.logged_in:
                     else: st.error("❌ 帳號或密碼錯誤")
     st.stop()
 
-# --- 4. 主畫面與 CSS ---
+# --- 4. CSS ---
 st.markdown("""
     <style>
     @keyframes marquee { 0% { transform: translateX(100%); } 100% { transform: translateX(-100%); } }
@@ -118,44 +116,54 @@ st.markdown("""
     .marquee-text { display: inline-block; animation: marquee 25s linear infinite; font-size: 16px; }
     .hint-box { background-color: #f8f9fa; padding: 15px 20px; border-radius: 10px; border-left: 6px solid #1e88e5; font-size: 18px; margin-bottom: 10px; }
     .answer-display { background-color: #ffffff; padding: 15px; border-radius: 10px; border: 1px solid #dee2e6; min-height: 70px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center; font-size: 20px; margin-bottom: 10px; }
-    .admin-card { background-color: #fff3e0; padding: 15px; border-radius: 10px; border-top: 5px solid #ff9800; margin-bottom: 20px; }
+    .admin-box { background-color: #e3f2fd; padding: 20px; border-radius: 10px; border: 2px solid #2196f3; margin-bottom: 20px; }
     </style>
 """, unsafe_allow_html=True)
 
 logs_df = load_logs_data()
-df_q, _ = load_all_data()
+df_q, df_s = load_all_data()
 
-# --- 5. 導師管理後台 (僅 ADMIN 顯示) ---
+# --- 5. 導師管理後台 (僅限 ADMIN) ---
 if st.session_state.group_id == "ADMIN":
-    with st.expander("👨‍🏫 導師管理後台 (Teacher Management Console)", expanded=True):
-        st.markdown('<div class="admin-card">', unsafe_allow_html=True)
-        t_tab1, t_tab2, t_tab3 = st.tabs(["📊 全班即時紀錄", "⚠️ 難題分析", "🏆 學生統計"])
+    with st.expander("👨‍🏫 導師管理後台 (Teacher Control Panel)", expanded=True):
+        st.markdown('<div class="admin-box">', unsafe_allow_html=True)
+        t_tab1, t_tab2, t_tab3, t_tab4 = st.tabs(["全班紀錄", "難題分析", "積分排行", "🔍 個別學生追蹤"])
         
         with t_tab1:
             if logs_df is not None:
-                st.write("**最新全班作答 (Top 10)**")
-                display_logs = logs_df.sort_values('時間', ascending=False).head(10)
-                st.table(display_logs[['時間', '姓名', '分組', '題目ID', '結果']])
+                st.dataframe(logs_df.sort_values('時間', ascending=False).head(20), use_container_width=True)
         
         with t_tab2:
             if logs_df is not None:
-                wrong_logs = logs_df[logs_df['結果'] == '❌']
-                if not wrong_logs.empty:
-                    wrong_stats = wrong_logs['題目ID'].value_counts().reset_index()
-                    wrong_stats.columns = ['題目ID', '錯誤次數']
-                    st.write("**錯誤次數最高的題目 (請優先檢討)**")
-                    st.bar_chart(wrong_stats.set_index('題目ID'))
-                else: st.info("目前尚無錯誤紀錄")
+                wrong_counts = logs_df[logs_df['結果'] == '❌']['題目ID'].value_counts().reset_index()
+                wrong_counts.columns = ['題目ID', '錯誤次數']
+                st.bar_chart(wrong_counts.set_index('題目ID'))
 
         with t_tab3:
             if logs_df is not None:
-                # 統計每位學生的作答總數與正確數
                 st_stats = logs_df[logs_df['動作'] == '作答'].groupby('姓名').agg(
                     總次數=('結果', 'count'),
                     答對數=('結果', lambda x: (x == '✅').sum())
                 )
-                st_stats['正確率 (%)'] = (st_stats['答對數'] / st_stats['總次數'] * 100).round(1)
+                st_stats['正確率'] = (st_stats['答對數'] / st_stats['總次數'] * 100).round(1).astype(str) + '%'
                 st.dataframe(st_stats, use_container_width=True)
+
+        with t_tab4:
+            if df_s is not None and logs_df is not None:
+                # 建立學生選單：顯示 姓名 (帳號)
+                df_s['display_name'] = df_s['姓名'] + " (EA" + df_s['帳號'].astype(str).str.split('.').str[0].str.zfill(4) + ")"
+                student_list = sorted(df_s['display_name'].tolist())
+                target_student = st.selectbox("請選擇要查看的學生", student_list)
+                
+                # 從選中的字串提取姓名進行過濾
+                selected_name = target_student.split(" (")[0]
+                personal_logs = logs_df[logs_df['姓名'] == selected_name].sort_values('時間', ascending=False)
+                
+                st.write(f"### {selected_name} 的歷史紀錄")
+                if not personal_logs.empty:
+                    st.table(personal_logs[['時間', '動作', '題目ID', '結果', '內容', '費時']])
+                else:
+                    st.info("該生目前尚無作答紀錄。")
         st.markdown('</div>', unsafe_allow_html=True)
 
 # 跑馬燈
@@ -164,7 +172,7 @@ if logs_df is not None:
     m_text = " | ".join([f"🔥 {r['姓名']}({r['分組']}) 剛剛答對了!" for _, r in recent.iterrows()])
     if m_text: st.markdown(f'<div class="marquee-container"><div class="marquee-text">{m_text}</div></div>', unsafe_allow_html=True)
 
-# 側邊欄與學生練習邏輯 (其餘部分維持不變)
+# 側邊欄與學生練習邏輯 (年度冊別選單等...)
 with st.sidebar:
     st.title(f"👋 {st.session_state.user_name}")
     if st.button("🚪 登出系統"): log_event("登出"); st.session_state.logged_in = False; st.rerun()
@@ -179,7 +187,7 @@ with st.sidebar:
         for _, row in recent_2.iterrows():
             st.info(f"👤 {row['姓名']}\n\n題：{str(row['題目ID']).replace('.0', '')}")
 
-# 練習邏輯 (年度冊別選單等...)
+# 練習邏輯
 if df_q is not None:
     with st.expander("⚙️ 範圍與題數設定", expanded=not st.session_state.get('quiz_loaded', False)):
         c1, c2, c3, c4 = st.columns(4)
@@ -240,4 +248,4 @@ if df_q is not None:
                     else: st.error(f"錯誤！正確答案: {eng_raw}")
                     st.session_state.start_time = datetime.now()
 
-st.caption(f"Admin Ver {VERSION}")
+st.caption(f"Teacher Track Ver {VERSION}")
