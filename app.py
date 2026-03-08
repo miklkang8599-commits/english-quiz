@@ -1,16 +1,16 @@
 # ==============================================================================
 # 🧩 英文重組練習旗艦版 (English Sentence Scramble App)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 1.8.2
+# 📌 版本編號 (VERSION): 1.8.3
 # 📅 更新日期: 2026-03-08
 #
-# 📜 【GitHub 開發日誌】
+# 📜 【GitHub 開發日誌 & 版本功能說明】
 # ------------------------------------------------------------------------------
+# V1.8.3 [2026-03-08]: 
+#   - 修正同組動態題號格式：統一改為「年度_冊_單元_課_句」且數字皆為整數。
+#   - 確保側邊欄即時狀態之題號顯示不含 .0。
 # V1.8.2 [2026-03-08]: 
-#   - 修正「單元」選單：完全支援中文內容 (如：閱讀、對話)，不進行數字轉換。
-#   - 優化題目 ID 格式：將中文單元名稱整合進題號追蹤系統。
-# V1.8.1 [2026-03-08]: 
-#   - 維持年度、冊、課、句編號為乾淨整數格式。
+#   - 支援中文單元內容 (如：閱讀、對話)；整合 GitHub 內部版本說明。
 # ==============================================================================
 
 import streamlit as st
@@ -20,7 +20,7 @@ import re
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "1.8.2"
+VERSION = "1.8.3"
 
 st.set_page_config(page_title=f"英文重組 V{VERSION}", layout="wide")
 
@@ -32,16 +32,14 @@ def load_all_data():
     try:
         df_q = conn.read(worksheet="questions")
         df_s = conn.read(worksheet="students")
-        # 數字類欄位預處理 (強制轉整數)
+        # 數字類欄位預處理
         num_cols = ['年度', '冊編號', '課編號', '句編號']
         for col in num_cols:
             if col in df_q.columns:
                 df_q[col] = pd.to_numeric(df_q[col], errors='coerce')
-        
-        # 單元欄位處理：保留原始字串/中文，僅移除可能的 .0 後綴
+        # 單元欄位保持字串，移除可能的 .0
         if '單元' in df_q.columns:
             df_q['單元'] = df_q['單元'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
-            
         return df_q.dropna(subset=['英文', '中文', '年度']), df_s
     except: return None, None
 
@@ -55,15 +53,14 @@ def load_logs_data():
 
 # --- 2. 輔助函數 ---
 def get_int_list(df, col):
-    """取得數字類清單 (整數)"""
+    """取得整數清單"""
     if df is None or df.empty or col not in df.columns: return []
     vals = df[col].dropna().unique()
     return sorted([int(float(x)) for x in vals])
 
 def get_str_list(df, col):
-    """取得字串類清單 (單元中文)"""
+    """取得字串清單 (單元中文)"""
     if df is None or df.empty or col not in df.columns: return []
-    # 依照原始順序或字母順序排列
     return sorted(df[col].dropna().unique().tolist())
 
 def log_event(action_type, detail="", result="-", duration=0):
@@ -114,9 +111,7 @@ if not st.session_state.logged_in:
             else: st.error("❌ 帳密錯誤")
     st.stop()
 
-# --- 4. 主介面設計 ---
-st.title("🧩 英文句子重組練習")
-
+# --- 4. 主介面 CSS ---
 st.markdown("""
     <style>
     @keyframes marquee { 0% { transform: translateX(100%); } 100% { transform: translateX(-100%); } }
@@ -149,38 +144,27 @@ with st.sidebar:
         st.write("🟢 在線組員：" + (", ".join(online_users) if len(online_users) > 0 else "僅您在線"))
         recent_2 = group_data[group_data['動作'] == '作答'].sort_values('時間', ascending=False).head(2)
         for _, row in recent_2.iterrows():
-            st.info(f"👤 {row['姓名']}\n\n題：{row['題目ID']}")
+            # 修正題號顯示邏輯：強制去除小數點
+            st.info(f"👤 {row['姓名']}\n\n題：{str(row['題目ID']).replace('.0', '')}")
 
 # --- 5. 範圍與連動選單 ---
 if df_q is not None:
     with st.expander("⚙️ 範圍與題數設定", expanded=not st.session_state.get('quiz_loaded', False)):
         c1, c2, c3, c4 = st.columns(4)
-        
-        # 1. 年度
-        y_list = get_int_list(df_q, '年度')
-        sel_y = c1.selectbox("年度", y_list)
+        sel_y = c1.selectbox("年度", get_int_list(df_q, '年度'))
         df_f1 = df_q[df_q['年度'] == sel_y]
-        
-        # 2. 冊別
-        b_list = get_int_list(df_f1, '冊編號')
-        sel_b = c2.selectbox("冊別", b_list)
+        sel_b = c2.selectbox("冊別", get_int_list(df_f1, '冊編號'))
         df_f2 = df_f1[df_f1['冊編號'] == sel_b]
-        
-        # 3. 單元 (中文選單：閱讀、對話...)
         u_list = get_str_list(df_f2, '單元')
         sel_u = c3.selectbox("單元內容", u_list)
         df_f3 = df_f2[df_f2['單元'] == sel_u]
-        
-        # 4. 課次
-        l_list = get_int_list(df_f3, '課編號')
-        sel_l = c4.selectbox("課次", l_list)
+        sel_l = c4.selectbox("課次", get_int_list(df_f3, '課編號'))
         
         base_df = df_f3[df_f3['課編號'] == sel_l].sort_values('句編號')
         
         if not base_df.empty:
             s1, s2 = st.columns([1, 1])
             start_id = s1.number_input("起始句編號", int(base_df['句編號'].min()), int(base_df['句編號'].max()), step=1)
-            
             if 'num_q_tmp' not in st.session_state: st.session_state.num_q_tmp = 10
             sc1, sc2, sc3 = s2.columns([1, 2, 1])
             if sc1.button("➖"): st.session_state.num_q_tmp = max(1, st.session_state.num_q_tmp - 1)
@@ -198,7 +182,7 @@ if df_q is not None:
         quiz_list = st.session_state.quiz_list
         if st.session_state.q_idx < len(quiz_list):
             q = quiz_list[st.session_state.q_idx]
-            # 題目ID：單元維持中文內容
+            # 修正 current_qid 格式：全整數化 (除單元外)
             st.session_state.current_qid = f"{int(q['年度'])}_{int(q['冊編號'])}_{q['單元']}_{int(q['課編號'])}_{int(q['句編號'])}"
             
             st.markdown(f'<div class="hint-box"><span style="color:#1e88e5; font-weight:bold;">題號 {st.session_state.q_idx + 1} (句編號 {int(q["句編號"])})</span><br>{q["中文"]}</div>', unsafe_allow_html=True)
