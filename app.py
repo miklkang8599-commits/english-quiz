@@ -1,14 +1,16 @@
 # ==============================================================================
 # 🧩 英文重組練習旗艦版 (English Sentence Scramble App)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 1.8.9
+# 📌 版本編號 (VERSION): 1.9.0
 # 📅 更新日期: 2026-03-08
 #
 # 📜 【GitHub 開發日誌】
 # ------------------------------------------------------------------------------
+# V1.9.0 [2026-03-08]: 
+#   - 時間格式優化：後台所有「費時」欄位改以「分秒」顯示 (例如 1分15秒)。
+#   - 強化後台篩選連動穩定性。
 # V1.8.9 [2026-03-08]: 
-#   - 老師後台優化：新增「先選組別、後選學生」的連動篩選功能，方便管理。
-#   - 修正題號 ID 顯示邏輯，確保過濾過程中的穩定性。
+#   - 老師後台優化：新增「先選組別、後選學生」的連動篩選功能。
 # ==============================================================================
 
 import streamlit as st
@@ -18,7 +20,7 @@ import re
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "1.8.9"
+VERSION = "1.9.0"
 
 st.set_page_config(page_title=f"英文重組 V{VERSION}", layout="wide")
 
@@ -48,6 +50,18 @@ def load_logs_data():
     except: return None
 
 # --- 2. 輔助函數 ---
+def format_duration(seconds):
+    """將秒數轉換為 分秒 格式"""
+    try:
+        s = int(float(seconds))
+        if s <= 0: return "-"
+        if s < 60: return f"{s}秒"
+        m = s // 60
+        sec = s % 60
+        return f"{m}分{sec}秒" if sec > 0 else f"{m}分"
+    except:
+        return "-"
+
 def get_int_list(df, col):
     if df is None or df.empty: return []
     vals = df[col].dropna().unique()
@@ -131,7 +145,9 @@ if st.session_state.group_id == "ADMIN":
         
         with t_tab1:
             if logs_df is not None:
-                st.dataframe(logs_df.sort_values('時間', ascending=False).head(20), use_container_width=True)
+                df_view = logs_df.copy().sort_values('時間', ascending=False).head(20)
+                df_view['費時'] = df_view['費時'].apply(format_duration)
+                st.dataframe(df_view, use_container_width=True)
         
         with t_tab2:
             if logs_df is not None:
@@ -151,29 +167,24 @@ if st.session_state.group_id == "ADMIN":
         with t_tab4:
             if df_s is not None and logs_df is not None:
                 col_g, col_s = st.columns(2)
-                
-                # 1. 先選組別
                 group_list = sorted(df_s['分組'].unique().tolist())
                 if "ADMIN" in group_list: group_list.remove("ADMIN")
                 selected_group = col_g.selectbox("1. 請選擇組別", group_list)
                 
-                # 2. 根據組別過濾學生
                 filtered_students = df_s[df_s['分組'] == selected_group].copy()
                 filtered_students['display_name'] = filtered_students['姓名'] + " (EA" + filtered_students['帳號'].astype(str).str.split('.').str[0].str.zfill(4) + ")"
-                
                 student_options = sorted(filtered_students['display_name'].tolist())
                 target_student = col_s.selectbox("2. 請選擇學生", student_options)
                 
                 if target_student:
                     selected_name = target_student.split(" (")[0]
-                    personal_logs = logs_df[logs_df['姓名'] == selected_name].sort_values('時間', ascending=False)
-                    
+                    p_logs = logs_df[logs_df['姓名'] == selected_name].copy().sort_values('時間', ascending=False)
                     st.write(f"---")
-                    st.write(f"### 📋 {selected_name} 的詳細紀錄 (組別: {selected_group})")
-                    if not personal_logs.empty:
-                        # 顯示時將題目ID的小數點去掉
-                        personal_logs['題目ID'] = personal_logs['題目ID'].astype(str).str.replace('.0', '', regex=False)
-                        st.table(personal_logs[['時間', '動作', '題目ID', '結果', '內容', '費時']])
+                    st.write(f"### 📋 {selected_name} 的詳細紀錄")
+                    if not p_logs.empty:
+                        p_logs['題目ID'] = p_logs['題目ID'].astype(str).str.replace('.0', '', regex=False)
+                        p_logs['費時'] = p_logs['費時'].apply(format_duration)
+                        st.table(p_logs[['時間', '動作', '題目ID', '結果', '內容', '費時']])
                     else:
                         st.info("該生目前尚無作答紀錄。")
         st.markdown('</div>', unsafe_allow_html=True)
@@ -184,7 +195,7 @@ if logs_df is not None:
     m_text = " | ".join([f"🔥 {r['姓名']}({r['分組']}) 剛剛答對了!" for _, r in recent.iterrows()])
     if m_text: st.markdown(f'<div class="marquee-container"><div class="marquee-text">{m_text}</div></div>', unsafe_allow_html=True)
 
-# 側邊欄與學生練習邏輯
+# 側邊欄
 with st.sidebar:
     st.title(f"👋 {st.session_state.user_name}")
     if st.button("🚪 登出系統"): log_event("登出"); st.session_state.logged_in = False; st.rerun()
