@@ -1,14 +1,14 @@
 # ==============================================================================
 # 🧩 英文重組練習旗艦版 (English Sentence Scramble App)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 1.8.8
+# 📌 版本編號 (VERSION): 1.8.9
 # 📅 更新日期: 2026-03-08
 #
 # 📜 【GitHub 開發日誌】
 # ------------------------------------------------------------------------------
-# V1.8.8 [2026-03-08]: 
-#   - 老師後台新增「個別學生追蹤」：可從選單挑選學生，查看其完整作答歷史紀錄。
-#   - 優化 ADMIN 權限下的資料過濾邏輯。
+# V1.8.9 [2026-03-08]: 
+#   - 老師後台優化：新增「先選組別、後選學生」的連動篩選功能，方便管理。
+#   - 修正題號 ID 顯示邏輯，確保過濾過程中的穩定性。
 # ==============================================================================
 
 import streamlit as st
@@ -18,7 +18,7 @@ import re
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "1.8.8"
+VERSION = "1.8.9"
 
 st.set_page_config(page_title=f"英文重組 V{VERSION}", layout="wide")
 
@@ -93,7 +93,7 @@ if not st.session_state.logged_in:
             input_id = col_input.text_input("帳號", max_chars=4, label_visibility="collapsed", placeholder="請輸入4位數字")
             input_pw = st.text_input("密碼", type="password", max_chars=4, placeholder="請輸入密碼")
             if st.button("🚀 確認登入", type="primary", use_container_width=True):
-                _, df_s = load_all_data()
+                df_q, df_s = load_all_data()
                 if df_s is not None:
                     df_s['帳號_c'] = df_s['帳號'].astype(str).str.split('.').str[0].str.strip().str.zfill(4)
                     df_s['密碼_c'] = df_s['密碼'].astype(str).str.split('.').str[0].str.strip().str.zfill(4)
@@ -116,7 +116,7 @@ st.markdown("""
     .marquee-text { display: inline-block; animation: marquee 25s linear infinite; font-size: 16px; }
     .hint-box { background-color: #f8f9fa; padding: 15px 20px; border-radius: 10px; border-left: 6px solid #1e88e5; font-size: 18px; margin-bottom: 10px; }
     .answer-display { background-color: #ffffff; padding: 15px; border-radius: 10px; border: 1px solid #dee2e6; min-height: 70px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center; font-size: 20px; margin-bottom: 10px; }
-    .admin-box { background-color: #e3f2fd; padding: 20px; border-radius: 10px; border: 2px solid #2196f3; margin-bottom: 20px; }
+    .admin-box { background-color: #f1f8ff; padding: 20px; border-radius: 10px; border: 2px solid #0366d6; margin-bottom: 20px; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -150,20 +150,32 @@ if st.session_state.group_id == "ADMIN":
 
         with t_tab4:
             if df_s is not None and logs_df is not None:
-                # 建立學生選單：顯示 姓名 (帳號)
-                df_s['display_name'] = df_s['姓名'] + " (EA" + df_s['帳號'].astype(str).str.split('.').str[0].str.zfill(4) + ")"
-                student_list = sorted(df_s['display_name'].tolist())
-                target_student = st.selectbox("請選擇要查看的學生", student_list)
+                col_g, col_s = st.columns(2)
                 
-                # 從選中的字串提取姓名進行過濾
-                selected_name = target_student.split(" (")[0]
-                personal_logs = logs_df[logs_df['姓名'] == selected_name].sort_values('時間', ascending=False)
+                # 1. 先選組別
+                group_list = sorted(df_s['分組'].unique().tolist())
+                if "ADMIN" in group_list: group_list.remove("ADMIN")
+                selected_group = col_g.selectbox("1. 請選擇組別", group_list)
                 
-                st.write(f"### {selected_name} 的歷史紀錄")
-                if not personal_logs.empty:
-                    st.table(personal_logs[['時間', '動作', '題目ID', '結果', '內容', '費時']])
-                else:
-                    st.info("該生目前尚無作答紀錄。")
+                # 2. 根據組別過濾學生
+                filtered_students = df_s[df_s['分組'] == selected_group].copy()
+                filtered_students['display_name'] = filtered_students['姓名'] + " (EA" + filtered_students['帳號'].astype(str).str.split('.').str[0].str.zfill(4) + ")"
+                
+                student_options = sorted(filtered_students['display_name'].tolist())
+                target_student = col_s.selectbox("2. 請選擇學生", student_options)
+                
+                if target_student:
+                    selected_name = target_student.split(" (")[0]
+                    personal_logs = logs_df[logs_df['姓名'] == selected_name].sort_values('時間', ascending=False)
+                    
+                    st.write(f"---")
+                    st.write(f"### 📋 {selected_name} 的詳細紀錄 (組別: {selected_group})")
+                    if not personal_logs.empty:
+                        # 顯示時將題目ID的小數點去掉
+                        personal_logs['題目ID'] = personal_logs['題目ID'].astype(str).str.replace('.0', '', regex=False)
+                        st.table(personal_logs[['時間', '動作', '題目ID', '結果', '內容', '費時']])
+                    else:
+                        st.info("該生目前尚無作答紀錄。")
         st.markdown('</div>', unsafe_allow_html=True)
 
 # 跑馬燈
@@ -172,7 +184,7 @@ if logs_df is not None:
     m_text = " | ".join([f"🔥 {r['姓名']}({r['分組']}) 剛剛答對了!" for _, r in recent.iterrows()])
     if m_text: st.markdown(f'<div class="marquee-container"><div class="marquee-text">{m_text}</div></div>', unsafe_allow_html=True)
 
-# 側邊欄與學生練習邏輯 (年度冊別選單等...)
+# 側邊欄與學生練習邏輯
 with st.sidebar:
     st.title(f"👋 {st.session_state.user_name}")
     if st.button("🚪 登出系統"): log_event("登出"); st.session_state.logged_in = False; st.rerun()
@@ -248,4 +260,4 @@ if df_q is not None:
                     else: st.error(f"錯誤！正確答案: {eng_raw}")
                     st.session_state.start_time = datetime.now()
 
-st.caption(f"Teacher Track Ver {VERSION}")
+st.caption(f"Ver {VERSION}")
