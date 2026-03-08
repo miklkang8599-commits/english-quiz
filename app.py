@@ -1,15 +1,14 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.5.5 選單邏輯修復版)
+# 🧩 英文全能練習系統 (V2.5.6 時間格式修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.5.5
+# 📌 版本編號 (VERSION): 2.5.6
 # 📅 更新日期: 2026-03-08
 #
 # 📜 【GitHub 開發日誌】
 # ------------------------------------------------------------------------------
-# V2.5.5 [2026-03-08]: 
-#   - 修正「手動範圍設定」：解決冊別與課次出現 No options 的連動錯誤。
-#   - 補回「起始句編號」與「題數」輸入框。
-#   - 強化資料轉型穩定性，確保寬表格數據 100% 匹配。
+# V2.5.6 [2026-03-08]: 
+#   - 修正 TypeError：強制將 logs 時間欄位轉為 datetime 格式，修復側邊欄報錯。
+#   - 強化手動範圍設定連動穩定性。
 # ==============================================================================
 
 import streamlit as st
@@ -20,7 +19,7 @@ import time
 from datetime import datetime
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "2.5.5"
+VERSION = "2.5.6"
 IDLE_TIMEOUT = 300 
 
 st.set_page_config(page_title=f"英文練習系統 V{VERSION}", layout="wide")
@@ -43,11 +42,17 @@ def load_all_data():
         df_a = conn.read(worksheet="assignments")
         df_l = conn.read(worksheet="logs")
         
-        # 數據預處理：統一轉為字串避免匹配失敗
+        # 題目資料預處理
         if df_q is not None:
             df_q = df_q.fillna("")
             for col in df_q.columns:
                 df_q[col] = df_q[col].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
+        
+        # 💡 關鍵修復：強制轉化 logs 時間格式
+        if df_l is not None and not df_l.empty:
+            df_l['時間'] = pd.to_datetime(df_l['時間'], errors='coerce')
+            df_l = df_l.dropna(subset=['時間']) # 移除格式錯誤的列
+            
         return df_q, df_s, df_a, df_l
     except Exception as e:
         st.error(f"資料讀取錯誤: {e}")
@@ -110,12 +115,16 @@ with st.sidebar:
         st.session_state.logged_in = False
         st.rerun()
     st.divider()
-    if df_l is not None:
+    # 💡 修復後的側邊欄邏輯
+    if df_l is not None and not df_l.empty:
         st.subheader("📊 同組即時動態")
         my_group_logs = df_l[df_l['分組'] == st.session_state.group_id].sort_values('時間', ascending=False)
-        online_names = my_group_logs[my_group_logs['時間'] > (datetime.now() - pd.Timedelta(minutes=10))]['姓名'].unique()
+        # 10 分鐘內在線
+        online_cutoff = datetime.now() - pd.Timedelta(minutes=10)
+        online_names = my_group_logs[my_group_logs['時間'] > online_cutoff]['姓名'].unique()
         st.write(f"🟢 在線組員：{', '.join(online_names) if len(online_names)>0 else '僅您在線'}")
-        recent_q = my_group_logs[my_group_logs['動作'] == '作答'].head(3)
+        # 最近三次作答
+        recent_q = my_group_logs[my_group_logs['動作'].str.contains('作答', na=False)].head(3)
         for _, row in recent_q.iterrows():
             st.info(f"👤 {row['姓名']}\n\n題：{row['題目ID']}")
 
@@ -140,44 +149,33 @@ if df_a is not None:
                 st.session_state.quiz_list = task_quiz
                 reset_quiz(); st.session_state.quiz_loaded = True; st.rerun()
 
-# B. 手動範圍設定 (連動修正核心)
+# B. 手動範圍設定
 with st.expander("⚙️ 手動範圍與題數設定", expanded=not st.session_state.get('quiz_loaded', False)):
     if df_q is not None:
         c1, c2, c3, c4, c5 = st.columns(5)
-        # 1. 版本
         v_list = sorted([v for v in df_q['版本'].unique() if v != ""])
-        sel_v = c1.selectbox("版本", v_list, key="sel_v")
-        # 2. 項目
+        sel_v = c1.selectbox("版本", v_list, key="v_sel")
         u_list = sorted([u for u in df_q[df_q['版本']==sel_v]['單元'].unique() if u != ""])
-        sel_u = c2.selectbox("項目", u_list, key="sel_u")
-        # 3. 年度
+        sel_u = c2.selectbox("項目", u_list, key="u_sel")
         y_list = sorted(list(df_q[(df_q['版本']==sel_v)&(df_q['單元']==sel_u)]['年度'].unique()))
-        sel_y = c3.selectbox("年度", y_list, key="sel_y")
-        # 4. 冊別
+        sel_y = c3.selectbox("年度", y_list, key="y_sel")
         b_list = sorted(list(df_q[(df_q['版本']==sel_v)&(df_q['單元']==sel_u)&(df_q['年度']==sel_y)]['冊編號'].unique()))
-        sel_b = c4.selectbox("冊別", b_list, key="sel_b")
-        # 5. 課次
+        sel_b = c4.selectbox("冊別", b_list, key="b_sel")
         l_list = sorted(list(df_q[(df_q['版本']==sel_v)&(df_q['單元']==sel_u)&(df_q['年度']==sel_y)&(df_q['冊編號']==sel_b)]['課編號'].unique()))
-        sel_l = c5.selectbox("課次", l_list, key="sel_l")
+        sel_l = c5.selectbox("課次", l_list, key="l_sel")
         
-        # 最終數據篩選
         base_df = df_q[(df_q['版本']==sel_v)&(df_q['單元']==sel_u)&(df_q['年度']==sel_y)&(df_q['冊編號']==sel_b)&(df_q['課編號']==sel_l)]
-        
         if not base_df.empty:
-            # 💡 補回句編號與題數設定
             sc1, sc2 = st.columns(2)
-            # 找出最小與最大句編號，確保輸入有效
             sorted_nums = sorted([int(n) for n in base_df['句編號'].unique()])
             start_no = sc1.number_input("起始句編號", min_value=min(sorted_nums), max_value=max(sorted_nums), value=min(sorted_nums))
             q_num = sc2.number_input("練習題數", 1, 50, 10)
-            
             if st.button("🚀 開始練習", use_container_width=True):
-                # 過濾起始編號後的題目
                 final_df = base_df[base_df['句編號'].astype(int) >= start_no].sort_values('句編號').head(q_num)
                 st.session_state.quiz_list = final_df.to_dict('records')
                 reset_quiz(); st.session_state.quiz_loaded = True; st.rerun()
 
-# --- 5. 題目呈現 (混合模式) ---
+# --- 5. 題目呈現 (與 2.5.5 邏輯一致) ---
 if st.session_state.get('quiz_loaded') and not st.session_state.get('finished'):
     q = st.session_state.quiz_list[st.session_state.q_idx]
     st.session_state.current_qid = f"{q['版本']}_{q['年度']}_{q['冊編號']}_{q['單元']}_{q['課編號']}_{q['句編號']}"
@@ -194,7 +192,7 @@ if st.session_state.get('quiz_loaded') and not st.session_state.get('finished'):
         for i, opt in enumerate(["A", "B", "C", "D"]):
             if cols[i].button(opt, key=f"opt_{i}", use_container_width=True):
                 is_ok = (opt == correct_a)
-                log_event("單選", detail=opt, result="✅" if is_ok else "❌")
+                log_event("單選作答", detail=opt, result="✅" if is_ok else "❌")
                 if is_ok: st.success("正確！"); st.balloons()
                 else: st.error(f"錯誤！答案是 ({correct_a})")
                 st.session_state.show_analysis = True
@@ -219,7 +217,7 @@ if st.session_state.get('quiz_loaded') and not st.session_state.get('finished'):
         if len(st.session_state.ans) == len(tokens):
             if ctrl[1].button("✅ 檢查答案", type="primary"):
                 is_ok = "".join(st.session_state.ans).lower() == correct_a.replace(" ","").lower()
-                log_event("重組", detail=" ".join(st.session_state.ans), result="✅" if is_ok else "❌")
+                log_event("重組作答", detail=" ".join(st.session_state.ans), result="✅" if is_ok else "❌")
                 if is_ok:
                     st.success("正確！"); time.sleep(0.5)
                     if st.session_state.q_idx+1 < len(st.session_state.quiz_list): st.session_state.q_idx += 1; reset_quiz(); st.rerun()
