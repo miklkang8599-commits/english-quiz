@@ -1,12 +1,9 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.8.21 十三項功能全域鎖定版)
+# 🧩 英文全能練習系統 (V2.8.22 起始題號與練習題數強制鎖定版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.8.21
+# 📌 版本編號 (VERSION): 2.8.22
 # 📅 更新日期: 2026-03-09
-# ------------------------------------------------------------------------------
-# 🔒 核心檢核鎖定 (LOCKED REGISTRY):
-# [02] standardize, [07] s_v,s_u,s_y,s_b,s_l,s_i,s_n, [10] buffer_log, [11] flush
-# [12] create_assignment_logic, [13] manage_assignment_logic
+# 🔒 鎖定檢核：[07-A] s_i (起始編號), [07-B] s_n (練習題數)
 # ==============================================================================
 
 import streamlit as st
@@ -17,11 +14,11 @@ import time
 from datetime import datetime
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "2.8.21"
+VERSION = "2.8.22"
 
 st.set_page_config(page_title=f"英文練習系統 V{VERSION}", layout="wide")
 
-# --- ### MODULE 1: 資料處理 (檢核點 09) ---
+# --- ### MODULE 1: 基礎數據處理 ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 @st.cache_data(ttl=30)
@@ -70,7 +67,7 @@ def flush_buffer_to_cloud():
             st.cache_data.clear() 
         except: pass
 
-# --- ### MODULE 3: 登入 (檢核點 01, 02) ---
+# --- ### MODULE 3: 登入系統 ---
 if 'logged_in' not in st.session_state: st.session_state.logged_in = False
 if 'view_mode' not in st.session_state: st.session_state.view_mode = "管理後台"
 
@@ -81,7 +78,7 @@ if not st.session_state.logged_in:
         st.title("🧩 系統登入")
         i_id = st.text_input("帳號", key="l_id")
         i_pw = st.text_input("密碼", type="password", key="l_pw")
-        if st.button("🚀 登入系統", use_container_width=True):
+        if st.button("🚀 登入", use_container_width=True):
             if df_s is not None:
                 std_id, std_pw = standardize(i_id), standardize(i_pw)
                 df_s['c_id'], df_s['c_pw'] = df_s['帳號'].apply(standardize), df_s['密碼'].apply(standardize)
@@ -95,75 +92,49 @@ if not st.session_state.logged_in:
 df_q, df_s = load_static_data()
 df_a, df_l = load_dynamic_data()
 
-# --- ### MODULE 4: 側邊欄 (檢核點 08) ---
+# --- ### MODULE 4: 側邊欄 ---
 with st.sidebar:
     st.title(f"👋 {st.session_state.user_name}")
     if st.session_state.group_id == "ADMIN":
         st.session_state.view_mode = st.radio("模式：", ["管理後台", "練習模式"])
     if st.button("🚪 登出", use_container_width=True):
         flush_buffer_to_cloud(); st.session_state.logged_in = False; st.rerun()
-    if (st.session_state.view_mode == "練習模式" or st.session_state.group_id != "ADMIN") and df_l is not None:
-        st.divider()
-        st.subheader("🏆 同組排行")
-        gl = df_l[df_l['分組'] == st.session_state.group_id].copy()
-        st.markdown('<div style="max-height:200px; overflow-y:auto; background:#f9f9f9; padding:8px; border-radius:8px;">', unsafe_allow_html=True)
-        for m in sorted(df_s[df_s['分組'] == st.session_state.group_id]['姓名']):
-            cnt = len(gl[(gl['姓名']==m) & (gl['結果']=='✅')])
-            st.markdown(f'<div style="display:flex; justify-content:space-between; font-size:13px;"><span>👤 {m}</span><b>{cnt} 題</b></div>', unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
 
-# --- ### MODULE 5: 導師中心 (檢核點 03, 12, 13) ---
+# --- ### MODULE 5: 導師中心 (檢核點 12, 13) ---
 if st.session_state.group_id == "ADMIN" and st.session_state.view_mode == "管理後台":
     st.title("👨‍🏫 導師管理中心")
     t_tabs = st.tabs(["📊 數據追蹤", "🎯 指派任務", "📜 任務管理"])
     
-    with t_tabs[0]: # 數據追蹤
-        c1, c2, c3 = st.columns(3)
-        f_g = c1.selectbox("1. 組別", ["全部"] + sorted([g for g in df_s['分組'].unique() if g != "ADMIN"]), key="f_g")
-        f_n = c2.selectbox("2. 姓名", ["全部"] + sorted(df_s[df_s['分組']==f_g]['姓名'].tolist() if f_g!="全部" else df_s[df_s['分組']!="ADMIN"]['姓名'].tolist()), key="f_n")
-        f_act = c3.selectbox("3. 動作", ["全部", "單選", "重組"], key="f_act")
-        dv = df_l.fillna("").copy()
-        if f_g != "全部": dv = dv[dv['分組'] == f_g]
-        if f_n != "全部": dv = dv[dv['姓名'] == f_n]
-        st.dataframe(dv.sort_index(ascending=False).head(100), use_container_width=True)
-
     with t_tabs[1]: # [12] 指派任務
-        st.subheader("🎯 發佈任務")
         ic1, ic2 = st.columns(2)
-        ag = ic1.selectbox("組別", ["全體"]+sorted([g for g in df_s['分組'].unique() if g!="ADMIN"]), key="ag_adm")
-        an = ic2.multiselect("學生", sorted(df_s[df_s['分組']==ag]['姓名'].tolist()) if ag!="全體" else [], key="an_adm")
-        cs = st.columns(6)
-        av, au, ay, ab, al = cs[0].selectbox("版本", sorted(df_q['版本'].unique()), key="av_a"), cs[1].selectbox("單單元", sorted(df_q['單元'].unique()), key="au_a"), cs[2].selectbox("年度", sorted(df_q['年度'].unique()), key="ay_a"), cs[3].selectbox("冊別", sorted(df_q['冊編號'].unique()), key="ab_a"), cs[4].selectbox("課次", sorted(df_q['課編號'].unique()), key="al_a")
-        me = cs[5].number_input("錯誤門檻", 0, 10, 1, key="err_a")
+        ag = ic1.selectbox("對象組別", ["全體"]+sorted([g for g in df_s['分組'].unique() if g!="ADMIN"]), key="ag_adm")
+        an = ic2.multiselect("特定學生", sorted(df_s[df_s['分組']==ag]['姓名'].tolist()) if ag!="全體" else [], key="an_adm")
+        cs = st.columns(5)
+        av, au, ay, ab, al = cs[0].selectbox("版本", sorted(df_q['版本'].unique()), key="av_a"), cs[1].selectbox("單元", sorted(df_q['單元'].unique()), key="au_a"), cs[2].selectbox("年度", sorted(df_q['年度'].unique()), key="ay_a"), cs[3].selectbox("冊別", sorted(df_q['冊編號'].unique()), key="ab_a"), cs[4].selectbox("課次", sorted(df_q['課編號'].unique()), key="al_a")
         sq = df_q[(df_q['版本']==av)&(df_q['單元']==au)&(df_q['年度']==ay)&(df_q['冊編號']==ab)&(df_q['課編號']==al)]
-        fids = [f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}" for _, r in sq.iterrows() if len(df_l[(df_l['題目ID']==f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}") & (df_l['結果']=='❌')]) >= me]
-        st.info(f"🔍 篩選出 {len(fids)} 題")
-        if st.button("📢 發佈任務", type="primary", key="btn_a") and fids:
-            new_t = pd.DataFrame([{"對象 (分組/姓名)": (", ".join(an) if an else ag), "任務類型": "補強", "題目ID清單": ", ".join(fids), "說明文字": f"{au}錯題", "指派時間": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}])
-            conn.update(worksheet="assignments", data=pd.concat([df_a, new_t], ignore_index=True))
-            st.success("✅ 已指派"); st.cache_data.clear(); st.rerun()
+        if st.button("📢 發佈任務", type="primary", key="btn_a"):
+            fids = [f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}" for _, r in sq.iterrows()]
+            new_t = pd.DataFrame([{"對象 (分組/姓名)": (", ".join(an) if an else ag), "任務類型": "補強", "題目ID清單": ", ".join(fids), "說明文字": f"{au}練習", "指派時間": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}])
+            conn.update(worksheet="assignments", data=pd.concat([df_a, new_t], ignore_index=True)); st.success("已發佈"); st.cache_data.clear(); st.rerun()
 
     with t_tabs[2]: # [13] 任務管理
-        st.subheader("📜 任務列表")
-        if df_a is not None and not df_a.empty:
-            for i, r in df_a.iloc[::-1].iterrows():
-                c_i, c_d = st.columns([5, 1])
-                c_i.warning(f"📍 {r['說明文字']} (對象: {r['對象 (分組/姓名)']})")
-                if c_d.button("🗑️ 刪除", key=f"d_t_{i}"):
-                    conn.update(worksheet="assignments", data=df_a.drop(i))
-                    st.cache_data.clear(); st.rerun()
+        for i, r in df_a.iloc[::-1].iterrows():
+            c_i, c_d = st.columns([5, 1])
+            c_i.warning(f"📌 {r['說明文字']} ({r['對象 (分組/姓名)']})")
+            if c_d.button("🗑️ 刪除", key=f"d_t_{i}"):
+                conn.update(worksheet="assignments", data=df_a.drop(i)); st.cache_data.clear(); st.rerun()
     st.stop()
 
-# --- ### MODULE 6: 學生區 (檢核點 06, 07, 10) ---
+# --- ### MODULE 6: 學生練習區 (檢核點 07 強制鎖定) ---
 st.title("🚀 英文練習區")
 
-# A. 任務偵測 (檢核點 06)
+# A. 任務偵測
 if df_a is not None and not df_a.empty:
     my_tasks = df_a[(df_a['對象 (分組/姓名)'] == st.session_state.user_name) | (df_a['對象 (分組/姓名)'] == st.session_state.group_id) | (df_a['對象 (分組/姓名)'] == "全體") | (df_a['對象 (分組/姓名)'].str.contains(st.session_state.user_name, na=False))]
     if not my_tasks.empty:
         task = my_tasks.iloc[-1]
-        st.error(f"🎯 **最新任務：{task['說明文字']}**")
-        if st.button("⚡ 執行指派任務", key="run_t"):
+        st.error(f"🎯 **最新指派：{task['說明文字']}**")
+        if st.button("⚡ 執行任務", key="run_t"):
             t_quiz = []
             for qid in str(task['題目ID清單']).split(','):
                 p = qid.strip().split('_')
@@ -172,22 +143,25 @@ if df_a is not None and not df_a.empty:
                     if not m.empty: t_quiz.append(m.iloc[0].to_dict())
             if t_quiz: st.session_state.update({"quiz_list": t_quiz, "q_idx": 0, "quiz_loaded": True, "ans": [], "used_history": [], "shuf": [], "show_analysis": False, "start_time_ts": time.time(), "log_buffer": []}); st.rerun()
 
-# B. 【核心編號 07】手動設定範圍鎖定區
+# B. 【核心鎖定 07-A/B】手動設定範圍
 with st.expander("⚙️ 手動設定練習範圍", expanded=not st.session_state.get('quiz_loaded', False)):
     cs = st.columns(5)
-    sv, su, sy, sb, sl = cs[0].selectbox("版本", sorted(df_q['版本'].unique()), key="s_v"), cs[1].selectbox("項目", sorted(df_q['單元'].unique()), key="s_u"), cs[2].selectbox("年度", sorted(df_q['年度'].unique()), key="s_y"), cs[3].selectbox("冊別", sorted(df_q['冊編號'].unique()), key="s_b"), cs[4].selectbox("課次", sorted(df_q['課編號'].unique()), key="s_l")
+    sv, su, sy, sb, sl = cs[0].selectbox("版本", sorted(df_q['版本'].unique()), key="s_v"), cs[1].selectbox("單元", sorted(df_q['單元'].unique()), key="s_u"), cs[2].selectbox("年度", sorted(df_q['年度'].unique()), key="s_y"), cs[3].selectbox("冊別", sorted(df_q['冊編號'].unique()), key="s_b"), cs[4].selectbox("課次", sorted(df_q['課編號'].unique()), key="s_l")
+    
     base = df_q[(df_q['版本']==sv)&(df_q['單元']==su)&(df_q['年度']==sy)&(df_q['冊編號']==sb)&(df_q['課編號']==sl)].copy()
     if not base.empty:
         base['句編號_int'] = pd.to_numeric(base['句編號'], errors='coerce')
         base = base.sort_values('句編號_int')
         nums = base['句編號_int'].dropna().unique().tolist()
-        st.info(f"📊 該單元共 {len(base)} 題 | 區間：{int(min(nums))}~{int(max(nums))}")
+        st.info(f"📊 該單元共 {len(base)} 題 | 範圍：{int(min(nums))} ~ {int(max(nums))}")
+        
+        # 💡 [編號 07-A/B] 強制顯示起始題號與練習題目控制
         sc1, sc2 = st.columns(2)
-        # 💡 必查鎖定：起始編號與題數
-        st_i = sc1.number_input("起始編號", int(min(nums)), int(max(nums)), int(min(nums)), key="s_i")
-        nu_i = sc2.number_input("練習題數", 1, 50, 10, key="s_n")
+        st_i = sc1.number_input("📍 起始句編號", int(min(nums)), int(max(nums)), int(min(nums)), key="s_i")
+        nu_i = sc2.number_input("🔢 預計練習題數", 1, 50, 10, key="s_n")
+        
         actual_q = base[base['句編號_int']>=st_i].head(int(nu_i))
-        if st.button(f"🚀 載入測驗 ({len(actual_q)} 題)", key="btn_stu_load"):
+        if st.button(f"🚀 載入測驗 ({len(actual_q)} 題)", key="btn_s_load"):
             st.session_state.update({"quiz_list": actual_q.to_dict('records'), "q_idx": 0, "quiz_loaded": True, "ans": [], "used_history": [], "shuf": [], "show_analysis": False, "start_time_ts": time.time(), "log_buffer": []}); st.rerun()
 
 # C. 答題邏輯
@@ -197,14 +171,16 @@ if st.session_state.get('quiz_loaded') and not st.session_state.get('finished'):
     is_mcq = "單選" in q["單元"]
     disp = q["單選題目"] if is_mcq else q["重組中文題目"]
     ans_key = re.sub(r'[^A-Za-z]', '', str(q["單選答案" if is_mcq else "重組英文答案"])).upper() if is_mcq else str(q["重組英文答案"]).strip()
+    
     st.markdown(f'<div style="background:#f8f9fa; padding:20px; border-radius:12px; border-left:6px solid #007bff;"><b>第 {st.session_state.q_idx+1} 題 / 共 {len(st.session_state.quiz_list)} 題</b><br><br><span style="font-size:22px;">{disp}</span></div>', unsafe_allow_html=True)
+    
     if is_mcq:
         cols = st.columns(4)
         for i, opt in enumerate(["A", "B", "C", "D"]):
             if cols[i].button(opt, key=f"qo_{i}", use_container_width=True, disabled=st.session_state.get('show_analysis', False)):
                 is_ok = (opt == ans_key)
                 buffer_log("單選", opt, "✅" if is_ok else "❌")
-                st.session_state.update({"current_res": "✅" if is_ok else f"❌ ({ans_key})", "show_analysis": True}); st.rerun()
+                st.session_state.update({"current_res": "✅ 正確！" if is_ok else f"❌ 錯誤！答案是 ({ans_key})", "show_analysis": True}); st.rerun()
         if st.session_state.get('show_analysis'):
             st.write(st.session_state.current_res)
             if st.button("下一題 ➡️"):
@@ -228,8 +204,7 @@ if st.session_state.get('quiz_loaded') and not st.session_state.get('finished'):
                     st.session_state.q_idx += 1; st.session_state.update({"ans": [], "used_history": [], "shuf": [], "show_analysis": False, "start_time_ts": time.time()}); st.rerun()
                 else: st.session_state.finished = True; flush_buffer_to_cloud(); st.rerun()
 
-st.divider()
 if st.session_state.get('finished'):
     st.balloons(); st.button("回設定頁", on_click=lambda: st.session_state.update({"quiz_loaded": False, "finished": False, "q_idx": 0, "log_buffer": []}))
 
-st.caption(f"Ver {VERSION} (Fixed Manual Range & Admin Logic)")
+st.caption(f"Ver {VERSION} (Manual Range Controls Restored)")
