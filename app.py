@@ -1,8 +1,8 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.8.76 - 盒子 D 導覽鍵物理常駐版)
+# 🧩 英文全能練習系統 (V2.8.77 - 標點符號全相容與括號修正版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.8.76
-# 🛠️ 修復重點：將「上一題」與「下一題」從分析邏輯中抽離，改為物理常駐按鈕。
+# 📌 版本編號 (VERSION): 2.8.77
+# 🛠️ 修復重點：修復單字庫找不到括號的問題，並在比對時自動忽略括號差異。
 # ==============================================================================
 
 import streamlit as st
@@ -13,7 +13,7 @@ import time
 from datetime import datetime
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "2.8.76"
+VERSION = "2.8.77"
 
 # --- 📦 【盒子 A：系統核心】 ---
 def standardize(v):
@@ -21,8 +21,9 @@ def standardize(v):
     return val.zfill(4) if val.isdigit() else val
 
 def clean_string_for_compare(s):
+    # [34] 智慧標點比對：統一縮寫、移除空格與包含括號在內的所有標點
     s = s.lower().replace(" ", "").replace("’", "'").replace("‘", "'")
-    s = re.sub(r'[.,?!:;]', '', s) 
+    s = re.sub(r'[.,?!:;()]', '', s) # 💡 這裡加入括號消除，確保比對不因括號而報錯
     return s.strip()
 
 st.session_state.setdefault('range_confirmed', False)
@@ -70,7 +71,7 @@ if not st.session_state.get('logged_in', False):
 df_q, df_s = load_static_data()
 df_a, df_l = load_dynamic_data()
 
-# --- 📦 【盒子 C：範圍設定】 (穩定存續) ---
+# --- 📦 【盒子 C：範圍設定】 (保持物理展開) ---
 if not st.session_state.quiz_loaded:
     st.markdown("## 🟡 練習範圍設定 (盒子 C)")
     with st.expander("⚙️ 篩選範圍", expanded=not st.session_state.range_confirmed):
@@ -102,7 +103,7 @@ if not st.session_state.quiz_loaded:
                 st.session_state.update({"quiz_list": df_final.head(int(nu_i)).to_dict('records'), "q_idx": 0, "quiz_loaded": True, "ans": [], "used_history": [], "shuf": [], "show_analysis": False})
                 st.rerun()
 
-# --- 📦 【盒子 D：練習引擎 (導覽鍵常駐版)】 ---
+# --- 📦 【盒子 D：練習引擎 (標點物理全相容版)】 ---
 if st.session_state.quiz_loaded:
     st.markdown(f"### 🔴 練習中 (第 {st.session_state.q_idx + 1} / {len(st.session_state.quiz_list)} 題)")
     q = st.session_state.quiz_list[st.session_state.q_idx]
@@ -123,7 +124,7 @@ if st.session_state.quiz_loaded:
         # 重組題 UI
         st.info(" ".join(st.session_state.ans) if st.session_state.ans else " ")
         
-        # 💡 [物理佈局]：頂部雙按鈕
+        # [頂部雙按鈕]
         c_top = st.columns(2)
         if c_top[0].button("⬅️ 🟠 退回一步", use_container_width=True):
             if st.session_state.ans:
@@ -131,27 +132,30 @@ if st.session_state.quiz_loaded:
         if c_top[1].button("🗑️ 🟠 全部清除", use_container_width=True):
             st.session_state.update({"ans": [], "used_history": []}); st.rerun()
         
-        # 單字庫
-        tk = re.findall(r"[\w']+|[.,?!:;]", ans_key)
+        # 💡 [關鍵修正]：正則表達式納入括號 ( )
+        tk = re.findall(r"[\w']+|[.,?!:;()]", ans_key)
+        
         if not st.session_state.get('shuf'):
             st.session_state.shuf = tk.copy(); random.shuffle(st.session_state.shuf)
         
+        # 單字庫
         bs = st.columns(3)
         for i, t in enumerate(st.session_state.shuf):
             if i not in st.session_state.get('used_history', []):
                 if bs[i%3].button(t, key=f"qb_{i}", use_container_width=True):
                     st.session_state.ans.append(t); st.session_state.used_history.append(i); st.rerun()
         
-        # 💡 [物理佈局]：檢查按鈕
+        # 檢查作答
         if len(st.session_state.ans) == len(tk) and not st.session_state.show_analysis:
             if st.button("✅ 🔵 檢查作答結果", type="primary", use_container_width=True):
+                # 💡 比對時使用 clean 函數，會自動忽略括號差異
                 is_ok = clean_string_for_compare("".join(st.session_state.ans)) == clean_string_for_compare(ans_key)
                 st.session_state.update({"current_res": "✅ 正確！" if is_ok else f"❌ 錯誤！答案：{ans_key}", "show_analysis": True}); st.rerun()
 
     if st.session_state.get('show_analysis'):
         st.warning(st.session_state.current_res)
 
-    # 💡 [物理佈局]：上一題 / 下一題 (導覽鍵物理常駐)
+    # [導覽按鈕]
     st.divider()
     c_nav = st.columns(2)
     if st.session_state.q_idx > 0:
@@ -167,8 +171,8 @@ if st.session_state.quiz_loaded:
         else:
             st.session_state.update({"quiz_loaded": False, "range_confirmed": False}); st.rerun()
 
-    # 💡 [物理佈局]：頁面最底端紅色結束按鈕
+    # [結算按鈕]
     if st.button("🏁 🔴 結束作答 (返回設定區)", use_container_width=True):
         st.session_state.update({"quiz_loaded": False, "range_confirmed": False}); st.rerun()
 
-st.caption(f"Ver {VERSION} | 導覽鍵常駐佈局修復完成")
+st.caption(f"Ver {VERSION} | 括號相容與標點校正鎖定")
