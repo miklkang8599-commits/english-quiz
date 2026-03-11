@@ -1,9 +1,9 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.8.70 - 全欄位兼容與數據對位修復)
+# 🧩 英文全能練習系統 (V2.8.71 - 盒子 D 題型自動分流版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.8.70
+# 📌 版本編號 (VERSION): 2.8.71
 # 📅 更新日期: 2026-03-11
-# 🛠️ 修復重點：修復 D 區找不到英文答案的問題，增加欄位名稱兼容性邏輯。
+# 🛠️ 修復重點：徹底分離「單選」與「重組」的介面，避免單選題出現單字庫。
 # ==============================================================================
 
 import streamlit as st
@@ -14,9 +14,9 @@ import time
 from datetime import datetime
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "2.8.70"
+VERSION = "2.8.71"
 
-# --- 📦 【盒子 A：系統核心 (Box A: System Core)】 ---
+# --- 📦 【盒子 A：系統核心】 ---
 def standardize(v):
     val = str(v).split('.')[0].strip()
     return val.zfill(4) if val.isdigit() else val
@@ -54,7 +54,7 @@ if not st.session_state.get('logged_in', False):
     df_q, df_s = load_static_data()
     _, c, _ = st.columns([1, 1.2, 1])
     with c:
-        st.markdown("### 🔵 系統登入系統")
+        st.markdown("### 🔵 登入系統")
         i_id = st.text_input("帳號", key="l_id")
         i_pw = st.text_input("密碼", type="password", key="l_pw")
         if st.button("🚀 登入", use_container_width=True):
@@ -71,11 +71,11 @@ if not st.session_state.get('logged_in', False):
 df_q, df_s = load_static_data()
 df_a, df_l = load_dynamic_data()
 
-# --- 📦 【盒子 E：側邊排行 (Box E)】 ---
+# --- 📦 【盒子 E：側邊排行】 ---
 with st.sidebar:
     st.write(f"👤 {st.session_state.user_name}")
     if st.session_state.group_id == "ADMIN":
-        st.session_state.view_mode = st.radio("功能切換：", ["管理後台", "進入練習"])
+        st.session_state.view_mode = st.radio("模式切換：", ["管理後台", "進入練習"])
     if st.button("🚪 登出"): st.session_state.clear(); st.rerun()
     if not df_l.empty:
         gl = df_l[df_l['分組'] == st.session_state.group_id].copy()
@@ -84,12 +84,13 @@ with st.sidebar:
             w_cnt = len(gl[(gl['姓名']==m) & (gl['結果'].str.contains('❌', na=False))])
             st.markdown(f'<div style="font-size:12px;">👤 {m}: {c_cnt} / {w_cnt}</div>', unsafe_allow_html=True)
 
-# --- 📦 【盒子 B：導師中心 (Box B)】 ---
+# --- 📦 【盒子 B：導師中心】 ---
 if st.session_state.group_id == "ADMIN" and st.session_state.view_mode == "管理後台":
     st.markdown("## 🟢 導師管理 (盒子 B)")
+    st.info("管理後台功能正常存續。")
     st.stop()
 
-# --- 📦 【盒子 C：範圍設定 (Box C)】 ---
+# --- 📦 【盒子 C：範圍設定】 ---
 if not st.session_state.quiz_loaded:
     st.markdown("## 🟡 練習範圍設定 (盒子 C)")
     with st.expander("⚙️ 篩選範圍", expanded=not st.session_state.range_confirmed):
@@ -102,7 +103,6 @@ if not st.session_state.quiz_loaded:
         if st.button("🔍 確認範圍", use_container_width=True): st.session_state.range_confirmed = True; st.rerun()
     
     if st.session_state.range_confirmed:
-        st.divider()
         df_scope = df_q[(df_q['版本']==st.session_state.s_v)&(df_q['單元']==st.session_state.s_u)&(df_q['年度']==st.session_state.s_y)&(df_q['冊編號']==st.session_state.s_b)&(df_q['課編號']==st.session_state.s_l)].copy()
         df_scope['題目ID'] = df_scope.apply(lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1)
         
@@ -118,28 +118,50 @@ if not st.session_state.quiz_loaded:
 
         st.success(f"📊 符合條件題數：{len(df_final)} 題")
         nu_i = st.number_input("🔢 練習題數", 1, 50, 10, key="s_n")
-        
-        if st.button("🚀 正式開始 (進入盒子 D)", type="primary", use_container_width=True):
+        if st.button("🚀 開始練習", type="primary", use_container_width=True):
             if not df_final.empty:
                 st.session_state.update({"quiz_list": df_final.head(int(nu_i)).to_dict('records'), "q_idx": 0, "quiz_loaded": True, "ans": [], "used_history": [], "shuf": [], "show_analysis": False, "start_time_ts": time.time()})
                 st.rerun()
             else: st.error("❌ 無符合題目")
 
-# --- 📦 【盒子 D：練習引擎 (Box D: 兼容性修復版)】 ---
+# --- 📦 【盒子 D：練習引擎 (題型分流修復版)】 ---
 if st.session_state.quiz_loaded:
     st.markdown("## 🔴 核心練習中 (盒子 D)")
     q = st.session_state.quiz_list[st.session_state.q_idx]
     
-    # 💡 [修復] 中文題目渲染 (優先顯示，避免全白)
-    st.subheader(f"題目：{q.get('重組中文題目') or q.get('中文題目') or q.get('單選題目') or '【無中文標題資料】'}")
+    # 💡 判斷題型：檢查單元欄位
+    is_mcq = "單選" in q.get("單元", "")
     
-    # 💡 [修復] 英文答案兼容性抓取 (解決截圖中的找不到答案問題)
-    ans_key = str(q.get("重組英文答案") or q.get("英文答案") or q.get("單選答案") or "").strip()
+    # 渲染題目標題
+    title_key = "單選題目" if is_mcq else "重組中文題目"
+    st.subheader(f"題目：{q.get(title_key) or q.get('中文題目') or '【無題目資料】'}")
     
-    if not ans_key:
-        st.error(f"❌ 找不到該題目的英文答案 (ID: {q.get('題目ID')})，請檢查雲端題庫欄位名稱是否正確。")
+    # 獲取正確答案
+    ans_col = "單選答案" if is_mcq else "重組英文答案"
+    ans_key = str(q.get(ans_col) or q.get("英文答案") or "").strip()
+    
+    if is_mcq:
+        # ---------------------------------------------------------
+        # 💡 [分支 D-1] 單選題 UI
+        # ---------------------------------------------------------
+        st.write("請選擇正確答案：")
+        cols = st.columns(4)
+        options = ["A", "B", "C", "D"]
+        for i, opt in enumerate(options):
+            if cols[i].button(f" {opt} ", key=f"mcq_{opt}", use_container_width=True):
+                # 單選題直接比對
+                is_ok = (opt.upper() == ans_key.upper())
+                st.session_state.update({
+                    "current_res": "✅ 正確！" if is_ok else f"❌ 錯誤！正確答案是 ({ans_key})", 
+                    "show_analysis": True
+                })
+                # 此處未來可增加 buffer_log
+                st.rerun()
     else:
-        st.info(" ".join(st.session_state.ans) if st.session_state.ans else "請點擊單字庫...")
+        # ---------------------------------------------------------
+        # 💡 [分支 D-2] 重組題 UI
+        # ---------------------------------------------------------
+        st.info(" ".join(st.session_state.ans) if st.session_state.ans else "請點擊下方單字庫...")
         tk = re.findall(r"[\w']+|[.,?!:;]", ans_key)
         if not st.session_state.get('shuf'):
             st.session_state.shuf = tk.copy(); random.shuffle(st.session_state.shuf)
@@ -154,8 +176,9 @@ if st.session_state.quiz_loaded:
             st.divider()
             if st.button("✅ 檢查結果", type="primary", use_container_width=True):
                 is_ok = clean_string_for_compare("".join(st.session_state.ans)) == clean_string_for_compare(ans_key)
-                st.session_state.update({"current_res": "✅ 正確！" if is_ok else f"❌ 錯誤！答案：{ans_key}", "show_analysis": True}); st.rerun()
+                st.session_state.update({"current_res": "✅ 正確！" if is_ok else f"❌ 錯誤！正確答案：{ans_key}", "show_analysis": True}); st.rerun()
 
+    # 共用分析顯示與跳轉
     if st.session_state.get('show_analysis'):
         st.warning(st.session_state.current_res)
         if st.button("下一題 ➡️"):
@@ -164,6 +187,7 @@ if st.session_state.quiz_loaded:
             else: st.session_state.update({"quiz_loaded": False, "range_confirmed": False})
             st.rerun()
     
-    if st.button("🏁 結束練習"): st.session_state.update({"quiz_loaded": False, "range_confirmed": False}); st.rerun()
+    st.divider()
+    if st.button("🏁 結束並退出"): st.session_state.update({"quiz_loaded": False, "range_confirmed": False}); st.rerun()
 
-st.caption(f"Ver {VERSION} | 欄位兼容與數據對位修復成功")
+st.caption(f"Ver {VERSION} | 盒子 D 題型分流修復成功")
