@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.20 - 朗讀重錄流程版)
+# 🧩 英文全能練習系統 (V2.9.22 - 朗讀TTS上下排列版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.20
+# 📌 版本編號 (VERSION): 2.9.22
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -23,7 +23,7 @@ import requests
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "2.9.20"
+VERSION = "2.9.22"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1266,9 +1266,23 @@ if st.session_state.quiz_loaded:
         )
         st.write("")
 
-        # 若已有評分，先顯示分數和重錄提示
+        # 若已有評分，先顯示分數、TTS 和重錄提示
         if st.session_state.get('show_analysis') and is_reading:
             st.warning(st.session_state.current_res)
+
+            # 播放學生版和標準版
+            tts_stu = st.session_state.get('tts_student')
+            tts_std = st.session_state.get('tts_standard')
+            stt_shown = st.session_state.get('stt_text_shown', '')
+
+            if tts_stu or tts_std:
+                if tts_stu:
+                    st.markdown(f"**🎤 你說的：** `{stt_shown}`")
+                    st.audio(tts_stu, format="audio/mp3")
+                if tts_std:
+                    st.markdown("**📢 標準發音：**")
+                    st.audio(tts_std, format="audio/mp3")
+
             st.caption("📢 如想提高成績，可按麥克風重錄一次再送出評分")
 
         # 麥克風一直顯示（不管有沒有評分過）
@@ -1318,9 +1332,21 @@ if st.session_state.quiz_loaded:
                         else:
                             result_display = f"❌ 請再試試 {score} 分"
 
+                        # TTS：產生學生版和標準版音檔（bytes）
+                        tts_student = client.audio.speech.create(
+                            model="tts-1", voice="alloy", input=stt_text
+                        ).content if stt_text else None
+
+                        tts_standard = client.audio.speech.create(
+                            model="tts-1", voice="nova", input=read_text
+                        ).content if read_text else None
+
                         st.session_state.update({
-                            "current_res":   result_display,
-                            "show_analysis": True
+                            "current_res":    result_display,
+                            "show_analysis":  True,
+                            "tts_student":    tts_student,
+                            "tts_standard":   tts_standard,
+                            "stt_text_shown": stt_text
                         })
 
                         # 寫入 Log（每次送出都記一筆）
@@ -1422,17 +1448,24 @@ if st.session_state.quiz_loaded:
         # 朗讀題的分數已在麥克風上方顯示，不在此重複
     st.divider()
     c_nav = st.columns(2)
+
+    def _clear_q():
+        st.session_state.update({
+            "ans": [], "used_history": [], "shuf": [], "show_analysis": False,
+            "tts_student": None, "tts_standard": None, "stt_text_shown": ""
+        })
+
     if st.session_state.q_idx > 0:
         if c_nav[0].button("⬅️ 🔵 上一題", use_container_width=True):
             st.session_state.q_idx -= 1
-            st.session_state.update({"ans": [], "used_history": [], "shuf": [], "show_analysis": False})
+            _clear_q()
             st.rerun()
 
     nxt_label = "下一題 ➡️" if st.session_state.q_idx + 1 < len(st.session_state.quiz_list) else "🏁 結束練習"
     if c_nav[1].button(nxt_label, type="primary", use_container_width=True):
         if st.session_state.q_idx + 1 < len(st.session_state.quiz_list):
             st.session_state.q_idx += 1
-            st.session_state.update({"ans": [], "used_history": [], "shuf": [], "show_analysis": False})
+            _clear_q()
             st.rerun()
         else:
             st.session_state.update({"quiz_loaded": False, "range_confirmed": False})
