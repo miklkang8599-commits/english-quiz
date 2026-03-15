@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.19 - 朗讀重新錄音版)
+# 🧩 英文全能練習系統 (V2.9.20 - 朗讀重錄流程版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.19
+# 📌 版本編號 (VERSION): 2.9.20
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -23,7 +23,7 @@ import requests
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "2.9.19"
+VERSION = "2.9.20"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1266,9 +1266,15 @@ if st.session_state.quiz_loaded:
         )
         st.write("")
 
+        # 若已有評分，先顯示分數和重錄提示
+        if st.session_state.get('show_analysis') and is_reading:
+            st.warning(st.session_state.current_res)
+            st.caption("📢 如想提高成績，可按麥克風重錄一次再送出評分")
+
+        # 麥克風一直顯示（不管有沒有評分過）
         audio_data = st.audio_input("🎙️ 點擊錄音", key=f"audio_{st.session_state.q_idx}")
 
-        if audio_data and not st.session_state.get('show_analysis'):
+        if audio_data:
             if st.button("✅ 送出評分", type="primary", use_container_width=True):
                 with st.spinner("🔄 評分中，請稍候..."):
                     try:
@@ -1284,7 +1290,7 @@ if st.session_state.quiz_loaded:
                         )
                         stt_text = transcript.text.strip()
 
-                        # Step 2：GPT-4o-mini 評分（只回傳 0-100 整數）
+                        # Step 2：GPT-4o-mini 評分
                         client = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
                         score_resp = client.chat.completions.create(
                             model="gpt-4o-mini",
@@ -1317,7 +1323,7 @@ if st.session_state.quiz_loaded:
                             "show_analysis": True
                         })
 
-                        # 寫入 Log
+                        # 寫入 Log（每次送出都記一筆）
                         log_data = pd.DataFrame([{
                             "時間":    get_now().strftime("%Y-%m-%d %H:%M:%S"),
                             "姓名":    st.session_state.user_name,
@@ -1411,14 +1417,9 @@ if st.session_state.quiz_loaded:
                 append_to_sheet("logs", log_data)
                 st.rerun()
 
-    if st.session_state.get('show_analysis'):
+    if st.session_state.get('show_analysis') and not is_reading:
         st.warning(st.session_state.current_res)
-        # 朗讀題：允許立即重新錄音
-        if is_reading:
-            if st.button("🔄 重新錄音再評分", use_container_width=True):
-                st.session_state.update({"show_analysis": False, "current_res": ""})
-                st.rerun()
-
+        # 朗讀題的分數已在麥克風上方顯示，不在此重複
     st.divider()
     c_nav = st.columns(2)
     if st.session_state.q_idx > 0:
