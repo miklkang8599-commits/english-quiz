@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.22 - 朗讀TTS上下排列版)
+# 🧩 英文全能練習系統 (V2.9.23 - AI辨識文字標籤版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.22
+# 📌 版本編號 (VERSION): 2.9.23
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -23,7 +23,7 @@ import requests
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "2.9.22"
+VERSION = "2.9.23"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1277,7 +1277,7 @@ if st.session_state.quiz_loaded:
 
             if tts_stu or tts_std:
                 if tts_stu:
-                    st.markdown(f"**🎤 你說的：** `{stt_shown}`")
+                    st.markdown(f"**🎤 AI 認為你說的內容：** `{stt_shown}`")
                     st.audio(tts_stu, format="audio/mp3")
                 if tts_std:
                     st.markdown("**📢 標準發音：**")
