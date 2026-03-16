@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.34 - 導師手動刷新版)
+# 🧩 英文全能練習系統 (V2.9.35 - 任務說明顯示版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.34
+# 📌 版本編號 (VERSION): 2.9.35
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -23,7 +23,7 @@ import requests
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "2.9.34"
+VERSION = "2.9.35"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -483,6 +483,11 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 date_info = f"{task_start} ～ {task_end}" if task_start else ""
 
                 with st.expander(f"{done_icon} {task_name}　{task_group}　{date_info}　✅{completed}/{assign_count}人"):
+                    # 任務說明
+                    admin_desc = str(row.get('任務說明', '')).strip()
+                    if admin_desc and admin_desc != 'nan':
+                        st.info(f"📋 {admin_desc}")
+
                     ic1, ic2, ic3, ic4 = st.columns(4)
                     ic1.metric("指派人數", assign_count)
                     ic2.metric("已完成", completed)
