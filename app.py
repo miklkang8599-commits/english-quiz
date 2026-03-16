@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.29 - 表單清空Flag修復版)
+# 🧩 英文全能練習系統 (V2.9.30 - 一般任務直接載入修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.29
+# 📌 版本編號 (VERSION): 2.9.30
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -23,7 +23,7 @@ import requests
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "2.9.29"
+VERSION = "2.9.30"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1138,12 +1138,35 @@ if not st.session_state.quiz_loaded:
                                 st.rerun()
 
                         elif can_preload:
-                            # 一般任務：進盒子 C 預帶範圍
+                            # 一般任務：直接從 df_q 取出未完成題目載入
+                            df_q2 = df_q.copy()
+                            df_q2['題目ID'] = df_q2.apply(
+                                lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1
+                            )
+                            pending_q = df_q2[df_q2['題目ID'].isin(pending_ids)].copy()
+                            if not pending_q.empty:
+                                st.session_state.update({
+                                    "quiz_list": pending_q.to_dict('records'),
+                                    "q_idx": 0, "quiz_loaded": True,
+                                    "ans": [], "used_history": [], "shuf": [], "show_analysis": False
+                                })
+                                st.rerun()
+                            else:
+                                # fallback：進盒子 C 預帶範圍
+                                st.session_state.update({
+                                    "s_v": parts[0], "s_u": parts[1],
+                                    "s_y": parts[2], "s_b": parts[3], "s_l": parts[4],
+                                    "task_q_ids": list(pending_ids),
+                                    "range_confirmed": True,
+                                    "ans": [], "used_history": [], "shuf": [], "show_analysis": False
+                                })
+                                st.rerun()
+
+                        else:
+                            # 無法預帶：進盒子 C 讓學生自選
                             st.session_state.update({
-                                "s_v": parts[0], "s_u": parts[1],
-                                "s_y": parts[2], "s_b": parts[3], "s_l": parts[4],
                                 "task_q_ids": list(pending_ids),
-                                "range_confirmed": True,
+                                "range_confirmed": False,
                                 "ans": [], "used_history": [], "shuf": [], "show_analysis": False
                             })
                             st.rerun()
