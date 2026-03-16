@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.32 - 任務列表可編輯版)
+# 🧩 英文全能練習系統 (V2.9.34 - 導師手動刷新版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.32
+# 📌 版本編號 (VERSION): 2.9.34
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -23,7 +23,7 @@ import requests
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "2.9.32"
+VERSION = "2.9.34"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -217,14 +217,19 @@ with st.sidebar:
 # 📦 【盒子 B：導師中心】
 # ------------------------------------------------------------------------------
 if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理後台":
-    st.markdown("## 🟢 導師中心 (盒子 B)")
+    hc1, hc2 = st.columns([4, 1])
+    hc1.markdown("## 🟢 導師中心")
+    if hc2.button("🔄 更新資料", use_container_width=True):
+        load_static_data.clear()
+        load_dynamic_data.clear()
+        st.rerun()
 
     t1, t2, t3, t4 = st.tabs(["📋 指派任務", "📈 數據監控", "📋 學生名單", "📖 題目講解"])
 
     with t1:
         # 發布成功後清空表單（在 widget 渲染前執行）
         if st.session_state.pop('t1_clear_form', False):
-            for k in ['t1_title', 't1_desc', 't1_group', 't1_mode', 't1_stu',
+            for k in ['t1_title', 't1_group', 't1_mode', 't1_stu',
                       't1_inc_q', 't1_inc_reading', 't1_ref_stu', 't1_ref_logic', 't1_ref_n',
                       't1_v', 't1_u', 't1_y', 't1_b', 't1_l', 't1_start_sent', 't1_q_count',
                       'rt_v', 'rt_u', 'rt_y', 'rt_b', 'rt_l', 'rt_start_sent', 'rt_q_count']:
@@ -240,8 +245,6 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
         task_title    = c1.text_input("任務名稱", value=f"任務_{get_now().strftime('%m%d')}", key="t1_title")
         all_groups    = sorted(df_s[~df_s['分組'].isin(['ADMIN','TEACHER'])]['分組'].unique().tolist())
         target_groups = c2.multiselect("目標班級/分組（可複選）", all_groups, default=[], key="t1_group")
-
-        task_desc = st.text_area("📋 任務說明（學生可見）", placeholder="例如：請完成第三課單字重組練習，共10題，期限內完成可加分。", height=80, key="t1_desc")
 
         # 指派對象：依選取班級合併學生名單
         if target_groups:
@@ -411,6 +414,15 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 r_ids   = df_r_final['題目ID'].tolist()  if (not df_r_final.empty  and '題目ID' in df_r_final.columns)  else []
                 all_ids = q_ids + r_ids
                 task_type = "混合" if (q_ids and r_ids) else ("朗讀" if not q_ids else "一般")
+
+                # 自動產生任務說明摘要
+                desc_parts = []
+                if q_ids:
+                    desc_parts.append(f"重組/單選：{t1v} {t1u} {t1y}年 冊{t1b} 課{t1l}，共 {len(q_ids)} 題")
+                if r_ids:
+                    desc_parts.append(f"朗讀：{len(r_ids)} 題")
+                auto_desc = "；".join(desc_parts)
+
                 new_task  = pd.DataFrame([{
                     "建立時間":   get_now().strftime("%Y-%m-%d %H:%M:%S"),
                     "任務名稱":   task_title,
@@ -418,7 +430,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     "指派學生":   ",".join(target_students_t1),
                     "指派人數":   len(target_students_t1),
                     "內容":       f"{t1v}|{t1u}|{t1y}|{t1b}|{t1l}",
-                    "任務說明":   task_desc.strip(),
+                    "任務說明":   auto_desc,
                     "題目數":     len(all_ids),
                     "題目ID清單": ",".join(all_ids),
                     "開始日期":   str(date_start),
