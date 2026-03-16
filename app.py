@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.31 - TEACHER角色版)
+# 🧩 英文全能練習系統 (V2.9.32 - 任務列表可編輯版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.31
+# 📌 版本編號 (VERSION): 2.9.32
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -23,7 +23,7 @@ import requests
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "2.9.31"
+VERSION = "2.9.32"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -477,9 +477,6 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     ic3.metric("題目數", task_q_count)
                     ic4.metric("狀態", "🟢 全部完成" if all_done else ("🔴 進行中" if task_status != '已結束' else "⚫ 已結束"))
 
-                    if assigned_stus:
-                        st.markdown("**指派學生：**" + "、".join(assigned_stus))
-
                     # 各學生完成狀況
                     if assigned_stus and q_ids_set and not df_l.empty and '題目ID' in df_l.columns:
                         st.markdown("**學生完成狀況：**")
@@ -490,30 +487,47 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                             sc[i % 5].markdown(f"{'✅' if q_ids_set.issubset(stu_done) else '🔄'} **{stu}**  \n{done_q}/{task_q_count} 題")
 
                     st.divider()
+                    st.markdown("**✏️ 修改任務內容**")
 
-                    # ── 修改日期 ──────────────────────────────────────────
-                    st.markdown("**📅 修改任務日期**")
-                    ed1, ed2, ed3 = st.columns([2, 2, 1])
+                    # 任務名稱
+                    new_name = st.text_input("任務名稱", value=task_name, key=f"edit_name_{idx}")
+
+                    # 日期
+                    ed1, ed2 = st.columns(2)
                     try:
                         cur_start = datetime.strptime(task_start, "%Y-%m-%d").date() if task_start else get_now().date()
                         cur_end   = datetime.strptime(task_end,   "%Y-%m-%d").date() if task_end   else get_now().date() + timedelta(days=7)
                     except:
                         cur_start = get_now().date()
                         cur_end   = get_now().date() + timedelta(days=7)
-
                     new_start = ed1.date_input("開始日期", value=cur_start, key=f"edit_start_{idx}")
                     new_end   = ed2.date_input("結束日期", value=cur_end,   key=f"edit_end_{idx}")
-                    if ed3.button("💾 儲存", key=f"save_date_{idx}", use_container_width=True):
+
+                    # 學生（可刪除）
+                    st.markdown("**👥 指派學生（取消勾選即移除）**")
+                    all_stu_pool = sorted(df_s[~df_s['分組'].isin(['ADMIN','TEACHER'])]['姓名'].tolist())
+                    new_stus = st.multiselect(
+                        "學生名單", all_stu_pool,
+                        default=[s for s in assigned_stus if s in all_stu_pool],
+                        key=f"edit_stus_{idx}"
+                    )
+
+                    if st.button("💾 儲存修改", key=f"save_task_{idx}", type="primary", use_container_width=True):
                         if new_end < new_start:
                             st.error("❌ 結束日期不能早於開始日期")
+                        elif not new_stus:
+                            st.error("❌ 請至少保留一位學生")
                         else:
                             try:
                                 df_a_edit = conn.read(worksheet="assignments", ttl=0)
+                                df_a_edit.at[idx, '任務名稱'] = new_name.strip()
                                 df_a_edit.at[idx, '開始日期'] = str(new_start)
                                 df_a_edit.at[idx, '結束日期'] = str(new_end)
+                                df_a_edit.at[idx, '指派學生'] = ",".join(new_stus)
+                                df_a_edit.at[idx, '指派人數'] = len(new_stus)
                                 conn.update(worksheet="assignments", data=df_a_edit)
                                 load_dynamic_data.clear()
-                                st.success("✅ 日期已更新")
+                                st.success("✅ 任務已更新")
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"儲存失敗：{e}")
