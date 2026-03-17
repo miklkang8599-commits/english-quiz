@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.42 - 空任務過濾版)
+# 🧩 英文全能練習系統 (V2.9.43 - 除錯清除版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.42
+# 📌 版本編號 (VERSION): 2.9.43
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -23,7 +23,7 @@ import requests
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "2.9.42"
+VERSION = "2.9.43"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1233,11 +1233,6 @@ if not st.session_state.quiz_loaded:
 
 
         st.divider()
-
-    # 除錯：顯示任務篩選過程（暫時對所有人顯示）
-    with st.expander(f"🔍 除錯資訊（今日：{today_dt} | 學生：{user_name}）", expanded=False):
-        for d in debug_info:
-            st.write(d)
 
     # 除錯：讓管理員看到原始 assignments 資料
     if not df_a.empty and is_admin(st.session_state.group_id):
