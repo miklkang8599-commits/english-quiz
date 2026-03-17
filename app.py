@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.46 - 朗讀任務名稱完整版)
+# 🧩 英文全能練習系統 (V2.9.47 - TTS手機播放修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.46
+# 📌 版本編號 (VERSION): 2.9.47
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -23,7 +23,7 @@ import requests
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "2.9.46"
+VERSION = "2.9.47"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1402,12 +1402,13 @@ if st.session_state.quiz_loaded:
             stt_shown = st.session_state.get('stt_text_shown', '')
 
             if tts_stu or tts_std:
+                import base64, io
                 if tts_stu:
                     st.markdown(f"**🎤 AI 認為你說的內容：** `{stt_shown}`")
-                    st.audio(tts_stu, format="audio/mp3")
+                    st.audio(io.BytesIO(base64.b64decode(tts_stu)), format="audio/mpeg")
                 if tts_std:
                     st.markdown("**📢 標準發音：**")
-                    st.audio(tts_std, format="audio/mp3")
+                    st.audio(io.BytesIO(base64.b64decode(tts_std)), format="audio/mpeg")
 
             st.caption("📢 如想提高成績，可按麥克風重錄一次再送出評分")
 
@@ -1458,20 +1459,21 @@ if st.session_state.quiz_loaded:
                         else:
                             result_display = f"❌ 請再試試 {score} 分"
 
-                        # TTS：產生學生版和標準版音檔（bytes）
-                        tts_student = client.audio.speech.create(
+                        # TTS：產生學生版和標準版音檔，存為 base64 避免 rerun 後 bytes 失效
+                        import base64
+                        tts_stu_raw = client.audio.speech.create(
                             model="tts-1", voice="alloy", input=stt_text
                         ).content if stt_text else None
 
-                        tts_standard = client.audio.speech.create(
+                        tts_std_raw = client.audio.speech.create(
                             model="tts-1", voice="nova", input=read_text
                         ).content if read_text else None
 
                         st.session_state.update({
                             "current_res":    result_display,
                             "show_analysis":  True,
-                            "tts_student":    tts_student,
-                            "tts_standard":   tts_standard,
+                            "tts_student":    base64.b64encode(tts_stu_raw).decode() if tts_stu_raw else None,
+                            "tts_standard":   base64.b64encode(tts_std_raw).decode() if tts_std_raw else None,
                             "stt_text_shown": stt_text
                         })
 
