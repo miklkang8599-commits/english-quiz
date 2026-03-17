@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.54 - 講解任務篩選版)
+# 🧩 英文全能練習系統 (V2.9.55 - 講解任務篩選修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.54
+# 📌 版本編號 (VERSION): 2.9.55
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -23,7 +23,7 @@ import requests
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "2.9.54"
+VERSION = "2.9.55"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -835,59 +835,50 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 key="rev_group"
             )
             students_in_group = sorted(df_s[df_s['分組'] == rev_group]['姓名'].tolist())
-            rev_students = st.multiselect(
-                "👤 學生（預設全選，可自由增刪）",
-                options=students_in_group,
-                default=students_in_group,
-                key="rev_students"
-            )
-            target_students = rev_students if rev_students else students_in_group
 
             # ── 任務篩選（選填）─────────────────────────────────────────
-            rev_task_ids = None  # 若有選任務，限制在任務題目範圍內
+            rev_task_ids   = None
+            task_stu_default = students_in_group  # 預設全班
+
             if not df_a.empty and '任務名稱' in df_a.columns:
-                # 只顯示和此班級相關、未刪除、一般/混合類型的任務
                 df_a_rev = df_a[
                     (df_a.get('狀態', pd.Series(dtype=str)).fillna('') != '已刪除') &
                     (df_a.get('類型',  pd.Series(dtype=str)).fillna('').isin(['一般', '混合', '']))
                 ].copy()
-                task_names = ["（不限，依範圍篩選）"] + df_a_rev['任務名稱'].tolist()
+                task_names = ["（不限）"] + df_a_rev['任務名稱'].tolist()
                 sel_task = st.selectbox("📋 依任務篩選（選填）", task_names, key="rev_task")
 
-                if sel_task != "（不限，依範圍篩選）":
-                    task_row  = df_a_rev[df_a_rev['任務名稱'] == sel_task].iloc[0]
-                    ids_str   = str(task_row.get('題目ID清單', '') or '')
+                if sel_task != "（不限）":
+                    task_row = df_a_rev[df_a_rev['任務名稱'] == sel_task].iloc[0]
+                    ids_str  = str(task_row.get('題目ID清單', '') or '')
                     rev_task_ids = set([q.strip() for q in ids_str.split(',') if q.strip() and q.strip() != 'nan'])
 
-                    # 自動帶入篩選範圍
+                    # 顯示任務資訊
                     content_str = str(task_row.get('內容', ''))
                     parts = [p.strip() for p in content_str.split('|')]
                     if len(parts) == 5:
-                        st.info(f"📋 任務範圍：{parts[0]} {parts[1]} {parts[2]}年 冊{parts[3]} 課{parts[4]}，共 {len(rev_task_ids)} 題")
-                        # 把任務帶入 session state 供 selectbox 使用
-                        for k, v in zip(['rev_v','rev_u','rev_y','rev_b','rev_l'], parts):
-                            if k not in st.session_state or st.session_state[k] != v:
-                                st.session_state[k] = v
-                        st.rerun()
+                        st.info(f"📋 {sel_task}　共 {len(rev_task_ids)} 題")
+
+                    # 自動帶入任務的指派學生（與班級學生取交集）
+                    stu_str = str(task_row.get('指派學生', '') or '')
+                    task_stus = [s.strip() for s in stu_str.split(',') if s.strip()]
+                    task_stu_default = [s for s in task_stus if s in students_in_group] or students_in_group
+
+            rev_students = st.multiselect(
+                "👤 學生（預設全選，可自由增刪）",
+                options=students_in_group,
+                default=task_stu_default,
+                key="rev_students"
+            )
+            target_students = rev_students if rev_students else students_in_group
 
             st.markdown("**⚙️ 題目範圍**")
-
-            def _rev_idx(opts, key):
-                val = st.session_state.get(key)
-                try: return opts.index(val) if val in opts else 0
-                except: return 0
-
             rc = st.columns(5)
-            rv_opts = sorted(df_q['版本'].unique())
-            rv = rc[0].selectbox("版本", rv_opts, index=_rev_idx(rv_opts, 'rev_v'), key="rev_v")
-            ru_opts = sorted(df_q[df_q['版本'] == rv]['單元'].unique())
-            ru = rc[1].selectbox("單元", ru_opts, index=_rev_idx(ru_opts, 'rev_u'), key="rev_u")
-            ry_opts = sorted(df_q[(df_q['版本'] == rv) & (df_q['單元'] == ru)]['年度'].unique())
-            ry = rc[2].selectbox("年度", ry_opts, index=_rev_idx(ry_opts, 'rev_y'), key="rev_y")
-            rb_opts = sorted(df_q[(df_q['版本'] == rv) & (df_q['單元'] == ru) & (df_q['年度'] == ry)]['冊編號'].unique())
-            rb = rc[3].selectbox("冊別", rb_opts, index=_rev_idx(rb_opts, 'rev_b'), key="rev_b")
-            rl_opts = sorted(df_q[(df_q['版本'] == rv) & (df_q['單元'] == ru) & (df_q['年度'] == ry) & (df_q['冊編號'] == rb)]['課編號'].unique())
-            rl = rc[4].selectbox("課次", rl_opts, index=_rev_idx(rl_opts, 'rev_l'), key="rev_l")
+            rv = rc[0].selectbox("版本", sorted(df_q['版本'].unique()), key="rev_v")
+            ru = rc[1].selectbox("單元", sorted(df_q[df_q['版本'] == rv]['單元'].unique()), key="rev_u")
+            ry = rc[2].selectbox("年度", sorted(df_q[(df_q['版本'] == rv) & (df_q['單元'] == ru)]['年度'].unique()), key="rev_y")
+            rb = rc[3].selectbox("冊別", sorted(df_q[(df_q['版本'] == rv) & (df_q['單元'] == ru) & (df_q['年度'] == ry)]['冊編號'].unique()), key="rev_b")
+            rl = rc[4].selectbox("課次", sorted(df_q[(df_q['版本'] == rv) & (df_q['單元'] == ru) & (df_q['年度'] == ry) & (df_q['冊編號'] == rb)]['課編號'].unique()), key="rev_l")
 
             df_rev_scope = df_q[
                 (df_q['版本'] == rv) & (df_q['單元'] == ru) &
@@ -901,6 +892,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             # 若有選任務，進一步篩選到任務題目
             if rev_task_ids:
                 df_rev_scope = df_rev_scope[df_rev_scope['題目ID'].isin(rev_task_ids)].copy()
+
 
 
         if df_rev_scope.empty:
