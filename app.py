@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.38 - 任務說明格式版)
+# 🧩 英文全能練習系統 (V2.9.39 - 任務篩選修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.38
+# 📌 版本編號 (VERSION): 2.9.39
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -23,7 +23,7 @@ import requests
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "2.9.38"
+VERSION = "2.9.39"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1061,20 +1061,29 @@ if not st.session_state.quiz_loaded:
 
     # 找出指派給這位學生、未刪除、日期有效的任務
     my_tasks = []
-    if not df_a.empty and '指派學生' in df_a.columns:
+    if not df_a.empty:
         for _, arow in df_a.iterrows():
-            if str(arow.get('狀態', '')) == '已刪除':
+            # 過濾已刪除
+            if str(arow.get('狀態', '')).strip() == '已刪除':
                 continue
-            assigned = [s.strip() for s in str(arow.get('指派學生', '')).split(',') if s.strip()]
+
+            # 確認學生在指派名單中（同時支援舊格式 '對象' 欄）
+            stu_str  = str(arow.get('指派學生', '') or arow.get('對象', '') or '')
+            assigned = [s.strip() for s in stu_str.split(',') if s.strip()]
             if user_name not in assigned:
                 continue
-            # 日期範圍檢查
+
+            # 日期範圍檢查：嚴格解析，解析失敗的任務不顯示（避免過期任務殘留）
             try:
-                t_end = datetime.strptime(str(arow.get('結束日期', '')), "%Y-%m-%d").date()
+                end_str = str(arow.get('結束日期', '')).strip()
+                if not end_str or end_str == 'nan':
+                    continue  # 沒有結束日期就不顯示
+                t_end = datetime.strptime(end_str, "%Y-%m-%d").date()
                 if t_end < today_dt:
-                    continue
+                    continue  # 已過期
             except:
-                pass
+                continue  # 格式錯誤也跳過
+
             my_tasks.append(arow)
 
     if my_tasks:
