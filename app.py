@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.35 - 任務說明顯示版)
+# 🧩 英文全能練習系統 (V2.9.36 - 按鍵Key衝突修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.35
+# 📌 版本編號 (VERSION): 2.9.36
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -23,7 +23,7 @@ import requests
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "2.9.35"
+VERSION = "2.9.36"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -163,8 +163,8 @@ if df_q is None or df_s is None:
 with st.sidebar:
     st.write(f"👤 {st.session_state.user_name} ({st.session_state.group_id})")
     if is_admin(st.session_state.group_id):
-        st.session_state.view_mode = st.radio("功能切換：", ["管理後台", "進入練習"])
-    if st.button("🚪 登出系統", use_container_width=True):
+        st.session_state.view_mode = st.radio("功能切換：", ["管理後台", "進入練習"], key="sidebar_view_mode")
+    if st.button("🚪 登出系統", use_container_width=True, key="sidebar_logout"):
         st.session_state.clear()
         st.rerun()
 
@@ -219,7 +219,7 @@ with st.sidebar:
 if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理後台":
     hc1, hc2 = st.columns([4, 1])
     hc1.markdown("## 🟢 導師中心")
-    if hc2.button("🔄 更新資料", use_container_width=True):
+    if hc2.button("🔄 更新資料", use_container_width=True, key="admin_refresh"):
         load_static_data.clear()
         load_dynamic_data.clear()
         st.rerun()
