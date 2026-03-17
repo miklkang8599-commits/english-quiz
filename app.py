@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.45 - 任務名稱格式優化版)
+# 🧩 英文全能練習系統 (V2.9.46 - 朗讀任務名稱完整版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.45
+# 📌 版本編號 (VERSION): 2.9.46
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -23,7 +23,7 @@ import requests
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "2.9.45"
+VERSION = "2.9.46"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -421,7 +421,14 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 if r_ids:
                     r_start = st.session_state.get('rt_start_sent', '')
                     r_start_label = f" 起始句{r_start}" if r_start else ""
-                    desc_parts.append(f"朗讀{r_start_label}：{len(r_ids)} 題")
+                    # 取朗讀篩選範圍（若有選的話）
+                    rv_ = st.session_state.get('rt_v', '')
+                    ru_ = st.session_state.get('rt_u', '')
+                    ry_ = st.session_state.get('rt_y', '')
+                    rb_ = st.session_state.get('rt_b', '')
+                    rl_ = st.session_state.get('rt_l', '')
+                    r_scope = f"：{rv_} {ru_} {ry_}年 冊{rb_} 課{rl_}" if rv_ else ""
+                    desc_parts.append(f"朗讀{r_scope}{r_start_label}，共 {len(r_ids)} 題")
                 publish_time = get_now().strftime("%Y-%m-%d-%H:%M")
                 teacher_name = st.session_state.user_name
                 groups_label = ",".join(target_groups)
