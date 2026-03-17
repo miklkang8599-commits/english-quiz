@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.39 - 任務篩選修復版)
+# 🧩 英文全能練習系統 (V2.9.40 - 任務除錯版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.39
+# 📌 版本編號 (VERSION): 2.9.40
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -23,7 +23,7 @@ import requests
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "2.9.39"
+VERSION = "2.9.40"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1092,10 +1092,10 @@ if not st.session_state.quiz_loaded:
             task_name    = arow.get('任務名稱', '未命名')
             task_start   = arow.get('開始日期', '')
             task_end     = arow.get('結束日期', '')
-            task_q_ids   = str(arow.get('題目ID清單', ''))
-            q_ids_set    = set([q.strip() for q in task_q_ids.split(',') if q.strip()])
-            # 優先用 題目ID清單 的實際長度，避免 "12.0" 格式導致解析失敗
-            task_q_count = len(q_ids_set) if q_ids_set else max(int(float(str(arow.get('題目數', 0)) or 0)), 0)
+            task_q_ids   = str(arow.get('題目ID清單', '') or '')
+            # 過濾掉 nan 和空白
+            q_ids_set    = set([q.strip() for q in task_q_ids.split(',') if q.strip() and q.strip() != 'nan'])
+            task_q_count = len(q_ids_set) if q_ids_set else max(int(float(str(arow.get('題目數', 0) or 0))), 0)
 
             # 計算個人完成進度（混合任務：一般題答對 + 朗讀題有紀錄）
             task_type       = str(arow.get('類型', '一般'))
@@ -1219,6 +1219,12 @@ if not st.session_state.quiz_loaded:
 
 
         st.divider()
+
+    # 除錯：讓管理員看到原始 assignments 資料
+    if not df_a.empty and is_admin(st.session_state.group_id):
+        with st.expander("🔍 除錯：assignments 原始資料（僅管理員可見）", expanded=False):
+            st.dataframe(df_a, use_container_width=True)
+            st.write(f"今日：{today_dt} | 學生：{user_name} | 共 {len(my_tasks)} 個有效任務")
 
     # ══════════════════════════════════════════════════════════════════════
     # 原本的自由練習區（盒子 C）
