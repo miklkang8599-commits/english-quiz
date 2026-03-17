@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.47 - TTS手機播放修復版)
+# 🧩 英文全能練習系統 (V2.9.48 - API限流修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.47
+# 📌 版本編號 (VERSION): 2.9.48
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -23,7 +23,7 @@ import requests
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "2.9.47"
+VERSION = "2.9.48"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -66,13 +66,13 @@ st.session_state.setdefault('show_analysis', False)
 # 建立 GSheets 連線
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=300)  # 靜態資料快取 5 分鐘（questions/students/reading 不常變動）
 def load_static_data():
     try:
-        df_q  = conn.read(worksheet="questions").fillna("").astype(str).replace(r'\.0$', '', regex=True)
-        df_s  = conn.read(worksheet="students").fillna("").astype(str).replace(r'\.0$', '', regex=True)
+        df_q  = conn.read(worksheet="questions", ttl=300).fillna("").astype(str).replace(r'\.0$', '', regex=True)
+        df_s  = conn.read(worksheet="students",  ttl=300).fillna("").astype(str).replace(r'\.0$', '', regex=True)
         try:
-            df_r = conn.read(worksheet="reading").fillna("").astype(str).replace(r'\.0$', '', regex=True)
+            df_r = conn.read(worksheet="reading", ttl=300).fillna("").astype(str).replace(r'\.0$', '', regex=True)
         except:
             df_r = pd.DataFrame()
         return df_q, df_s, df_r
@@ -83,11 +83,11 @@ def load_static_data():
 # ==============================================================================
 # ✅ 修復 5：load_dynamic_data 加上快取，避免每次 rerun 都重新讀取
 # ==============================================================================
-@st.cache_data(ttl=10)
+@st.cache_data(ttl=30)  # 動態資料快取 30 秒（assignments/logs 需要較即時）
 def load_dynamic_data():
     try:
-        df_a = conn.read(worksheet="assignments", ttl=0)
-        df_l = conn.read(worksheet="logs", ttl=0)
+        df_a = conn.read(worksheet="assignments", ttl=30)
+        df_l = conn.read(worksheet="logs",        ttl=30)
         return df_a, df_l
     except:
         return pd.DataFrame(), pd.DataFrame()
