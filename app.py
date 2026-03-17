@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.48 - API限流修復版)
+# 🧩 英文全能練習系統 (V2.9.49 - 寫入不讀取優化版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.48
+# 📌 版本編號 (VERSION): 2.9.49
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -23,7 +23,7 @@ import requests
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "2.9.48"
+VERSION = "2.9.49"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -96,19 +96,29 @@ def load_dynamic_data():
 # ✅ 修復 2：append 寫入函式，取代錯誤的 conn.create()
 # ==============================================================================
 def append_to_sheet(worksheet_name: str, new_row: pd.DataFrame):
-    """安全地將一行資料附加到工作表末尾"""
+    """直接將一行資料附加到工作表末尾（不需要先讀取整張表）"""
     try:
-        existing = conn.read(worksheet=worksheet_name, ttl=0)
-        if existing is None or existing.empty:
-            existing = pd.DataFrame(columns=new_row.columns)
-        updated = pd.concat([existing, new_row], ignore_index=True)
-        conn.update(worksheet=worksheet_name, data=updated)
-        # 清除快取讓下次讀取到最新資料
+        gc     = conn.client  # 取得 gspread client
+        sh     = gc.open_by_url(conn.spreadsheet_url)
+        ws     = sh.worksheet(worksheet_name)
+        # 把 DataFrame 第一行轉成 list 直接 append
+        row_values = new_row.iloc[0].astype(str).tolist()
+        ws.append_row(row_values, value_input_option="USER_ENTERED")
         load_dynamic_data.clear()
         return True
     except Exception as e:
-        st.warning(f"⚠️ 資料寫入失敗: {e}")
-        return False
+        # fallback：改用原本的讀取再寫入方式
+        try:
+            existing = conn.read(worksheet=worksheet_name, ttl=0)
+            if existing is None or existing.empty:
+                existing = pd.DataFrame(columns=new_row.columns)
+            updated = pd.concat([existing, new_row], ignore_index=True)
+            conn.update(worksheet=worksheet_name, data=updated)
+            load_dynamic_data.clear()
+            return True
+        except Exception as e2:
+            st.warning(f"⚠️ 資料寫入失敗: {e2}")
+            return False
 
 # ------------------------------------------------------------------------------
 # 🔐 【權限控管與登入】
