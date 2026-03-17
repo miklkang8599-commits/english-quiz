@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.36 - 按鍵Key衝突修復版)
+# 🧩 英文全能練習系統 (V2.9.38 - 任務說明格式版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.36
+# 📌 版本編號 (VERSION): 2.9.38
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -23,7 +23,7 @@ import requests
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "2.9.36"
+VERSION = "2.9.38"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -421,7 +421,9 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     desc_parts.append(f"重組/單選：{t1v} {t1u} {t1y}年 冊{t1b} 課{t1l}，共 {len(q_ids)} 題")
                 if r_ids:
                     desc_parts.append(f"朗讀：{len(r_ids)} 題")
-                auto_desc = "；".join(desc_parts)
+                publish_time = get_now().strftime("%Y-%m-%d-%H:%M")
+                teacher_name = st.session_state.user_name
+                auto_desc = f"{publish_time}-{'；'.join(desc_parts)}-{teacher_name}"
 
                 new_task  = pd.DataFrame([{
                     "建立時間":   get_now().strftime("%Y-%m-%d %H:%M:%S"),
