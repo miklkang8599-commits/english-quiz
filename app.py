@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.41 - 任務除錯詳細版)
+# 🧩 英文全能練習系統 (V2.9.42 - 空任務過濾版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.41
+# 📌 版本編號 (VERSION): 2.9.42
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -23,7 +23,7 @@ import requests
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "2.9.41"
+VERSION = "2.9.42"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1092,6 +1092,12 @@ if not st.session_state.quiz_loaded:
                 continue
 
             debug_info.append(f"✅ {task_n}：符合條件")
+            # 題目ID清單必須有資料才顯示
+            task_ids_str = str(arow.get('題目ID清單', '') or '')
+            valid_ids = [q.strip() for q in task_ids_str.split(',') if q.strip() and q.strip() != 'nan']
+            if not valid_ids:
+                debug_info.append(f"⚠️ {task_n}：符合條件但題目ID清單為空，不顯示")
+                continue
             my_tasks.append(arow)
 
     if my_tasks:
