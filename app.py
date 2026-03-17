@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.43 - 除錯清除版)
+# 🧩 英文全能練習系統 (V2.9.45 - 任務名稱格式優化版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.43
+# 📌 版本編號 (VERSION): 2.9.45
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -23,7 +23,7 @@ import requests
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "2.9.43"
+VERSION = "2.9.45"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -229,7 +229,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
     with t1:
         # 發布成功後清空表單（在 widget 渲染前執行）
         if st.session_state.pop('t1_clear_form', False):
-            for k in ['t1_title', 't1_group', 't1_mode', 't1_stu',
+            for k in ['t1_group', 't1_mode', 't1_stu',
                       't1_inc_q', 't1_inc_reading', 't1_ref_stu', 't1_ref_logic', 't1_ref_n',
                       't1_v', 't1_u', 't1_y', 't1_b', 't1_l', 't1_start_sent', 't1_q_count',
                       'rt_v', 'rt_u', 'rt_y', 'rt_b', 'rt_l', 'rt_start_sent', 'rt_q_count']:
@@ -241,10 +241,8 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
         st.subheader("📢 發布新任務")
 
         # ── 基本設定 ──────────────────────────────────────────────────────
-        c1, c2 = st.columns(2)
-        task_title    = c1.text_input("任務名稱", value=f"任務_{get_now().strftime('%m%d')}", key="t1_title")
         all_groups    = sorted(df_s[~df_s['分組'].isin(['ADMIN','TEACHER'])]['分組'].unique().tolist())
-        target_groups = c2.multiselect("目標班級/分組（可複選）", all_groups, default=[], key="t1_group")
+        target_groups = st.multiselect("目標班級/分組（可複選）", all_groups, default=[], key="t1_group")
 
         # 指派對象：依選取班級合併學生名單
         if target_groups:
@@ -418,21 +416,25 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 # 自動產生任務說明摘要
                 desc_parts = []
                 if q_ids:
-                    desc_parts.append(f"重組/單選：{t1v} {t1u} {t1y}年 冊{t1b} 課{t1l}，共 {len(q_ids)} 題")
+                    start_sent_label = f" 起始句{st.session_state.get('t1_start_sent', '')}" if st.session_state.get('t1_start_sent') else ""
+                    desc_parts.append(f"重組/單選：{t1v} {t1u} {t1y}年 冊{t1b} 課{t1l}{start_sent_label}，共 {len(q_ids)} 題")
                 if r_ids:
-                    desc_parts.append(f"朗讀：{len(r_ids)} 題")
+                    r_start = st.session_state.get('rt_start_sent', '')
+                    r_start_label = f" 起始句{r_start}" if r_start else ""
+                    desc_parts.append(f"朗讀{r_start_label}：{len(r_ids)} 題")
                 publish_time = get_now().strftime("%Y-%m-%d-%H:%M")
                 teacher_name = st.session_state.user_name
-                auto_desc = f"{publish_time}-{'；'.join(desc_parts)}-{teacher_name}"
+                groups_label = ",".join(target_groups)
+                auto_desc = f"{teacher_name}-{publish_time}-{groups_label}-{'；'.join(desc_parts)}"
 
                 new_task  = pd.DataFrame([{
                     "建立時間":   get_now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "任務名稱":   task_title,
+                    "任務名稱":   auto_desc,
                     "對象班級":   target_group,
                     "指派學生":   ",".join(target_students_t1),
                     "指派人數":   len(target_students_t1),
                     "內容":       f"{t1v}|{t1u}|{t1y}|{t1b}|{t1l}",
-                    "任務說明":   auto_desc,
+                    "任務說明":   "",
                     "題目數":     len(all_ids),
                     "題目ID清單": ",".join(all_ids),
                     "開始日期":   str(date_start),
