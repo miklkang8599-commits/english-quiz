@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.49 - 寫入不讀取優化版)
+# 🧩 英文全能練習系統 (V2.9.50 - 欄位對應寫入版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.49
+# 📌 版本編號 (VERSION): 2.9.50
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -23,7 +23,7 @@ import requests
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "2.9.49"
+VERSION = "2.9.50"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -96,18 +96,29 @@ def load_dynamic_data():
 # ✅ 修復 2：append 寫入函式，取代錯誤的 conn.create()
 # ==============================================================================
 def append_to_sheet(worksheet_name: str, new_row: pd.DataFrame):
-    """直接將一行資料附加到工作表末尾（不需要先讀取整張表）"""
+    """將一行資料附加到工作表末尾，依欄位標題對應寫入"""
     try:
-        gc     = conn.client  # 取得 gspread client
-        sh     = gc.open_by_url(conn.spreadsheet_url)
-        ws     = sh.worksheet(worksheet_name)
-        # 把 DataFrame 第一行轉成 list 直接 append
-        row_values = new_row.iloc[0].astype(str).tolist()
-        ws.append_row(row_values, value_input_option="USER_ENTERED")
+        gc  = conn.client
+        sh  = gc.open_by_url(conn.spreadsheet_url)
+        ws  = sh.worksheet(worksheet_name)
+
+        # 取得工作表第一列欄位標題
+        headers = ws.row_values(1)
+
+        if not headers:
+            # 沒有標題列：直接寫標題再寫資料
+            ws.append_row(new_row.columns.tolist(), value_input_option="USER_ENTERED")
+            ws.append_row(new_row.iloc[0].astype(str).tolist(), value_input_option="USER_ENTERED")
+        else:
+            # 依標題順序排列資料，缺少的欄位填空白
+            row_dict   = new_row.iloc[0].to_dict()
+            row_values = [str(row_dict.get(h, '')) for h in headers]
+            ws.append_row(row_values, value_input_option="USER_ENTERED")
+
         load_dynamic_data.clear()
         return True
     except Exception as e:
-        # fallback：改用原本的讀取再寫入方式
+        # fallback：讀取再寫入
         try:
             existing = conn.read(worksheet=worksheet_name, ttl=0)
             if existing is None or existing.empty:
