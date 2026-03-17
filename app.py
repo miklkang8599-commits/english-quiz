@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.40 - 任務除錯版)
+# 🧩 英文全能練習系統 (V2.9.41 - 任務除錯詳細版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.40
+# 📌 版本編號 (VERSION): 2.9.41
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -23,7 +23,7 @@ import requests
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "2.9.40"
+VERSION = "2.9.41"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1061,29 +1061,37 @@ if not st.session_state.quiz_loaded:
 
     # 找出指派給這位學生、未刪除、日期有效的任務
     my_tasks = []
+    debug_info = []  # 除錯用
     if not df_a.empty:
         for _, arow in df_a.iterrows():
+            task_n = str(arow.get('任務名稱', ''))
             # 過濾已刪除
             if str(arow.get('狀態', '')).strip() == '已刪除':
+                debug_info.append(f"❌ {task_n}：已刪除")
                 continue
 
-            # 確認學生在指派名單中（同時支援舊格式 '對象' 欄）
+            # 確認學生在指派名單中
             stu_str  = str(arow.get('指派學生', '') or arow.get('對象', '') or '')
             assigned = [s.strip() for s in stu_str.split(',') if s.strip()]
             if user_name not in assigned:
+                debug_info.append(f"❌ {task_n}：學生不在名單（名單：{stu_str[:50]}）")
                 continue
 
-            # 日期範圍檢查：嚴格解析，解析失敗的任務不顯示（避免過期任務殘留）
+            # 日期範圍檢查
             try:
                 end_str = str(arow.get('結束日期', '')).strip()
                 if not end_str or end_str == 'nan':
-                    continue  # 沒有結束日期就不顯示
+                    debug_info.append(f"❌ {task_n}：無結束日期")
+                    continue
                 t_end = datetime.strptime(end_str, "%Y-%m-%d").date()
                 if t_end < today_dt:
-                    continue  # 已過期
-            except:
-                continue  # 格式錯誤也跳過
+                    debug_info.append(f"❌ {task_n}：已過期（{end_str}）")
+                    continue
+            except Exception as e:
+                debug_info.append(f"❌ {task_n}：日期格式錯誤（{e}）")
+                continue
 
+            debug_info.append(f"✅ {task_n}：符合條件")
             my_tasks.append(arow)
 
     if my_tasks:
@@ -1219,6 +1227,11 @@ if not st.session_state.quiz_loaded:
 
 
         st.divider()
+
+    # 除錯：顯示任務篩選過程（暫時對所有人顯示）
+    with st.expander(f"🔍 除錯資訊（今日：{today_dt} | 學生：{user_name}）", expanded=False):
+        for d in debug_info:
+            st.write(d)
 
     # 除錯：讓管理員看到原始 assignments 資料
     if not df_a.empty and is_admin(st.session_state.group_id):
