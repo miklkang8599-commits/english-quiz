@@ -23,7 +23,7 @@ import requests
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "2.9.51"
+VERSION = "2.9.52"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -83,11 +83,11 @@ def load_static_data():
 # ==============================================================================
 # ✅ 修復 5：load_dynamic_data 加上快取，避免每次 rerun 都重新讀取
 # ==============================================================================
-@st.cache_data(ttl=30)  # 動態資料快取 30 秒（assignments/logs 需要較即時）
+@st.cache_data(ttl=120)  # 動態資料快取 120 秒，加快學生答題速度
 def load_dynamic_data():
     try:
-        df_a = conn.read(worksheet="assignments", ttl=30)
-        df_l = conn.read(worksheet="logs",        ttl=30)
+        df_a = conn.read(worksheet="assignments", ttl=120)
+        df_l = conn.read(worksheet="logs",        ttl=120)
         return df_a, df_l
     except:
         return pd.DataFrame(), pd.DataFrame()
