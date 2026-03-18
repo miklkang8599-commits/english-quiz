@@ -23,7 +23,7 @@ import requests
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "2.9.56"
+VERSION = "2.9.57"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1753,7 +1753,8 @@ if st.session_state.quiz_loaded:
                 append_to_sheet("logs", pd.DataFrame([{"時間": get_now().strftime("%Y-%m-%d %H:%M:%S"), "姓名": st.session_state.user_name, "分組": st.session_state.group_id, "題目ID": q.get("題目ID","N/A"), "結果": "❌"}]))
                 st.rerun()
 
-        # 模式切換
+        # 模式切換（暫時顯示 task_mode 除錯）
+        st.caption(f"🔍 task_mode = `{task_mode}`")
         if task_mode == "自選":
             # 學生可隨時切換，用全域 key 保持狀態（不綁定題目 index）
             vocab_mode = st.radio(
@@ -1822,12 +1823,12 @@ if st.session_state.quiz_loaded:
                 if st.button("🗑️ 清除", key=f"kb_clear_{st.session_state.q_idx}"):
                     st.session_state[f"vocab_kb_{st.session_state.q_idx}"] = ""
                     st.rerun()
-                keyboard_rows = [list("QWERTYUIOP"), list("ASDFGHJKL"), list("ZXCVBNM")]
+                keyboard_rows = [list("qwertyuiop"), list("asdfghjkl"), list("zxcvbnm")]
                 for row in keyboard_rows:
                     kb_cols = st.columns(len(row))
                     for i, k in enumerate(row):
                         if kb_cols[i].button(k, key=f"kb_{st.session_state.q_idx}_{k}{i}", use_container_width=True):
-                            st.session_state[f"vocab_kb_{st.session_state.q_idx}"] = st.session_state.get(f"vocab_kb_{st.session_state.q_idx}", "") + k
+                            st.session_state[f"vocab_kb_{st.session_state.q_idx}"] = st.session_state.get(f"vocab_kb_{st.session_state.q_idx}", "") + k.upper()
                             st.rerun()
                 kb_current = st.session_state.get(f"vocab_kb_{st.session_state.q_idx}", "")
                 if len(kb_current) >= len(word):
