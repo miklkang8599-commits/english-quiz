@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.74 - 講解歷史完整顯示版)
+# 🧩 英文全能練習系統 (V2.9.75 - API限流優化版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.74
+# 📌 版本編號 (VERSION): 2.9.75
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -23,7 +23,7 @@ import requests
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "2.9.74"
+VERSION = "2.9.75"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -66,32 +66,32 @@ st.session_state.setdefault('show_analysis', False)
 # 建立 GSheets 連線
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-@st.cache_data(ttl=300)  # 靜態資料快取 5 分鐘（questions/students/reading 不常變動）
+@st.cache_data(ttl=600)  # 靜態資料快取 10 分鐘（題庫/學生帳號不常變動）
 def load_static_data():
     try:
-        df_q  = conn.read(worksheet="questions", ttl=300).fillna("").astype(str).replace(r'\.0$', '', regex=True)
-        df_s  = conn.read(worksheet="students",  ttl=300).fillna("").astype(str).replace(r'\.0$', '', regex=True)
+        df_q  = conn.read(worksheet="questions", ttl=600).fillna("").astype(str).replace(r'\.0$', '', regex=True)
+        df_s  = conn.read(worksheet="students",  ttl=600).fillna("").astype(str).replace(r'\.0$', '', regex=True)
         try:
-            df_r = conn.read(worksheet="reading", ttl=300).fillna("").astype(str).replace(r'\.0$', '', regex=True)
+            df_r = conn.read(worksheet="reading", ttl=600).fillna("").astype(str).replace(r'\.0$', '', regex=True)
         except:
             df_r = pd.DataFrame()
         try:
-            df_v = conn.read(worksheet="vocab", ttl=300).fillna("").astype(str).replace(r'\.0$', '', regex=True)
+            df_v = conn.read(worksheet="vocab", ttl=600).fillna("").astype(str).replace(r'\.0$', '', regex=True)
         except:
             df_v = pd.DataFrame()
         return df_q, df_s, df_r, df_v
     except Exception as e:
-        st.error(f"靜態資料載入失敗: {e}")
+        st.warning(f"⚠️ 資料載入受限，請稍後再試（{type(e).__name__}）")
         return None, None, pd.DataFrame(), pd.DataFrame()
 
 # ==============================================================================
 # ✅ 修復 5：load_dynamic_data 加上快取，避免每次 rerun 都重新讀取
 # ==============================================================================
-@st.cache_data(ttl=120)  # 動態資料快取 120 秒，加快學生答題速度
+@st.cache_data(ttl=60)  # 動態資料快取 60 秒
 def load_dynamic_data():
     try:
-        df_a = conn.read(worksheet="assignments", ttl=120)
-        df_l = conn.read(worksheet="logs",        ttl=120)
+        df_a = conn.read(worksheet="assignments", ttl=60)
+        df_l = conn.read(worksheet="logs",        ttl=60)
         return df_a, df_l
     except:
         return pd.DataFrame(), pd.DataFrame()
