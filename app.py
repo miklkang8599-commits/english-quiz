@@ -23,7 +23,7 @@ import requests
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "2.9.64"
+VERSION = "2.9.65"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -913,37 +913,51 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 df_a_rev = df_a[
                     df_a.get('狀態', pd.Series(dtype=str)).fillna('') != '已刪除'
                 ].copy()
-                # 依班級精確過濾
                 if not df_a_rev.empty and '對象班級' in df_a_rev.columns:
                     df_a_rev = df_a_rev[df_a_rev['對象班級'].apply(
                         lambda v: rev_group in [g.strip() for g in str(v).split(',')]
                     )]
                 task_names = ["（不限）"] + df_a_rev['任務名稱'].tolist()
-                sel_task = st.selectbox("📋 依任務篩選（選填）", task_names, key="rev_task")
+
+                def _on_rev_task_change():
+                    sel = st.session_state.get('rev_task', '（不限）')
+                    if sel != '（不限）' and not df_a_rev.empty:
+                        matches = df_a_rev[df_a_rev['任務名稱'] == sel]
+                        if not matches.empty:
+                            row   = matches.iloc[0]
+                            parts = [p.strip() for p in str(row.get('內容','')).split('|')]
+                            if len(parts) == 5:
+                                st.session_state['rev_v'] = parts[0]
+                                st.session_state['rev_u'] = parts[1]
+                                st.session_state['rev_y'] = parts[2]
+                                st.session_state['rev_b'] = parts[3]
+                                st.session_state['rev_l'] = parts[4]
+                            # 帶入指派學生
+                            stu_str = str(row.get('指派學生', '') or '')
+                            task_stus = [s.strip() for s in stu_str.split(',') if s.strip()]
+                            valid = [s for s in task_stus if s in students_in_group]
+                            st.session_state['rev_students'] = valid if valid else students_in_group
+                    else:
+                        for k in ['rev_v','rev_u','rev_y','rev_b','rev_l']:
+                            st.session_state.pop(k, None)
+                        st.session_state['rev_students'] = students_in_group
+
+                sel_task = st.selectbox("📋 依任務篩選（選填）", task_names,
+                                        key="rev_task", on_change=_on_rev_task_change)
+
                 if sel_task != "（不限）":
                     task_row = df_a_rev[df_a_rev['任務名稱'] == sel_task].iloc[0]
                     ids_str  = str(task_row.get('題目ID清單', '') or '')
                     rev_task_ids = set([q.strip() for q in ids_str.split(',') if q.strip() and q.strip() != 'nan'])
-                    content_str  = str(task_row.get('內容', ''))
-                    parts = [p.strip() for p in content_str.split('|')]
-                    if len(parts) == 5:
-                        st.info(f"📋 {sel_task}　共 {len(rev_task_ids)} 題")
-                        st.session_state['rev_v'] = parts[0]
-                        st.session_state['rev_u'] = parts[1]
-                        st.session_state['rev_y'] = parts[2]
-                        st.session_state['rev_b'] = parts[3]
-                        st.session_state['rev_l'] = parts[4]
-                    stu_str = str(task_row.get('指派學生', '') or '')
-                    task_stus = [s.strip() for s in stu_str.split(',') if s.strip()]
-                    task_stu_default = [s for s in task_stus if s in students_in_group] or students_in_group
+                    st.info(f"📋 {sel_task}　共 {len(rev_task_ids)} 題")
+                    task_stu_default = st.session_state.get('rev_students', students_in_group)
                 else:
-                    for k in ['rev_v','rev_u','rev_y','rev_b','rev_l']:
-                        st.session_state.pop(k, None)
+                    task_stu_default = students_in_group
 
             rev_students = st.multiselect(
                 "👤 學生（預設全選，可自由增刪）",
                 options=students_in_group,
-                default=task_stu_default,
+                default=[s for s in st.session_state.get('rev_students', task_stu_default) if s in students_in_group],
                 key="rev_students"
             )
             target_students = rev_students if rev_students else students_in_group
