@@ -23,7 +23,7 @@ import requests
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "2.9.63"
+VERSION = "2.9.64"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -911,10 +911,9 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             task_stu_default = students_in_group
             if not df_a.empty and '任務名稱' in df_a.columns:
                 df_a_rev = df_a[
-                    (df_a.get('狀態', pd.Series(dtype=str)).fillna('') != '已刪除') &
-                    (df_a.get('類型',  pd.Series(dtype=str)).fillna('').isin(['一般', '混合', '']))
+                    df_a.get('狀態', pd.Series(dtype=str)).fillna('') != '已刪除'
                 ].copy()
-                # 依班級過濾：對象班級欄可能是逗號分隔多班，精確比對
+                # 依班級精確過濾
                 if not df_a_rev.empty and '對象班級' in df_a_rev.columns:
                     df_a_rev = df_a_rev[df_a_rev['對象班級'].apply(
                         lambda v: rev_group in [g.strip() for g in str(v).split(',')]
@@ -1109,10 +1108,9 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             rrev_stu_default = rrev_stus_pool
             if not df_a.empty and '任務名稱' in df_a.columns:
                 df_a_rrev = df_a[
-                    (df_a.get('狀態', pd.Series(dtype=str)).fillna('') != '已刪除') &
-                    (df_a.get('類型',  pd.Series(dtype=str)).fillna('').isin(['朗讀', '混合']))
+                    df_a.get('狀態', pd.Series(dtype=str)).fillna('') != '已刪除'
                 ].copy()
-                # 依班級過濾任務
+                # 依班級精確過濾
                 if not df_a_rrev.empty and '對象班級' in df_a_rrev.columns:
                     df_a_rrev = df_a_rrev[df_a_rrev['對象班級'].apply(
                         lambda v: rrev_group in [g.strip() for g in str(v).split(',')]
