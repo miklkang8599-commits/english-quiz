@@ -23,7 +23,7 @@ import requests
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "2.9.61"
+VERSION = "2.9.62"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -914,6 +914,9 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     (df_a.get('狀態', pd.Series(dtype=str)).fillna('') != '已刪除') &
                     (df_a.get('類型',  pd.Series(dtype=str)).fillna('').isin(['一般', '混合', '']))
                 ].copy()
+                # 依班級過濾任務（減少選項數量）
+                if not df_a_rev.empty and '對象班級' in df_a_rev.columns:
+                    df_a_rev = df_a_rev[df_a_rev['對象班級'].str.contains(rev_group, na=False)]
                 task_names = ["（不限）"] + df_a_rev['任務名稱'].tolist()
                 sel_task = st.selectbox("📋 依任務篩選（選填）", task_names, key="rev_task")
                 if sel_task != "（不限）":
@@ -1107,6 +1110,9 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     (df_a.get('狀態', pd.Series(dtype=str)).fillna('') != '已刪除') &
                     (df_a.get('類型',  pd.Series(dtype=str)).fillna('').isin(['朗讀', '混合']))
                 ].copy()
+                # 依班級過濾任務
+                if not df_a_rrev.empty and '對象班級' in df_a_rrev.columns:
+                    df_a_rrev = df_a_rrev[df_a_rrev['對象班級'].str.contains(rrev_group, na=False)]
                 rrev_task_names = ["（不限）"] + df_a_rrev['任務名稱'].tolist()
                 sel_rrev_task = st.selectbox("📋 依任務篩選（選填）", rrev_task_names, key="rrev_task")
                 if sel_rrev_task != "（不限）":
