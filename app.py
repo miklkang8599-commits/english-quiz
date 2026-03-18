@@ -23,7 +23,7 @@ import requests
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "2.9.48"
+VERSION = "2.9.49"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1443,10 +1443,24 @@ if st.session_state.quiz_loaded:
                     st.markdown("**📢 標準發音：**")
                     st.audio(io.BytesIO(base64.b64decode(tts_std)), format="audio/mpeg")
 
-            st.caption("📢 如想提高成績，可按麥克風重錄一次再送出評分")
+            if st.session_state.get('show_analysis') and is_reading:
+                st.caption("👇 如想提高成績，可重新錄音再送出評分")
+            else:
+                st.caption("👇 點擊下方按鈕開始錄音")
+
+        # 放大錄音按鈕的 CSS
+        st.markdown("""
+            <style>
+            [data-testid="stAudioInput"] {
+                transform: scale(1.5);
+                transform-origin: left center;
+                margin: 16px 0 32px 0;
+            }
+            </style>
+        """, unsafe_allow_html=True)
 
         # 麥克風一直顯示（不管有沒有評分過）
-        audio_data = st.audio_input("🎙️ 點擊錄音", key=f"audio_{st.session_state.q_idx}")
+        audio_data = st.audio_input("🎙️ 錄音", key=f"audio_{st.session_state.q_idx}")
 
         if audio_data:
             if st.button("✅ 送出評分", type="primary", use_container_width=True):
