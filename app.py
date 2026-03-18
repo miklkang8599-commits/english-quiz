@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.75 - API限流優化版)
+# 🧩 英文全能練習系統 (V2.9.76 - 自動重試版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.75
+# 📌 版本編號 (VERSION): 2.9.76
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -23,7 +23,7 @@ import requests
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "2.9.75"
+VERSION = "2.9.76"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -81,7 +81,6 @@ def load_static_data():
             df_v = pd.DataFrame()
         return df_q, df_s, df_r, df_v
     except Exception as e:
-        st.warning(f"⚠️ 資料載入受限，請稍後再試（{type(e).__name__}）")
         return None, None, pd.DataFrame(), pd.DataFrame()
 
 # ==============================================================================
@@ -121,16 +120,16 @@ if not st.session_state.get('logged_in', False):
     df_q, df_s, df_r, df_v = load_static_data()
     _, c, _ = st.columns([1, 1.2, 1])
     with c:
+        if df_s is None:
+            st.warning("⚠️ 伺服器忙碌中，60 秒後自動重試...")
+            import time
+            time.sleep(60)
+            load_static_data.clear()
+            st.rerun()
         st.markdown("### 🔵 系統登入")
         i_id = st.text_input("帳號 (學號/員工編號)", key="l_id")
         i_pw = st.text_input("密碼", type="password", key="l_pw")
         if st.button("🚀 登入系統", use_container_width=True):
-            # ==============================================================
-            # ✅ 修復 6：資料載入失敗時提早停止
-            # ==============================================================
-            if df_s is None:
-                st.error("❌ 無法載入學生資料，請稍後再試")
-                st.stop()
             std_id, std_pw = standardize(i_id), standardize(i_pw)
             df_s['c_id'] = df_s['帳號'].apply(standardize)
             df_s['c_pw'] = df_s['密碼'].apply(standardize)
@@ -158,7 +157,11 @@ df_a, df_l = load_dynamic_data()
 # ✅ 修復 6：資料載入失敗時提早停止，避免後續 None 錯誤
 # ==============================================================================
 if df_q is None or df_s is None:
-    st.error("❌ 資料載入失敗，請重新整理頁面")
+    st.warning("⚠️ 伺服器忙碌中，60 秒後自動重試...")
+    import time
+    time.sleep(60)
+    load_static_data.clear()
+    st.rerun()
     st.stop()
 
 # ------------------------------------------------------------------------------
