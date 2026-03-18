@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.70 - 除錯強化版)
+# 🧩 英文全能練習系統 (V2.9.71 - 單元列表除錯版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.70
+# 📌 版本編號 (VERSION): 2.9.71
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -23,7 +23,7 @@ import requests
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "2.9.70"
+VERSION = "2.9.71"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -995,6 +995,8 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     st.write("題目ID（無V_）:", sample_q)
                     st.write("題目ID（有V_）:", sample_qv)
                     st.write("篩選後題目數:", len(df_rev_scope))
+                    st.write("df_q 所有單元：", sorted(df_q['單元'].unique().tolist()))
+                    st.write("df_q 冊編號：", sorted(df_q['冊編號'].unique().tolist()))
             else:
                 st.markdown("**⚙️ 題目範圍**")
                 rc = st.columns(5)
