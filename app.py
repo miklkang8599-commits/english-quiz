@@ -23,7 +23,7 @@ import requests
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "2.9.53"
+VERSION = "2.9.54"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1748,12 +1748,15 @@ if st.session_state.quiz_loaded:
                 append_to_sheet("logs", pd.DataFrame([{"時間": get_now().strftime("%Y-%m-%d %H:%M:%S"), "姓名": st.session_state.user_name, "分組": st.session_state.group_id, "題目ID": q.get("題目ID","N/A"), "結果": "❌"}]))
                 st.rerun()
 
-        # 模式切換
+        # 模式切換（答對後不再顯示切換選項）
         if task_mode == "自選":
-            vocab_mode = st.radio("輸入模式", ["🔤 拆字母", "⌨️ 鍵盤"], horizontal=True, key=f"vocab_mode_{st.session_state.q_idx}")
+            if not st.session_state.get("show_analysis"):
+                vocab_mode = st.radio("輸入模式", ["🔤 拆字母", "⌨️ 鍵盤"], horizontal=True, key=f"vocab_mode_{st.session_state.q_idx}")
+            else:
+                vocab_mode = st.session_state.get(f"vocab_mode_{st.session_state.q_idx}", "🔤 拆字母")
         else:
             vocab_mode = "🔤 拆字母" if task_mode == "拆字母" else "⌨️ 鍵盤"
-            st.caption(f"模式：{vocab_mode}")
+            # 老師鎖定模式，不顯示任何切換
 
         # 初始化字母池
         pool_key = f"vocab_pool_{st.session_state.q_idx}"
@@ -1828,21 +1831,22 @@ if st.session_state.quiz_loaded:
         # 答對後播放 TTS
         if st.session_state.get("show_analysis") and is_vocab:
             res = st.session_state.get("current_res", "")
+            tts_key = f"vocab_tts_{st.session_state.q_idx}"
             if "✅" in res:
                 st.success(res)
-                if not st.session_state.get("vocab_tts"):
+                if not st.session_state.get(tts_key):
                     try:
                         import openai as _oai, base64 as _b64, io as _io
                         _client = _oai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
                         tts_raw = _client.audio.speech.create(model="tts-1", voice="nova", input=word).content
-                        st.session_state["vocab_tts"] = _b64.b64encode(tts_raw).decode()
+                        st.session_state[tts_key] = _b64.b64encode(tts_raw).decode()
                         st.rerun()
                     except:
                         pass
-                if st.session_state.get("vocab_tts"):
+                if st.session_state.get(tts_key):
                     import base64 as _b64, io as _io
                     st.markdown(f"**🔊 {word}**")
-                    st.audio(_io.BytesIO(_b64.b64decode(st.session_state["vocab_tts"])), format="audio/mpeg")
+                    st.audio(_io.BytesIO(_b64.b64decode(st.session_state[tts_key])), format="audio/mpeg")
             else:
                 st.warning(res)
 
@@ -1936,12 +1940,11 @@ if st.session_state.quiz_loaded:
         st.session_state.update({
             "ans": [], "used_history": [], "shuf": [], "show_analysis": False,
             "tts_student": None, "tts_standard": None, "stt_text_shown": "",
-            "vocab_tts": None, "vocab_tts_played": False,
             "vocab_start_time": None, "vocab_q_idx": None
         })
-        # 清除題目專屬 key
         for k in [f"vocab_pool_{q_idx}", f"vocab_ans_{q_idx}",
-                  f"vocab_used_{q_idx}", f"vocab_kb_{q_idx}"]:
+                  f"vocab_used_{q_idx}", f"vocab_kb_{q_idx}",
+                  f"vocab_tts_{q_idx}"]:
             st.session_state.pop(k, None)
 
     if st.session_state.q_idx > 0:
