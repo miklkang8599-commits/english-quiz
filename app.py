@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.68 - 新舊任務ID相容版)
+# 🧩 英文全能練習系統 (V2.9.69 - 單字重組講解版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.68
+# 📌 版本編號 (VERSION): 2.9.69
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -23,7 +23,7 @@ import requests
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "2.9.68"
+VERSION = "2.9.69"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -986,6 +986,12 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     lambda r: r['題目ID_v'] if r['題目ID_v'] in rev_task_ids else r['題目ID'], axis=1
                 )
                 df_rev_scope = df_rev_scope.drop(columns=['題目ID_v'])
+                # 除錯
+                with st.expander("🔍 除錯", expanded=False):
+                    sample_task = list(rev_task_ids)[:2]
+                    sample_q    = df_q.apply(lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1).tolist()[:2]
+                    st.write("任務ID:", sample_task)
+                    st.write("題目ID:", sample_q)
             else:
                 st.markdown("**⚙️ 題目範圍**")
                 rc = st.columns(5)
@@ -1022,14 +1028,23 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             else:
                 df_group_logs = pd.DataFrame()
 
-            is_mcq_scope = "單選" in ru
+            is_mcq_scope = "單選" in str(st.session_state.get('rev_u', ''))
 
             for _, qrow in df_rev_scope.iterrows():
                 qid       = qrow['題目ID']
-                title_col = "單選題目" if is_mcq_scope else "重組中文題目"
-                ans_col   = "單選答案" if is_mcq_scope else "重組英文答案"
-                q_title   = qrow.get(title_col) or qrow.get('中文題目') or '【無資料】'
-                q_ans     = str(qrow.get(ans_col) or qrow.get('英文答案') or '').strip()
+                q_unit    = str(qrow.get('單元', ''))
+                # 依單元判斷題型
+                if '單選' in q_unit:
+                    title_col = "單選題目"
+                    ans_col   = "單選答案"
+                elif '單字' in q_unit:
+                    title_col = "中文意思"
+                    ans_col   = "英文單字"
+                else:
+                    title_col = "重組中文題目"
+                    ans_col   = "重組英文答案"
+                q_title = str(qrow.get(title_col) or qrow.get('中文題目') or qrow.get('中文意思') or '【無資料】').strip()
+                q_ans   = str(qrow.get(ans_col) or qrow.get('英文答案') or qrow.get('英文單字') or '').strip()
 
                 # 統計（排除講解紀錄，只算真實作答）
                 if not df_group_logs.empty:
