@@ -23,7 +23,7 @@ import requests
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "2.9.58"
+VERSION = "2.9.60"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1786,8 +1786,15 @@ if st.session_state.quiz_loaded:
         # ── 拆字母模式 ────────────────────────────────────────────────────
         if "拆字母" in vocab_mode:
             current_ans = st.session_state[ans_key_v]
-            ans_display = " ".join([f"[{c}]" for c in current_ans]) if current_ans else "（點選下方字母）"
-            st.markdown(f"<div style=\'font-size:1.4rem;letter-spacing:0.1em;padding:10px;min-height:50px;background:#f0f4ff;border-radius:8px;\'>{ans_display}</div>", unsafe_allow_html=True)
+            if current_ans:
+                letters_html = "".join([
+                    f"<span style='display:inline-block;padding:4px 10px;margin:2px;background:#4a90d9;color:white;border-radius:6px;font-size:1.3rem;font-weight:700;letter-spacing:0.05em;'>{c.lower()}</span>"
+                    for c in current_ans
+                ])
+                ans_display = letters_html
+            else:
+                ans_display = "<span style='color:#aaa;font-size:1rem;'>點選下方字母</span>"
+            st.markdown(f"<div style='padding:10px;min-height:50px;background:#f0f4ff;border-radius:8px;'>{ans_display}</div>", unsafe_allow_html=True)
             bc1, bc2 = st.columns(2)
             if bc1.button("⬅️ 退回一步", use_container_width=True, key=f"vb_back_{st.session_state.q_idx}"):
                 if current_ans:
@@ -1801,8 +1808,8 @@ if st.session_state.quiz_loaded:
                 avail = [(i, ltr) for i, ltr in enumerate(letter_pool) if i not in used_indices]
                 cols_v = st.columns(min(len(avail), 8))
                 for ci, (i, ltr) in enumerate(avail):
-                    if cols_v[ci % 8].button(ltr, key=f"vl_{st.session_state.q_idx}_{i}", use_container_width=True):
-                        st.session_state[ans_key_v].append(ltr)
+                    if cols_v[ci % 8].button(ltr.lower(), key=f"vl_{st.session_state.q_idx}_{i}", use_container_width=True):
+                        st.session_state[ans_key_v].append(ltr)  # 仍存大寫供比對
                         used_st = st.session_state.get(f"vocab_used_{st.session_state.q_idx}", [])
                         used_st.append(i)
                         st.session_state[f"vocab_used_{st.session_state.q_idx}"] = used_st
