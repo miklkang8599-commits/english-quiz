@@ -23,7 +23,7 @@ import requests
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "2.9.54"
+VERSION = "2.9.55"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1748,15 +1748,19 @@ if st.session_state.quiz_loaded:
                 append_to_sheet("logs", pd.DataFrame([{"時間": get_now().strftime("%Y-%m-%d %H:%M:%S"), "姓名": st.session_state.user_name, "分組": st.session_state.group_id, "題目ID": q.get("題目ID","N/A"), "結果": "❌"}]))
                 st.rerun()
 
-        # 模式切換（答對後不再顯示切換選項）
+        # 模式切換
         if task_mode == "自選":
-            if not st.session_state.get("show_analysis"):
-                vocab_mode = st.radio("輸入模式", ["🔤 拆字母", "⌨️ 鍵盤"], horizontal=True, key=f"vocab_mode_{st.session_state.q_idx}")
-            else:
-                vocab_mode = st.session_state.get(f"vocab_mode_{st.session_state.q_idx}", "🔤 拆字母")
+            # 學生可隨時切換，用全域 key 保持狀態（不綁定題目 index）
+            vocab_mode = st.radio(
+                "輸入模式",
+                ["🔤 拆字母", "⌨️ 鍵盤"],
+                horizontal=True,
+                key="vocab_mode_global",
+                disabled=st.session_state.get("show_analysis", False)
+            )
         else:
             vocab_mode = "🔤 拆字母" if task_mode == "拆字母" else "⌨️ 鍵盤"
-            # 老師鎖定模式，不顯示任何切換
+            # 老師鎖定模式，不顯示切換
 
         # 初始化字母池
         pool_key = f"vocab_pool_{st.session_state.q_idx}"
