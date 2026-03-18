@@ -23,7 +23,7 @@ import requests
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "2.9.49"
+VERSION = "2.9.50"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1452,9 +1452,7 @@ if st.session_state.quiz_loaded:
         st.markdown("""
             <style>
             [data-testid="stAudioInput"] {
-                transform: scale(1.5);
-                transform-origin: left center;
-                margin: 16px 0 32px 0;
+                margin: 8px 0 16px 0;
             }
             </style>
         """, unsafe_allow_html=True)
