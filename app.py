@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.56 - 講解任務帶範圍版)
+# 🧩 英文全能練習系統 (V2.9.48 - API限流修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.56
+# 📌 版本編號 (VERSION): 2.9.48
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -23,7 +23,7 @@ import requests
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "2.9.56"
+VERSION = "2.9.48"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -64,13 +64,7 @@ st.session_state.setdefault('used_history', [])
 st.session_state.setdefault('show_analysis', False)
 
 # 建立 GSheets 連線
-try:
-    conn = st.connection("gsheets", type=GSheetsConnection)
-except Exception as e:
-    st.error(f"❌ 無法建立資料庫連線：{e}")
-    st.info("請確認 Streamlit Cloud 的 Secrets 設定是否正確，然後重新整理頁面。")
-    show_version_caption()
-    st.stop()
+conn = st.connection("gsheets", type=GSheetsConnection)
 
 @st.cache_data(ttl=300)  # 靜態資料快取 5 分鐘（questions/students/reading 不常變動）
 def load_static_data():
@@ -102,40 +96,19 @@ def load_dynamic_data():
 # ✅ 修復 2：append 寫入函式，取代錯誤的 conn.create()
 # ==============================================================================
 def append_to_sheet(worksheet_name: str, new_row: pd.DataFrame):
-    """將一行資料附加到工作表末尾，依欄位標題對應寫入"""
+    """安全地將一行資料附加到工作表末尾"""
     try:
-        gc  = conn.client
-        sh  = gc.open_by_url(conn.spreadsheet_url)
-        ws  = sh.worksheet(worksheet_name)
-
-        # 取得工作表第一列欄位標題
-        headers = ws.row_values(1)
-
-        if not headers:
-            # 沒有標題列：直接寫標題再寫資料
-            ws.append_row(new_row.columns.tolist(), value_input_option="USER_ENTERED")
-            ws.append_row(new_row.iloc[0].astype(str).tolist(), value_input_option="USER_ENTERED")
-        else:
-            # 依標題順序排列資料，缺少的欄位填空白
-            row_dict   = new_row.iloc[0].to_dict()
-            row_values = [str(row_dict.get(h, '')) for h in headers]
-            ws.append_row(row_values, value_input_option="USER_ENTERED")
-
+        existing = conn.read(worksheet=worksheet_name, ttl=0)
+        if existing is None or existing.empty:
+            existing = pd.DataFrame(columns=new_row.columns)
+        updated = pd.concat([existing, new_row], ignore_index=True)
+        conn.update(worksheet=worksheet_name, data=updated)
+        # 清除快取讓下次讀取到最新資料
         load_dynamic_data.clear()
         return True
     except Exception as e:
-        # fallback：讀取再寫入
-        try:
-            existing = conn.read(worksheet=worksheet_name, ttl=0)
-            if existing is None or existing.empty:
-                existing = pd.DataFrame(columns=new_row.columns)
-            updated = pd.concat([existing, new_row], ignore_index=True)
-            conn.update(worksheet=worksheet_name, data=updated)
-            load_dynamic_data.clear()
-            return True
-        except Exception as e2:
-            st.warning(f"⚠️ 資料寫入失敗: {e2}")
-            return False
+        st.warning(f"⚠️ 資料寫入失敗: {e}")
+        return False
 
 # ------------------------------------------------------------------------------
 # 🔐 【權限控管與登入】
@@ -145,13 +118,15 @@ if not st.session_state.get('logged_in', False):
     _, c, _ = st.columns([1, 1.2, 1])
     with c:
         st.markdown("### 🔵 系統登入")
-        if df_s is None:
-            st.error("❌ 無法連線到資料庫，請稍後再試或重新整理頁面")
-            show_version_caption()
-            st.stop()
         i_id = st.text_input("帳號 (學號/員工編號)", key="l_id")
         i_pw = st.text_input("密碼", type="password", key="l_pw")
         if st.button("🚀 登入系統", use_container_width=True):
+            # ==============================================================
+            # ✅ 修復 6：資料載入失敗時提早停止
+            # ==============================================================
+            if df_s is None:
+                st.error("❌ 無法載入學生資料，請稍後再試")
+                st.stop()
             std_id, std_pw = standardize(i_id), standardize(i_pw)
             df_s['c_id'] = df_s['帳號'].apply(standardize)
             df_s['c_pw'] = df_s['密碼'].apply(standardize)
@@ -197,7 +172,7 @@ with st.sidebar:
     st.markdown("🏆 **成就排行**")
     if not df_l.empty and '時間' in df_l.columns:
         now_sb   = get_now()
-        period   = st.radio("統計區間", ["今日", "本週", "本月"], horizontal=True, key="sb_period", label_visibility="collapsed")
+        period   = st.radio("統計區間", ["今日", "本週", "本月"], index=1, horizontal=True, key="sb_period", label_visibility="collapsed")
         if period == "今日":
             prefix = now_sb.strftime("%Y-%m-%d")
         elif period == "本週":
@@ -835,70 +810,21 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 key="rev_group"
             )
             students_in_group = sorted(df_s[df_s['分組'] == rev_group]['姓名'].tolist())
-
-            # ── 任務篩選（選填）─────────────────────────────────────────
-            rev_task_ids     = None
-            task_stu_default = students_in_group
-
-            if not df_a.empty and '任務名稱' in df_a.columns:
-                df_a_rev = df_a[
-                    (df_a.get('狀態', pd.Series(dtype=str)).fillna('') != '已刪除') &
-                    (df_a.get('類型',  pd.Series(dtype=str)).fillna('').isin(['一般', '混合', '']))
-                ].copy()
-                task_names = ["（不限）"] + df_a_rev['任務名稱'].tolist()
-                sel_task = st.selectbox("📋 依任務篩選（選填）", task_names, key="rev_task")
-
-                if sel_task != "（不限）":
-                    task_row = df_a_rev[df_a_rev['任務名稱'] == sel_task].iloc[0]
-                    ids_str  = str(task_row.get('題目ID清單', '') or '')
-                    rev_task_ids = set([q.strip() for q in ids_str.split(',') if q.strip() and q.strip() != 'nan'])
-
-                    # 自動帶入任務的題目範圍到 session state（在 widget 渲染前設定）
-                    content_str = str(task_row.get('內容', ''))
-                    parts = [p.strip() for p in content_str.split('|')]
-                    if len(parts) == 5:
-                        st.session_state['rev_v'] = parts[0]
-                        st.session_state['rev_u'] = parts[1]
-                        st.session_state['rev_y'] = parts[2]
-                        st.session_state['rev_b'] = parts[3]
-                        st.session_state['rev_l'] = parts[4]
-                        st.info(f"📋 {sel_task}　共 {len(rev_task_ids)} 題")
-
-                    # 自動帶入任務的指派學生
-                    stu_str = str(task_row.get('指派學生', '') or '')
-                    task_stus = [s.strip() for s in stu_str.split(',') if s.strip()]
-                    task_stu_default = [s for s in task_stus if s in students_in_group] or students_in_group
-                else:
-                    # 沒選任務時清除強制帶入的範圍
-                    for k in ['rev_v','rev_u','rev_y','rev_b','rev_l']:
-                        st.session_state.pop(k, None)
-
             rev_students = st.multiselect(
                 "👤 學生（預設全選，可自由增刪）",
                 options=students_in_group,
-                default=task_stu_default,
+                default=students_in_group,
                 key="rev_students"
             )
             target_students = rev_students if rev_students else students_in_group
 
             st.markdown("**⚙️ 題目範圍**")
-
-            def _rev_idx(opts, key):
-                val = st.session_state.get(key)
-                try: return opts.index(val) if val in opts else 0
-                except: return 0
-
             rc = st.columns(5)
-            rv_opts = sorted(df_q['版本'].unique())
-            rv = rc[0].selectbox("版本", rv_opts, index=_rev_idx(rv_opts, 'rev_v'), key="rev_v")
-            ru_opts = sorted(df_q[df_q['版本'] == rv]['單元'].unique())
-            ru = rc[1].selectbox("單元", ru_opts, index=_rev_idx(ru_opts, 'rev_u'), key="rev_u")
-            ry_opts = sorted(df_q[(df_q['版本'] == rv) & (df_q['單元'] == ru)]['年度'].unique())
-            ry = rc[2].selectbox("年度", ry_opts, index=_rev_idx(ry_opts, 'rev_y'), key="rev_y")
-            rb_opts = sorted(df_q[(df_q['版本'] == rv) & (df_q['單元'] == ru) & (df_q['年度'] == ry)]['冊編號'].unique())
-            rb = rc[3].selectbox("冊別", rb_opts, index=_rev_idx(rb_opts, 'rev_b'), key="rev_b")
-            rl_opts = sorted(df_q[(df_q['版本'] == rv) & (df_q['單元'] == ru) & (df_q['年度'] == ry) & (df_q['冊編號'] == rb)]['課編號'].unique())
-            rl = rc[4].selectbox("課次", rl_opts, index=_rev_idx(rl_opts, 'rev_l'), key="rev_l")
+            rv = rc[0].selectbox("版本", sorted(df_q['版本'].unique()), key="rev_v")
+            ru = rc[1].selectbox("單元", sorted(df_q[df_q['版本'] == rv]['單元'].unique()), key="rev_u")
+            ry = rc[2].selectbox("年度", sorted(df_q[(df_q['版本'] == rv) & (df_q['單元'] == ru)]['年度'].unique()), key="rev_y")
+            rb = rc[3].selectbox("冊別", sorted(df_q[(df_q['版本'] == rv) & (df_q['單元'] == ru) & (df_q['年度'] == ry)]['冊編號'].unique()), key="rev_b")
+            rl = rc[4].selectbox("課次", sorted(df_q[(df_q['版本'] == rv) & (df_q['單元'] == ru) & (df_q['年度'] == ry) & (df_q['冊編號'] == rb)]['課編號'].unique()), key="rev_l")
 
             df_rev_scope = df_q[
                 (df_q['版本'] == rv) & (df_q['單元'] == ru) &
@@ -908,13 +834,6 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             df_rev_scope['題目ID'] = df_rev_scope.apply(
                 lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1
             )
-
-            # 若有選任務，進一步篩選到任務題目
-            if rev_task_ids:
-                df_rev_scope = df_rev_scope[df_rev_scope['題目ID'].isin(rev_task_ids)].copy()
-
-
-
 
         if df_rev_scope.empty:
             st.info("此範圍尚無題目。")
@@ -948,14 +867,14 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     q_logs_all = pd.DataFrame()
                     attempted, correct, reviewed = 0, 0, 0
 
-                # 每位學生答題歷史摘要（直接顯示在標題列）
+                # 每位學生最新一筆結果（姓名：文字說明+個人講解標記）
                 stu_tags = []
                 for stu in target_students:
                     if not q_logs_all.empty:
                         stu_ans_rows = q_logs_all[
                             (q_logs_all['姓名'] == stu) &
                             (~q_logs_all['結果'].str.contains('📖', na=False))
-                        ].sort_values('時間', ascending=True)
+                        ]
                         stu_rev_rows = q_logs_all[
                             (q_logs_all['姓名'] == stu) &
                             (q_logs_all['結果'] == '📖 講解')
@@ -965,13 +884,13 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                         stu_rev_rows = pd.DataFrame()
 
                     if stu_ans_rows.empty:
-                        history_str = "未作答"
+                        status = "未作答"
+                    elif stu_ans_rows.iloc[0]['結果'] == "✅":
+                        status = "正確✅"
                     else:
-                        # 顯示每一次作答結果，如 ❌❌✅
-                        history_str = "".join(stu_ans_rows['結果'].tolist())
-
+                        status = "錯誤❌"
                     rev = "📖" if not stu_rev_rows.empty else ""
-                    stu_tags.append(f"{stu}：{history_str}{rev}")
+                    stu_tags.append(f"{stu}：{status}{rev}")
 
                 stu_tag_str = "　|　".join(stu_tags)
                 label = (
@@ -1233,6 +1152,39 @@ if not st.session_state.quiz_loaded:
 
                 if all_done:
                     st.success("🎉 此任務已全部完成！")
+                    # 再次練習按鈕（載入全部任務題目）
+                    retry_key = f"retry_task_{task_name}"
+                    if st.button("🔁 再次練習（全部題目）", key=retry_key, use_container_width=True):
+                        if is_reading_task:
+                            df_r2 = df_r.copy()
+                            if '題目ID' not in df_r2.columns:
+                                df_r2['題目ID'] = df_r2.apply(
+                                    lambda r: f"R_{r.get('版本','')}_{r.get('年度','')}_{r.get('冊編號','')}_{r.get('單元','')}_{r.get('課編號','')}_{r.get('句編號','')}", axis=1
+                                )
+                            retry_r = df_r2[df_r2['題目ID'].isin(q_ids_set)].copy()
+                            if not retry_r.empty:
+                                records = retry_r.to_dict('records')
+                                for rec in records:
+                                    rec['_type'] = 'reading'
+                                st.session_state.update({
+                                    "quiz_list": records,
+                                    "q_idx": 0, "quiz_loaded": True,
+                                    "ans": [], "used_history": [], "shuf": [], "show_analysis": False
+                                })
+                                st.rerun()
+                        else:
+                            df_q2 = df_q.copy()
+                            df_q2['題目ID'] = df_q2.apply(
+                                lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1
+                            )
+                            retry_q = df_q2[df_q2['題目ID'].isin(q_ids_set)].copy()
+                            if not retry_q.empty:
+                                st.session_state.update({
+                                    "quiz_list": retry_q.to_dict('records'),
+                                    "q_idx": 0, "quiz_loaded": True,
+                                    "ans": [], "used_history": [], "shuf": [], "show_analysis": False
+                                })
+                                st.rerun()
                 else:
                     task_content = str(arow.get('內容', ''))
                     parts        = [p.strip() for p in task_content.split('|')]
