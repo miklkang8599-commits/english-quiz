@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.66 - 任務選題直查版)
+# 🧩 英文全能練習系統 (V2.9.67 - 除錯ID對比版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.66
+# 📌 版本編號 (VERSION): 2.9.67
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -23,7 +23,7 @@ import requests
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "2.9.66"
+VERSION = "2.9.67"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -969,12 +969,15 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
 
             # 選了任務時隱藏題目範圍選單，直接用任務題目ID
             if rev_task_ids:
-                # 只顯示任務說明，不顯示 selectbox
                 df_rev_scope = df_q.copy()
                 df_rev_scope['題目ID'] = df_rev_scope.apply(
                     lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1
                 )
                 df_rev_scope = df_rev_scope[df_rev_scope['題目ID'].isin(rev_task_ids)].copy()
+                # 除錯：顯示任務ID樣本 vs 產生的ID樣本
+                with st.expander("🔍 除錯（管理員）", expanded=False):
+                    st.write("任務ID樣本：", list(rev_task_ids)[:3])
+                    st.write("題目ID樣本：", df_q.apply(lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1).tolist()[:3])
             else:
                 st.markdown("**⚙️ 題目範圍**")
                 rc = st.columns(5)
