@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.73 - 除錯清除版)
+# 🧩 英文全能練習系統 (V2.9.74 - 講解歷史完整顯示版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.73
+# 📌 版本編號 (VERSION): 2.9.74
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -23,7 +23,7 @@ import requests
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "2.9.73"
+VERSION = "2.9.74"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1058,14 +1058,14 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     q_logs_all = pd.DataFrame()
                     attempted, correct, reviewed = 0, 0, 0
 
-                # 每位學生最新一筆結果（姓名：文字說明+個人講解標記）
+                # 每位學生完整作答歷史
                 stu_tags = []
                 for stu in target_students:
                     if not q_logs_all.empty:
                         stu_ans_rows = q_logs_all[
                             (q_logs_all['姓名'] == stu) &
                             (~q_logs_all['結果'].str.contains('📖', na=False))
-                        ]
+                        ].sort_values('時間', ascending=True)
                         stu_rev_rows = q_logs_all[
                             (q_logs_all['姓名'] == stu) &
                             (q_logs_all['結果'] == '📖 講解')
@@ -1075,13 +1075,11 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                         stu_rev_rows = pd.DataFrame()
 
                     if stu_ans_rows.empty:
-                        status = "未作答"
-                    elif stu_ans_rows.iloc[0]['結果'] == "✅":
-                        status = "正確✅"
+                        history = "未作答"
                     else:
-                        status = "錯誤❌"
+                        history = "".join(stu_ans_rows['結果'].tolist())
                     rev = "📖" if not stu_rev_rows.empty else ""
-                    stu_tags.append(f"{stu}：{status}{rev}")
+                    stu_tags.append(f"{stu}：{history}{rev}")
 
                 stu_tag_str = "　|　".join(stu_tags)
                 label = (
