@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.72 - vocab單字重組講解版)
+# 🧩 英文全能練習系統 (V2.9.73 - 除錯清除版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.72
+# 📌 版本編號 (VERSION): 2.9.73
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -23,7 +23,7 @@ import requests
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "2.9.72"
+VERSION = "2.9.73"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -993,13 +993,6 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
 
                 df_rev_scope = pd.concat([df_rev_q, df_rev_v], ignore_index=True) if not df_rev_v.empty else df_rev_q
 
-                with st.expander("🔍 除錯", expanded=False):
-                    st.write("任務ID樣本:", list(rev_task_ids)[:3])
-                    st.write("篩選後題目數:", len(df_rev_scope))
-                    if not df_v.empty:
-                        u_col = '單元' if '單元' in df_v.columns else None
-                        dv_s = df_v.apply(lambda r: f"V_{r['版本']}_{r['年度']}_{r['冊編號']}_{r[u_col] if u_col else '單字重組'}_{r['課編號']}_{r['句編號']}", axis=1).tolist()[:3]
-                        st.write("vocab ID樣本:", dv_s)
             else:
                 st.markdown("**⚙️ 題目範圍**")
                 rc = st.columns(5)
