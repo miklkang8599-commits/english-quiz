@@ -23,7 +23,7 @@ import requests
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "2.9.50"
+VERSION = "2.9.51"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -222,6 +222,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
     if hc2.button("🔄 更新資料", use_container_width=True, key="admin_refresh"):
         load_static_data.clear()
         load_dynamic_data.clear()
+        st.cache_data.clear()
         st.rerun()
 
     t1, t2, t3, t4 = st.tabs(["📋 指派任務", "📈 數據監控", "📋 學生名單", "📖 題目講解"])
