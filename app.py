@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.69 - 單字重組講解版)
+# 🧩 英文全能練習系統 (V2.9.70 - 除錯強化版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.69
+# 📌 版本編號 (VERSION): 2.9.70
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -23,7 +23,7 @@ import requests
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "2.9.69"
+VERSION = "2.9.70"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -988,10 +988,13 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 df_rev_scope = df_rev_scope.drop(columns=['題目ID_v'])
                 # 除錯
                 with st.expander("🔍 除錯", expanded=False):
-                    sample_task = list(rev_task_ids)[:2]
-                    sample_q    = df_q.apply(lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1).tolist()[:2]
+                    sample_task = list(rev_task_ids)[:3]
+                    sample_q    = df_q.apply(lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1).tolist()[:3]
+                    sample_qv   = df_q.apply(lambda r: f"V_{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1).tolist()[:3]
                     st.write("任務ID:", sample_task)
-                    st.write("題目ID:", sample_q)
+                    st.write("題目ID（無V_）:", sample_q)
+                    st.write("題目ID（有V_）:", sample_qv)
+                    st.write("篩選後題目數:", len(df_rev_scope))
             else:
                 st.markdown("**⚙️ 題目範圍**")
                 rc = st.columns(5)
