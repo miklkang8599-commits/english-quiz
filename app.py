@@ -23,7 +23,7 @@ import requests
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "2.9.55"
+VERSION = "2.9.56"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1322,6 +1322,8 @@ if not st.session_state.quiz_loaded:
                                 vocab_cfg_str = str(arow.get('單字設定', '') or '')
                                 vcfg = vocab_cfg_str.split('|') if vocab_cfg_str else []
                                 v_mode_t  = vcfg[0] if len(vcfg) > 0 else '自選'
+                                if v_mode_t == '學生自選':
+                                    v_mode_t = '自選'
                                 v_timer_t = int(vcfg[1]) if len(vcfg) > 1 else 30
                                 v_extra_t = int(vcfg[2]) if len(vcfg) > 2 else 3
                                 records = pending.to_dict('records')
@@ -1360,8 +1362,11 @@ if not st.session_state.quiz_loaded:
                             if not pending_v.empty:
                                 vocab_cfg_str = str(arow.get('單字設定', '') or '')
                                 vcfg = vocab_cfg_str.split('|') if vocab_cfg_str else []
+                                v_mode_mixed = vcfg[0] if len(vcfg) > 0 else '自選'
+                                if v_mode_mixed == '學生自選':
+                                    v_mode_mixed = '自選'
                                 pending_v['_type']        = 'vocab'
-                                pending_v['_vocab_mode']  = vcfg[0] if len(vcfg) > 0 else '自選'
+                                pending_v['_vocab_mode']  = v_mode_mixed
                                 pending_v['_vocab_timer'] = int(vcfg[1]) if len(vcfg) > 1 else 30
                                 pending_v['_vocab_extra'] = int(vcfg[2]) if len(vcfg) > 2 else 3
                             pending = pd.concat([pending_q, pending_r, pending_v], ignore_index=True)
