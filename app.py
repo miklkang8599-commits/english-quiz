@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.65 - 講解任務篩選完整版)
+# 🧩 英文全能練習系統 (V2.9.66 - 任務選題直查版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.65
+# 📌 版本編號 (VERSION): 2.9.66
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -23,7 +23,7 @@ import requests
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "2.9.65"
+VERSION = "2.9.66"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -967,29 +967,36 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 try: return opts.index(val) if val in opts else 0
                 except: return 0
 
-            st.markdown("**⚙️ 題目範圍**")
-            rc = st.columns(5)
-            rv_opts = sorted(df_q['版本'].unique())
-            rv = rc[0].selectbox("版本", rv_opts, index=_rev_idx(rv_opts,'rev_v'), key="rev_v")
-            ru_opts = sorted(df_q[df_q['版本'] == rv]['單元'].unique())
-            ru = rc[1].selectbox("單元", ru_opts, index=_rev_idx(ru_opts,'rev_u'), key="rev_u")
-            ry_opts = sorted(df_q[(df_q['版本'] == rv) & (df_q['單元'] == ru)]['年度'].unique())
-            ry = rc[2].selectbox("年度", ry_opts, index=_rev_idx(ry_opts,'rev_y'), key="rev_y")
-            rb_opts = sorted(df_q[(df_q['版本'] == rv) & (df_q['單元'] == ru) & (df_q['年度'] == ry)]['冊編號'].unique())
-            rb = rc[3].selectbox("冊別", rb_opts, index=_rev_idx(rb_opts,'rev_b'), key="rev_b")
-            rl_opts = sorted(df_q[(df_q['版本'] == rv) & (df_q['單元'] == ru) & (df_q['年度'] == ry) & (df_q['冊編號'] == rb)]['課編號'].unique())
-            rl = rc[4].selectbox("課次", rl_opts, index=_rev_idx(rl_opts,'rev_l'), key="rev_l")
-
-            df_rev_scope = df_q[
-                (df_q['版本'] == rv) & (df_q['單元'] == ru) &
-                (df_q['年度'] == ry) & (df_q['冊編號'] == rb) &
-                (df_q['課編號'] == rl)
-            ].copy()
-            df_rev_scope['題目ID'] = df_rev_scope.apply(
-                lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1
-            )
+            # 選了任務時隱藏題目範圍選單，直接用任務題目ID
             if rev_task_ids:
+                # 只顯示任務說明，不顯示 selectbox
+                df_rev_scope = df_q.copy()
+                df_rev_scope['題目ID'] = df_rev_scope.apply(
+                    lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1
+                )
                 df_rev_scope = df_rev_scope[df_rev_scope['題目ID'].isin(rev_task_ids)].copy()
+            else:
+                st.markdown("**⚙️ 題目範圍**")
+                rc = st.columns(5)
+                rv_opts = sorted(df_q['版本'].unique())
+                rv = rc[0].selectbox("版本", rv_opts, index=_rev_idx(rv_opts,'rev_v'), key="rev_v")
+                ru_opts = sorted(df_q[df_q['版本'] == rv]['單元'].unique())
+                ru = rc[1].selectbox("單元", ru_opts, index=_rev_idx(ru_opts,'rev_u'), key="rev_u")
+                ry_opts = sorted(df_q[(df_q['版本'] == rv) & (df_q['單元'] == ru)]['年度'].unique())
+                ry = rc[2].selectbox("年度", ry_opts, index=_rev_idx(ry_opts,'rev_y'), key="rev_y")
+                rb_opts = sorted(df_q[(df_q['版本'] == rv) & (df_q['單元'] == ru) & (df_q['年度'] == ry)]['冊編號'].unique())
+                rb = rc[3].selectbox("冊別", rb_opts, index=_rev_idx(rb_opts,'rev_b'), key="rev_b")
+                rl_opts = sorted(df_q[(df_q['版本'] == rv) & (df_q['單元'] == ru) & (df_q['年度'] == ry) & (df_q['冊編號'] == rb)]['課編號'].unique())
+                rl = rc[4].selectbox("課次", rl_opts, index=_rev_idx(rl_opts,'rev_l'), key="rev_l")
+
+                df_rev_scope = df_q[
+                    (df_q['版本'] == rv) & (df_q['單元'] == ru) &
+                    (df_q['年度'] == ry) & (df_q['冊編號'] == rb) &
+                    (df_q['課編號'] == rl)
+                ].copy()
+                df_rev_scope['題目ID'] = df_rev_scope.apply(
+                    lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1
+                )
 
 
         if df_rev_scope.empty:
