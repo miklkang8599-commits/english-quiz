@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.57 - 朗讀講解任務篩選版)
+# 🧩 英文全能練習系統 (V2.9.48 - API限流修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.57
+# 📌 版本編號 (VERSION): 2.9.48
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -23,7 +23,7 @@ import requests
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "2.9.57"
+VERSION = "2.9.61"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -905,21 +905,62 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 key="rev_group"
             )
             students_in_group = sorted(df_s[df_s['分組'] == rev_group]['姓名'].tolist())
+
+            # 任務篩選
+            rev_task_ids     = None
+            task_stu_default = students_in_group
+            if not df_a.empty and '任務名稱' in df_a.columns:
+                df_a_rev = df_a[
+                    (df_a.get('狀態', pd.Series(dtype=str)).fillna('') != '已刪除') &
+                    (df_a.get('類型',  pd.Series(dtype=str)).fillna('').isin(['一般', '混合', '']))
+                ].copy()
+                task_names = ["（不限）"] + df_a_rev['任務名稱'].tolist()
+                sel_task = st.selectbox("📋 依任務篩選（選填）", task_names, key="rev_task")
+                if sel_task != "（不限）":
+                    task_row = df_a_rev[df_a_rev['任務名稱'] == sel_task].iloc[0]
+                    ids_str  = str(task_row.get('題目ID清單', '') or '')
+                    rev_task_ids = set([q.strip() for q in ids_str.split(',') if q.strip() and q.strip() != 'nan'])
+                    content_str  = str(task_row.get('內容', ''))
+                    parts = [p.strip() for p in content_str.split('|')]
+                    if len(parts) == 5:
+                        st.info(f"📋 {sel_task}　共 {len(rev_task_ids)} 題")
+                        st.session_state['rev_v'] = parts[0]
+                        st.session_state['rev_u'] = parts[1]
+                        st.session_state['rev_y'] = parts[2]
+                        st.session_state['rev_b'] = parts[3]
+                        st.session_state['rev_l'] = parts[4]
+                    stu_str = str(task_row.get('指派學生', '') or '')
+                    task_stus = [s.strip() for s in stu_str.split(',') if s.strip()]
+                    task_stu_default = [s for s in task_stus if s in students_in_group] or students_in_group
+                else:
+                    for k in ['rev_v','rev_u','rev_y','rev_b','rev_l']:
+                        st.session_state.pop(k, None)
+
             rev_students = st.multiselect(
                 "👤 學生（預設全選，可自由增刪）",
                 options=students_in_group,
-                default=students_in_group,
+                default=task_stu_default,
                 key="rev_students"
             )
             target_students = rev_students if rev_students else students_in_group
 
+            def _rev_idx(opts, key):
+                val = st.session_state.get(key)
+                try: return opts.index(val) if val in opts else 0
+                except: return 0
+
             st.markdown("**⚙️ 題目範圍**")
             rc = st.columns(5)
-            rv = rc[0].selectbox("版本", sorted(df_q['版本'].unique()), key="rev_v")
-            ru = rc[1].selectbox("單元", sorted(df_q[df_q['版本'] == rv]['單元'].unique()), key="rev_u")
-            ry = rc[2].selectbox("年度", sorted(df_q[(df_q['版本'] == rv) & (df_q['單元'] == ru)]['年度'].unique()), key="rev_y")
-            rb = rc[3].selectbox("冊別", sorted(df_q[(df_q['版本'] == rv) & (df_q['單元'] == ru) & (df_q['年度'] == ry)]['冊編號'].unique()), key="rev_b")
-            rl = rc[4].selectbox("課次", sorted(df_q[(df_q['版本'] == rv) & (df_q['單元'] == ru) & (df_q['年度'] == ry) & (df_q['冊編號'] == rb)]['課編號'].unique()), key="rev_l")
+            rv_opts = sorted(df_q['版本'].unique())
+            rv = rc[0].selectbox("版本", rv_opts, index=_rev_idx(rv_opts,'rev_v'), key="rev_v")
+            ru_opts = sorted(df_q[df_q['版本'] == rv]['單元'].unique())
+            ru = rc[1].selectbox("單元", ru_opts, index=_rev_idx(ru_opts,'rev_u'), key="rev_u")
+            ry_opts = sorted(df_q[(df_q['版本'] == rv) & (df_q['單元'] == ru)]['年度'].unique())
+            ry = rc[2].selectbox("年度", ry_opts, index=_rev_idx(ry_opts,'rev_y'), key="rev_y")
+            rb_opts = sorted(df_q[(df_q['版本'] == rv) & (df_q['單元'] == ru) & (df_q['年度'] == ry)]['冊編號'].unique())
+            rb = rc[3].selectbox("冊別", rb_opts, index=_rev_idx(rb_opts,'rev_b'), key="rev_b")
+            rl_opts = sorted(df_q[(df_q['版本'] == rv) & (df_q['單元'] == ru) & (df_q['年度'] == ry) & (df_q['冊編號'] == rb)]['課編號'].unique())
+            rl = rc[4].selectbox("課次", rl_opts, index=_rev_idx(rl_opts,'rev_l'), key="rev_l")
 
             df_rev_scope = df_q[
                 (df_q['版本'] == rv) & (df_q['單元'] == ru) &
@@ -929,6 +970,9 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             df_rev_scope['題目ID'] = df_rev_scope.apply(
                 lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1
             )
+            if rev_task_ids:
+                df_rev_scope = df_rev_scope[df_rev_scope['題目ID'].isin(rev_task_ids)].copy()
+
 
         if df_rev_scope.empty:
             st.info("此範圍尚無題目。")
@@ -1055,10 +1099,9 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             )
             rrev_stus_pool = sorted(df_s[df_s['分組'] == rrev_group]['姓名'].tolist())
 
-            # ── 任務篩選（選填）─────────────────────────────────────────
-            rrev_task_ids     = None
-            rrev_stu_default  = rrev_stus_pool
-
+            # 任務篩選
+            rrev_task_ids    = None
+            rrev_stu_default = rrev_stus_pool
             if not df_a.empty and '任務名稱' in df_a.columns:
                 df_a_rrev = df_a[
                     (df_a.get('狀態', pd.Series(dtype=str)).fillna('') != '已刪除') &
@@ -1066,28 +1109,14 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 ].copy()
                 rrev_task_names = ["（不限）"] + df_a_rrev['任務名稱'].tolist()
                 sel_rrev_task = st.selectbox("📋 依任務篩選（選填）", rrev_task_names, key="rrev_task")
-
                 if sel_rrev_task != "（不限）":
                     rrev_task_row = df_a_rrev[df_a_rrev['任務名稱'] == sel_rrev_task].iloc[0]
                     rrev_ids_str  = str(rrev_task_row.get('題目ID清單', '') or '')
                     rrev_task_ids = set([q.strip() for q in rrev_ids_str.split(',') if q.strip() and q.strip() != 'nan'])
                     st.info(f"📋 {sel_rrev_task}　共 {len(rrev_task_ids)} 題")
-
-                    # 自動帶入任務指派學生
-                    rrev_stu_str  = str(rrev_task_row.get('指派學生', '') or '')
+                    rrev_stu_str   = str(rrev_task_row.get('指派學生', '') or '')
                     rrev_task_stus = [s.strip() for s in rrev_stu_str.split(',') if s.strip()]
                     rrev_stu_default = [s for s in rrev_task_stus if s in rrev_stus_pool] or rrev_stus_pool
-
-                    # 帶入朗讀範圍
-                    if rrev_task_ids:
-                        sample_id = next(iter(rrev_task_ids), '')
-                        parts_r = sample_id.split('_')  # R_版本_年度_冊_單元_課_句
-                        if len(parts_r) >= 6:
-                            st.session_state['rrev_v'] = parts_r[1]
-                            st.session_state['rrev_y'] = parts_r[2]
-                            st.session_state['rrev_b'] = parts_r[3]
-                            st.session_state['rrev_u'] = parts_r[4]
-                            st.session_state['rrev_l'] = parts_r[5]
 
             rrev_students = st.multiselect(
                 "👤 學生（預設全選）",
@@ -1106,33 +1135,22 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                         lambda r: f"R_{r.get('版本','')}_{r.get('年度','')}_{r.get('冊編號','')}_{r.get('單元','')}_{r.get('課編號','')}_{r.get('句編號','')}", axis=1
                     )
 
-                def _rrev_idx(opts, key):
-                    val = st.session_state.get(key)
-                    try: return opts.index(val) if val in opts else 0
-                    except: return 0
-
                 st.markdown("**⚙️ 朗讀題目範圍**")
                 rrc = st.columns(5)
-                rrv_opts = sorted(df_r2['版本'].unique())
-                rrv = rrc[0].selectbox("版本", rrv_opts, index=_rrev_idx(rrv_opts, 'rrev_v'), key="rrev_v")
+                rrv = rrc[0].selectbox("版本",  sorted(df_r2['版本'].unique()), key="rrev_v")
                 rru_src = df_r2[df_r2['版本'] == rrv]
-                rru_opts = sorted(rru_src['單元'].unique()) if '單元' in rru_src.columns else ['朗讀']
-                rru = rrc[1].selectbox("單元", rru_opts, index=_rrev_idx(rru_opts, 'rrev_u'), key="rrev_u")
+                rru = rrc[1].selectbox("單元",  sorted(rru_src['單元'].unique()) if '單元' in rru_src.columns else ['朗讀'], key="rrev_u")
                 rry_src = rru_src[rru_src['單元'] == rru] if '單元' in rru_src.columns else rru_src
-                rry_opts = sorted(rry_src['年度'].unique())
-                rry = rrc[2].selectbox("年度", rry_opts, index=_rrev_idx(rry_opts, 'rrev_y'), key="rrev_y")
+                rry = rrc[2].selectbox("年度",  sorted(rry_src['年度'].unique()), key="rrev_y")
                 rrb_src = rry_src[rry_src['年度'] == rry]
-                rrb_opts = sorted(rrb_src['冊編號'].unique())
-                rrb = rrc[3].selectbox("冊別", rrb_opts, index=_rrev_idx(rrb_opts, 'rrev_b'), key="rrev_b")
+                rrb = rrc[3].selectbox("冊別",  sorted(rrb_src['冊編號'].unique()), key="rrev_b")
                 rrl_src = rrb_src[rrb_src['冊編號'] == rrb]
-                rrl_opts = sorted(rrl_src['課編號'].unique())
-                rrl = rrc[4].selectbox("課次", rrl_opts, index=_rrev_idx(rrl_opts, 'rrev_l'), key="rrev_l")
+                rrl = rrc[4].selectbox("課次",  sorted(rrl_src['課編號'].unique()), key="rrev_l")
 
                 df_rrev_scope = rrl_src[rrl_src['課編號'] == rrl].copy()
-
-                # 若有選任務，過濾到任務題目
                 if rrev_task_ids:
                     df_rrev_scope = df_rrev_scope[df_rrev_scope['題目ID'].isin(rrev_task_ids)].copy()
+
 
                 if df_rrev_scope.empty:
                     st.info("此範圍尚無朗讀題目。")
@@ -1802,9 +1820,8 @@ if st.session_state.quiz_loaded:
                 append_to_sheet("logs", pd.DataFrame([{"時間": get_now().strftime("%Y-%m-%d %H:%M:%S"), "姓名": st.session_state.user_name, "分組": st.session_state.group_id, "題目ID": q.get("題目ID","N/A"), "結果": "❌"}]))
                 st.rerun()
 
-        # 模式切換（暫時顯示 task_mode 除錯）
-        st.caption(f"🔍 task_mode = `{task_mode}`")
-        if task_mode == "自選":
+        # 模式切換
+        if task_mode in ("自選", "學生自選"):
             # 學生可隨時切換，用全域 key 保持狀態（不綁定題目 index）
             vocab_mode = st.radio(
                 "輸入模式",
@@ -1836,8 +1853,15 @@ if st.session_state.quiz_loaded:
         # ── 拆字母模式 ────────────────────────────────────────────────────
         if "拆字母" in vocab_mode:
             current_ans = st.session_state[ans_key_v]
-            ans_display = " ".join([f"[{c}]" for c in current_ans]) if current_ans else "（點選下方字母）"
-            st.markdown(f"<div style=\'font-size:1.4rem;letter-spacing:0.1em;padding:10px;min-height:50px;background:#f0f4ff;border-radius:8px;\'>{ans_display}</div>", unsafe_allow_html=True)
+            if current_ans:
+                letters_html = "".join([
+                    f"<span style='display:inline-block;padding:4px 10px;margin:2px;background:#4a90d9;color:white;border-radius:6px;font-size:1.3rem;font-weight:700;letter-spacing:0.05em;'>{c.lower()}</span>"
+                    for c in current_ans
+                ])
+                ans_display = letters_html
+            else:
+                ans_display = "<span style='color:#aaa;font-size:1rem;'>點選下方字母</span>"
+            st.markdown(f"<div style='padding:10px;min-height:50px;background:#f0f4ff;border-radius:8px;'>{ans_display}</div>", unsafe_allow_html=True)
             bc1, bc2 = st.columns(2)
             if bc1.button("⬅️ 退回一步", use_container_width=True, key=f"vb_back_{st.session_state.q_idx}"):
                 if current_ans:
@@ -1851,8 +1875,8 @@ if st.session_state.quiz_loaded:
                 avail = [(i, ltr) for i, ltr in enumerate(letter_pool) if i not in used_indices]
                 cols_v = st.columns(min(len(avail), 8))
                 for ci, (i, ltr) in enumerate(avail):
-                    if cols_v[ci % 8].button(ltr, key=f"vl_{st.session_state.q_idx}_{i}", use_container_width=True):
-                        st.session_state[ans_key_v].append(ltr)
+                    if cols_v[ci % 8].button(ltr.lower(), key=f"vl_{st.session_state.q_idx}_{i}", use_container_width=True):
+                        st.session_state[ans_key_v].append(ltr)  # 仍存大寫供比對
                         used_st = st.session_state.get(f"vocab_used_{st.session_state.q_idx}", [])
                         used_st.append(i)
                         st.session_state[f"vocab_used_{st.session_state.q_idx}"] = used_st
