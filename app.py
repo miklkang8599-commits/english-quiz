@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.76 - 自動重試版)
+# 🧩 英文全能練習系統 (V2.9.77 - Supabase動態資料版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.76
+# 📌 版本編號 (VERSION): 2.9.77
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -22,8 +22,9 @@ import re
 import requests
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
+from supabase import create_client, Client
 
-VERSION = "2.9.76"
+VERSION = "2.9.77"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -84,33 +85,98 @@ def load_static_data():
         return None, None, pd.DataFrame(), pd.DataFrame()
 
 # ==============================================================================
-# ✅ 修復 5：load_dynamic_data 加上快取，避免每次 rerun 都重新讀取
+# Supabase 客戶端
 # ==============================================================================
-@st.cache_data(ttl=60)  # 動態資料快取 60 秒
+@st.cache_resource
+def get_supabase() -> Client:
+    return create_client(
+        st.secrets["SUPABASE_URL"],
+        st.secrets["SUPABASE_KEY"]
+    )
+
+# 欄位對應：Supabase英文 ↔ 程式中文
+LOGS_COLS = {
+    "created_at": "時間", "name": "姓名", "group_id": "分組",
+    "question_id": "題目ID", "result": "結果",
+    "student_answer": "學生答案", "score": "分數"
+}
+ASSIGN_COLS = {
+    "created_at": "建立時間", "task_name": "任務名稱",
+    "target_group": "對象班級", "assigned_students": "指派學生",
+    "student_count": "指派人數", "content": "內容",
+    "description": "任務說明", "question_count": "題目數",
+    "question_ids": "題目ID清單", "start_date": "開始日期",
+    "end_date": "結束日期", "ref_students": "參考學生",
+    "status": "狀態", "task_type": "類型"
+}
+
+def _to_cn(df: pd.DataFrame, col_map: dict) -> pd.DataFrame:
+    """把 Supabase 英文欄位名轉回程式用的中文欄位名"""
+    return df.rename(columns=col_map)
+
+def _to_en_logs(row: dict) -> dict:
+    """把中文欄位的 log 資料轉成英文欄位"""
+    rev = {v: k for k, v in LOGS_COLS.items()}
+    return {rev.get(k, k): str(v) for k, v in row.items() if rev.get(k, k) != k or k in rev.values()}
+
+def _to_en_assign(row: dict) -> dict:
+    """把中文欄位的 assignment 資料轉成英文欄位"""
+    rev = {v: k for k, v in ASSIGN_COLS.items()}
+    return {rev.get(k, k): str(v) for k, v in row.items() if rev.get(k, k) != k or k in rev.values()}
+
+# ==============================================================================
+# 動態資料讀取（Supabase）
+# ==============================================================================
+@st.cache_data(ttl=60)
 def load_dynamic_data():
     try:
-        df_a = conn.read(worksheet="assignments", ttl=60)
-        df_l = conn.read(worksheet="logs",        ttl=60)
+        sb = get_supabase()
+        # 讀取 assignments
+        res_a = sb.table("assignments").select("*").execute()
+        if res_a.data:
+            df_a = pd.DataFrame(res_a.data)
+            df_a = _to_cn(df_a, ASSIGN_COLS)
+            # 移除 id 欄
+            df_a = df_a.drop(columns=['id'], errors='ignore')
+        else:
+            df_a = pd.DataFrame()
+
+        # 讀取 logs
+        res_l = sb.table("logs").select("*").order("created_at", desc=False).execute()
+        if res_l.data:
+            df_l = pd.DataFrame(res_l.data)
+            df_l = _to_cn(df_l, LOGS_COLS)
+            df_l = df_l.drop(columns=['id'], errors='ignore')
+        else:
+            df_l = pd.DataFrame()
+
         return df_a, df_l
-    except:
+    except Exception as e:
+        st.warning(f"⚠️ Supabase 讀取失敗：{e}")
         return pd.DataFrame(), pd.DataFrame()
 
 # ==============================================================================
-# ✅ 修復 2：append 寫入函式，取代錯誤的 conn.create()
+# 動態資料寫入（Supabase）
 # ==============================================================================
 def append_to_sheet(worksheet_name: str, new_row: pd.DataFrame):
-    """安全地將一行資料附加到工作表末尾"""
+    """寫入一筆資料到 Supabase"""
     try:
-        existing = conn.read(worksheet=worksheet_name, ttl=0)
-        if existing is None or existing.empty:
-            existing = pd.DataFrame(columns=new_row.columns)
-        updated = pd.concat([existing, new_row], ignore_index=True)
-        conn.update(worksheet=worksheet_name, data=updated)
-        # 清除快取讓下次讀取到最新資料
+        sb = get_supabase()
+        row_dict = new_row.iloc[0].to_dict()
+
+        if worksheet_name == "logs":
+            en_row = _to_en_logs(row_dict)
+            sb.table("logs").insert(en_row).execute()
+        elif worksheet_name == "assignments":
+            en_row = _to_en_assign(row_dict)
+            sb.table("assignments").insert(en_row).execute()
+        else:
+            return False
+
         load_dynamic_data.clear()
         return True
     except Exception as e:
-        st.warning(f"⚠️ 資料寫入失敗: {e}")
+        st.warning(f"⚠️ 寫入失敗：{e}")
         return False
 
 # ------------------------------------------------------------------------------
@@ -645,13 +711,15 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                             st.error("❌ 請至少保留一位學生")
                         else:
                             try:
-                                df_a_edit = conn.read(worksheet="assignments", ttl=0)
-                                df_a_edit.at[idx, '任務名稱'] = new_name.strip()
-                                df_a_edit.at[idx, '開始日期'] = str(new_start)
-                                df_a_edit.at[idx, '結束日期'] = str(new_end)
-                                df_a_edit.at[idx, '指派學生'] = ",".join(new_stus)
-                                df_a_edit.at[idx, '指派人數'] = len(new_stus)
-                                conn.update(worksheet="assignments", data=df_a_edit)
+                                sb = get_supabase()
+                                task_created = str(row.get('建立時間', ''))
+                                sb.table("assignments").update({
+                                    "task_name":         new_name.strip(),
+                                    "start_date":        str(new_start),
+                                    "end_date":          str(new_end),
+                                    "assigned_students": ",".join(new_stus),
+                                    "student_count":     str(len(new_stus))
+                                }).eq("created_at", task_created).execute()
                                 load_dynamic_data.clear()
                                 st.success("✅ 任務已更新")
                                 st.rerun()
@@ -662,9 +730,11 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     del_key = f"del_task_{idx}"
                     if st.button("🗑️ 刪除此任務", key=del_key):
                         try:
-                            df_a_edit = conn.read(worksheet="assignments", ttl=0)
-                            df_a_edit.at[idx, '狀態'] = '已刪除'
-                            conn.update(worksheet="assignments", data=df_a_edit)
+                            sb = get_supabase()
+                            task_created = str(row.get('建立時間', ''))
+                            sb.table("assignments").update({
+                                "status": "已刪除"
+                            }).eq("created_at", task_created).execute()
                             load_dynamic_data.clear()
                             st.success("✅ 任務已標記刪除")
                             st.rerun()
