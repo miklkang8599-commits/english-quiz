@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.71 - 單元列表除錯版)
+# 🧩 英文全能練習系統 (V2.9.72 - vocab單字重組講解版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.71
+# 📌 版本編號 (VERSION): 2.9.72
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -23,7 +23,7 @@ import requests
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-VERSION = "2.9.71"
+VERSION = "2.9.72"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -969,34 +969,37 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
 
             # 選了任務時隱藏題目範圍選單，直接用任務題目ID
             if rev_task_ids:
-                df_rev_scope = df_q.copy()
-                # 同時產生有 V_ 和沒有 V_ 兩種格式，相容新舊任務
-                df_rev_scope['題目ID'] = df_rev_scope.apply(
-                    lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1
-                )
-                df_rev_scope['題目ID_v'] = df_rev_scope.apply(
-                    lambda r: f"V_{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1
-                )
-                df_rev_scope = df_rev_scope[
-                    df_rev_scope['題目ID'].isin(rev_task_ids) |
-                    df_rev_scope['題目ID_v'].isin(rev_task_ids)
-                ].copy()
-                # 統一用匹配到的那個格式
-                df_rev_scope['題目ID'] = df_rev_scope.apply(
-                    lambda r: r['題目ID_v'] if r['題目ID_v'] in rev_task_ids else r['題目ID'], axis=1
-                )
-                df_rev_scope = df_rev_scope.drop(columns=['題目ID_v'])
-                # 除錯
+                # 從 df_q 查（重組/單選）
+                df_rev_q = df_q.copy()
+                df_rev_q['題目ID']   = df_rev_q.apply(lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1)
+                df_rev_q['題目ID_v'] = df_rev_q.apply(lambda r: f"V_{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1)
+                df_rev_q = df_rev_q[df_rev_q['題目ID'].isin(rev_task_ids) | df_rev_q['題目ID_v'].isin(rev_task_ids)].copy()
+                if not df_rev_q.empty:
+                    df_rev_q['題目ID'] = df_rev_q.apply(lambda r: r['題目ID_v'] if r['題目ID_v'] in rev_task_ids else r['題目ID'], axis=1)
+                df_rev_q = df_rev_q.drop(columns=['題目ID_v'], errors='ignore')
+
+                # 從 df_v 查（單字重組）
+                df_rev_v = pd.DataFrame()
+                if not df_v.empty:
+                    df_rev_v2 = df_v.copy()
+                    u_col = '單元' if '單元' in df_rev_v2.columns else None
+                    df_rev_v2['題目ID']   = df_rev_v2.apply(lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r[u_col] if u_col else '單字重組'}_{r['課編號']}_{r['句編號']}", axis=1)
+                    df_rev_v2['題目ID_v'] = df_rev_v2.apply(lambda r: f"V_{r['版本']}_{r['年度']}_{r['冊編號']}_{r[u_col] if u_col else '單字重組'}_{r['課編號']}_{r['句編號']}", axis=1)
+                    df_rev_v2 = df_rev_v2[df_rev_v2['題目ID'].isin(rev_task_ids) | df_rev_v2['題目ID_v'].isin(rev_task_ids)].copy()
+                    if not df_rev_v2.empty:
+                        df_rev_v2['題目ID'] = df_rev_v2.apply(lambda r: r['題目ID_v'] if r['題目ID_v'] in rev_task_ids else r['題目ID'], axis=1)
+                        df_rev_v2 = df_rev_v2.drop(columns=['題目ID_v'], errors='ignore')
+                        df_rev_v = df_rev_v2
+
+                df_rev_scope = pd.concat([df_rev_q, df_rev_v], ignore_index=True) if not df_rev_v.empty else df_rev_q
+
                 with st.expander("🔍 除錯", expanded=False):
-                    sample_task = list(rev_task_ids)[:3]
-                    sample_q    = df_q.apply(lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1).tolist()[:3]
-                    sample_qv   = df_q.apply(lambda r: f"V_{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1).tolist()[:3]
-                    st.write("任務ID:", sample_task)
-                    st.write("題目ID（無V_）:", sample_q)
-                    st.write("題目ID（有V_）:", sample_qv)
+                    st.write("任務ID樣本:", list(rev_task_ids)[:3])
                     st.write("篩選後題目數:", len(df_rev_scope))
-                    st.write("df_q 所有單元：", sorted(df_q['單元'].unique().tolist()))
-                    st.write("df_q 冊編號：", sorted(df_q['冊編號'].unique().tolist()))
+                    if not df_v.empty:
+                        u_col = '單元' if '單元' in df_v.columns else None
+                        dv_s = df_v.apply(lambda r: f"V_{r['版本']}_{r['年度']}_{r['冊編號']}_{r[u_col] if u_col else '單字重組'}_{r['課編號']}_{r['句編號']}", axis=1).tolist()[:3]
+                        st.write("vocab ID樣本:", dv_s)
             else:
                 st.markdown("**⚙️ 題目範圍**")
                 rc = st.columns(5)
