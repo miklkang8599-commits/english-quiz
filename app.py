@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.81 - 復習除錯版)
+# 🧩 英文全能練習系統 (V2.9.82 - 復習統計優化版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.81
+# 📌 版本編號 (VERSION): 2.9.82
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.81"
+VERSION = "2.9.82"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1825,6 +1825,37 @@ if not st.session_state.quiz_loaded:
 
         rv_scope = st.radio("顯示範圍", ["📚 全部題目", "❌ 只看錯題", "❓ 只看未作答"], horizontal=True, key="rv_scope")
 
+        # ── 即時統計（按鈕前顯示）────────────────────────────────────────
+        if rv_q_ids or rv_filter == "⚙️ 依範圍":
+            my_logs_pre = df_l[df_l['姓名'] == user_name].copy() if not df_l.empty and '姓名' in df_l.columns else pd.DataFrame()
+            if not my_logs_pre.empty and '題目ID' in my_logs_pre.columns and rv_q_ids:
+                # 只看任務範圍內的 logs（同時支援新舊ID格式）
+                logs_in_task = my_logs_pre[
+                    my_logs_pre['題目ID'].isin(rv_q_ids) |
+                    my_logs_pre['題目ID'].apply(lambda x: x.lstrip('V_') if x.startswith('V_') else f"V_{x}").isin(rv_q_ids)
+                ].copy()
+                total_count = len(rv_q_ids)
+
+                # 已答題：在任務範圍內有作答記錄的題目（去重）
+                answered_ids = set(logs_in_task[~logs_in_task['結果'].str.contains('📖', na=False)]['題目ID'].tolist())
+
+                # 曾經錯過：任何一次答錯（去重，同一題只算一次）
+                wrong_ever = set(logs_in_task[logs_in_task['結果'] == '❌']['題目ID'].tolist())
+
+                # 最後答對：每題取最後一筆，結果是✅
+                if '時間' in logs_in_task.columns:
+                    last_ans = logs_in_task[~logs_in_task['結果'].str.contains('📖', na=False)].sort_values('時間').groupby('題目ID').last().reset_index()
+                    last_correct = set(last_ans[last_ans['結果'] == '✅']['題目ID'].tolist())
+                else:
+                    last_correct = set()
+
+                s1, s2, s3, s4 = st.columns(4)
+                s1.metric("📚 總題數",   total_count)
+                s2.metric("✏️ 已答題",  len(answered_ids))
+                s3.metric("❌ 錯題數",   len(wrong_ever), help="曾經答錯過的題目（同一題只算一次）")
+                s4.metric("✅ 最後答對", len(last_correct), help="最後一次作答為正確的題數")
+                st.divider()
+
         if st.button("📖 開始復習", type="primary", use_container_width=True, key="rv_start"):
             my_logs = df_l[df_l['姓名'] == user_name].copy() if not df_l.empty and '姓名' in df_l.columns else pd.DataFrame()
 
@@ -1892,27 +1923,37 @@ if not st.session_state.quiz_loaded:
                 total_count = len(df_rv)
                 if not my_logs.empty and '題目ID' in my_logs.columns:
                     all_qids     = set(df_rv['題目ID'].tolist())
-                    answered_ids = set(my_logs[my_logs['題目ID'].isin(all_qids)]['題目ID'].tolist())
-                    correct_ids  = set(my_logs[(my_logs['題目ID'].isin(all_qids)) & (my_logs['結果'] == '✅')]['題目ID'].tolist())
-                    wrong_ids    = answered_ids - correct_ids
+                    logs_in_scope = my_logs[
+                        my_logs['題目ID'].isin(all_qids) &
+                        (~my_logs['結果'].str.contains('📖', na=False))
+                    ].copy()
+                    answered_ids = set(logs_in_scope['題目ID'].tolist())
+                    # 曾經錯過（去重）
+                    wrong_ever   = set(logs_in_scope[logs_in_scope['結果'] == '❌']['題目ID'].tolist())
+                    # 最後答對（每題最後一筆是✅）
+                    if '時間' in logs_in_scope.columns:
+                        last_ans     = logs_in_scope.sort_values('時間').groupby('題目ID').last().reset_index()
+                        last_correct = set(last_ans[last_ans['結果'] == '✅']['題目ID'].tolist())
+                    else:
+                        last_correct = set(logs_in_scope[logs_in_scope['結果'] == '✅']['題目ID'].tolist())
                 else:
                     answered_ids = set()
-                    correct_ids  = set()
-                    wrong_ids    = set()
+                    wrong_ever   = set()
+                    last_correct = set()
 
                 # 依顯示範圍篩選
                 if rv_scope == "❌ 只看錯題":
-                    df_rv = df_rv[df_rv['題目ID'].isin(wrong_ids)]
+                    df_rv = df_rv[df_rv['題目ID'].isin(wrong_ever)]
                 elif rv_scope == "❓ 只看未作答":
                     df_rv = df_rv[~df_rv['題目ID'].isin(answered_ids)]
 
                 st.session_state['rv_items']   = df_rv.to_dict('records')
                 st.session_state['rv_my_logs'] = my_logs.to_dict('records') if not my_logs.empty else []
                 st.session_state['rv_stats']   = {
-                    'total':    total_count,
-                    'answered': len(answered_ids),
-                    'wrong':    len(wrong_ids),
-                    'correct':  len(correct_ids),
+                    'total':        total_count,
+                    'answered':     len(answered_ids),
+                    'wrong_ever':   len(wrong_ever),
+                    'last_correct': len(last_correct),
                 }
                 st.rerun()
 
@@ -1925,10 +1966,10 @@ if not st.session_state.quiz_loaded:
             # 統計卡片
             if rv_stats:
                 s1, s2, s3, s4 = st.columns(4)
-                s1.metric("📚 總題數",  rv_stats.get('total', 0))
-                s2.metric("✏️ 已答題", rv_stats.get('answered', 0))
-                s3.metric("❌ 錯題數",  rv_stats.get('wrong', 0))
-                s4.metric("✅ 答對數",  rv_stats.get('correct', 0))
+                s1.metric("📚 總題數",    rv_stats.get('total', 0))
+                s2.metric("✏️ 已答題",   rv_stats.get('answered', 0))
+                s3.metric("❌ 錯題數",    rv_stats.get('wrong_ever', 0),   help="曾經答錯過（同一題只算一次）")
+                s4.metric("✅ 最後答對",  rv_stats.get('last_correct', 0), help="最後一次作答為正確的題數")
                 st.divider()
 
             if not rv_items:
