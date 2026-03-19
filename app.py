@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.78 - 題目空格保留版)
+# 🧩 英文全能練習系統 (V2.9.79 - 復習模式版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.78
+# 📌 版本編號 (VERSION): 2.9.79
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.78"
+VERSION = "2.9.79"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1628,7 +1628,7 @@ if not st.session_state.quiz_loaded:
         except:
             return fallback
 
-    tab_q, tab_r, tab_v = st.tabs(["📝 重組／單選", "🎤 朗讀", "🔤 單字重組"])
+    tab_q, tab_r, tab_v, tab_review = st.tabs(["📝 重組／單選", "🎤 朗讀", "🔤 單字重組", "📖 復習"])
 
     # ── Tab：重組／單選 ───────────────────────────────────────────────────
     with tab_q:
@@ -1783,6 +1783,166 @@ if not st.session_state.quiz_loaded:
                     st.rerun()
                 else:
                     st.error("❌ 無單字題目，請重新選擇")
+
+    # ── Tab：復習 ────────────────────────────────────────────────────────────
+    with tab_review:
+        st.subheader("📖 復習模式")
+        user_name = st.session_state.user_name
+
+        rv_filter = st.radio("篩選方式", ["📋 依任務", "⚙️ 依範圍"], horizontal=True, key="rv_filter")
+        rv_q_ids  = None
+
+        if rv_filter == "📋 依任務":
+            if not df_a.empty and '任務名稱' in df_a.columns:
+                user_group = st.session_state.group_id
+                df_a_rv = df_a[df_a.get('狀態', pd.Series(dtype=str)).fillna('') != '已刪除'].copy()
+                if '對象班級' in df_a_rv.columns:
+                    df_a_rv = df_a_rv[df_a_rv['對象班級'].apply(
+                        lambda v: user_group in [g.strip() for g in str(v).split(',')]
+                    )]
+                task_opts    = ["（請選擇任務）"] + df_a_rv['任務名稱'].tolist()
+                sel_rv_task  = st.selectbox("選擇任務", task_opts, key="rv_task")
+                if sel_rv_task != "（請選擇任務）":
+                    task_row = df_a_rv[df_a_rv['任務名稱'] == sel_rv_task].iloc[0]
+                    ids_str  = str(task_row.get('題目ID清單', '') or '')
+                    rv_q_ids = set([q.strip() for q in ids_str.split(',') if q.strip() and q.strip() != 'nan'])
+                    st.info(f"📋 {sel_rv_task}　共 {len(rv_q_ids)} 題")
+            else:
+                st.info("目前沒有指派任務。")
+
+        else:
+            rc1 = st.columns(5)
+            rv_v_opts = sorted(df_q['版本'].unique()) if not df_q.empty else []
+            rv_v = rc1[0].selectbox("版本", rv_v_opts, key="rv_v") if rv_v_opts else None
+            rv_u_opts = sorted(df_q[df_q['版本'] == rv_v]['單元'].unique()) if rv_v else []
+            rv_u = rc1[1].selectbox("單元", rv_u_opts, key="rv_u") if rv_u_opts else None
+            rv_y_opts = sorted(df_q[(df_q['版本'] == rv_v) & (df_q['單元'] == rv_u)]['年度'].unique()) if rv_u else []
+            rv_y = rc1[2].selectbox("年度", rv_y_opts, key="rv_y") if rv_y_opts else None
+            rv_b_opts = sorted(df_q[(df_q['版本'] == rv_v) & (df_q['單元'] == rv_u) & (df_q['年度'] == rv_y)]['冊編號'].unique()) if rv_y else []
+            rv_b = rc1[3].selectbox("冊別", rv_b_opts, key="rv_b") if rv_b_opts else None
+            rv_l_opts = sorted(df_q[(df_q['版本'] == rv_v) & (df_q['單元'] == rv_u) & (df_q['年度'] == rv_y) & (df_q['冊編號'] == rv_b)]['課編號'].unique()) if rv_b else []
+            rv_l = rc1[4].selectbox("課次", rv_l_opts, key="rv_l") if rv_l_opts else None
+
+        rv_scope = st.radio("顯示範圍", ["📚 全部題目", "❌ 只看錯題", "❓ 只看未作答"], horizontal=True, key="rv_scope")
+
+        if st.button("📖 開始復習", type="primary", use_container_width=True, key="rv_start"):
+            my_logs = df_l[df_l['姓名'] == user_name].copy() if not df_l.empty and '姓名' in df_l.columns else pd.DataFrame()
+
+            def _get_qid(r, prefix=""):
+                return f"{prefix}{r.get('版本','')}_{r.get('年度','')}_{r.get('冊編號','')}_{r.get('單元','')}_{r.get('課編號','')}_{r.get('句編號','')}"
+
+            all_items = []
+
+            if rv_filter == "📋 依任務" and rv_q_ids:
+                if not df_q.empty:
+                    dq = df_q.copy()
+                    dq['題目ID']   = dq.apply(lambda r: _get_qid(r), axis=1)
+                    dq['題目ID_v'] = dq.apply(lambda r: _get_qid(r, "V_"), axis=1)
+                    matched = dq[dq['題目ID'].isin(rv_q_ids) | dq['題目ID_v'].isin(rv_q_ids)].copy()
+                    matched['題目ID'] = matched.apply(lambda r: r['題目ID_v'] if r['題目ID_v'] in rv_q_ids else r['題目ID'], axis=1)
+                    matched = matched.drop(columns=['題目ID_v'], errors='ignore')
+                    all_items.append(matched)
+                if not df_v.empty:
+                    dv = df_v.copy()
+                    uc = '單元' if '單元' in dv.columns else None
+                    dv['題目ID']   = dv.apply(lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r[uc] if uc else '單字重組'}_{r['課編號']}_{r['句編號']}", axis=1)
+                    dv['題目ID_v'] = dv.apply(lambda r: f"V_{r['版本']}_{r['年度']}_{r['冊編號']}_{r[uc] if uc else '單字重組'}_{r['課編號']}_{r['句編號']}", axis=1)
+                    mv = dv[dv['題目ID'].isin(rv_q_ids) | dv['題目ID_v'].isin(rv_q_ids)].copy()
+                    if not mv.empty:
+                        mv['題目ID'] = mv.apply(lambda r: r['題目ID_v'] if r['題目ID_v'] in rv_q_ids else r['題目ID'], axis=1)
+                        mv = mv.drop(columns=['題目ID_v'], errors='ignore')
+                        mv['_type'] = 'vocab'
+                        all_items.append(mv)
+                if not df_r.empty:
+                    dr = df_r.copy()
+                    dr['題目ID'] = dr.apply(lambda r: f"R_{r.get('版本','')}_{r.get('年度','')}_{r.get('冊編號','')}_{r.get('單元','')}_{r.get('課編號','')}_{r.get('句編號','')}", axis=1)
+                    mr = dr[dr['題目ID'].isin(rv_q_ids)].copy()
+                    if not mr.empty:
+                        mr['_type'] = 'reading'
+                        all_items.append(mr)
+            elif rv_filter == "⚙️ 依範圍" and rv_v and rv_l:
+                dq = df_q[
+                    (df_q['版本'] == rv_v) & (df_q['單元'] == rv_u) &
+                    (df_q['年度'] == rv_y) & (df_q['冊編號'] == rv_b) &
+                    (df_q['課編號'] == rv_l)
+                ].copy()
+                dq['題目ID'] = dq.apply(lambda r: _get_qid(r), axis=1)
+                all_items.append(dq)
+
+            if not all_items:
+                st.error("❌ 找不到題目，請重新選擇")
+            else:
+                df_rv = pd.concat(all_items, ignore_index=True)
+
+                if rv_scope != "📚 全部題目" and not my_logs.empty:
+                    answered = set(my_logs['題目ID'].tolist())
+                    correct  = set(my_logs[my_logs['結果'] == '✅']['題目ID'].tolist())
+                    wrong    = answered - correct
+                    if rv_scope == "❌ 只看錯題":
+                        df_rv = df_rv[df_rv['題目ID'].isin(wrong)]
+                    elif rv_scope == "❓ 只看未作答":
+                        df_rv = df_rv[~df_rv['題目ID'].isin(answered)]
+
+                st.session_state['rv_items']   = df_rv.to_dict('records')
+                st.session_state['rv_my_logs'] = my_logs.to_dict('records') if not my_logs.empty else []
+                st.rerun()
+
+        # ── 復習列表顯示 ──────────────────────────────────────────────────
+        if st.session_state.get('rv_items') is not None:
+            rv_items   = st.session_state['rv_items']
+            rv_my_logs = pd.DataFrame(st.session_state.get('rv_my_logs', []))
+
+            if not rv_items:
+                st.info("✅ 此範圍沒有符合條件的題目。")
+            else:
+                st.markdown(f"**📋 共 {len(rv_items)} 題**")
+                st.divider()
+                for i, item in enumerate(rv_items, 1):
+                    qid    = item.get('題目ID', '')
+                    q_type = item.get('_type', '')
+                    q_unit = str(item.get('單元', ''))
+
+                    if q_type == 'reading' or '朗讀' in q_unit:
+                        q_text     = str(item.get('朗讀句子') or item.get('英文句子') or '').strip()
+                        q_ans      = q_text
+                        type_label = "🎤 朗讀"
+                    elif q_type == 'vocab' or '單字' in q_unit:
+                        q_text     = str(item.get('中文意思') or '').strip()
+                        q_ans      = str(item.get('英文單字') or '').strip()
+                        type_label = "🔤 單字"
+                    elif '單選' in q_unit:
+                        q_text     = str(item.get('單選題目') or item.get('中文題目') or '').strip()
+                        q_ans      = str(item.get('單選答案') or '').strip()
+                        type_label = "🔵 單選"
+                    else:
+                        q_text     = str(item.get('重組中文題目') or item.get('中文題目') or '').strip()
+                        q_ans      = str(item.get('重組英文答案') or item.get('英文答案') or '').strip()
+                        type_label = "📝 重組"
+
+                    q_analysis = str(item.get('解析') or '').strip()
+
+                    if not rv_my_logs.empty and '題目ID' in rv_my_logs.columns:
+                        mql = rv_my_logs[
+                            (rv_my_logs['題目ID'] == qid) &
+                            (~rv_my_logs['結果'].str.contains('📖', na=False))
+                        ]
+                        if '時間' in mql.columns:
+                            mql = mql.sort_values('時間', ascending=True)
+                        history = "".join(mql['結果'].tolist()) if not mql.empty else "未作答"
+                    else:
+                        history = "未作答"
+
+                    analysis_html = f"<div style='color:#555; font-size:0.9rem; margin-top:4px;'>📝 {q_analysis}</div>" if q_analysis else ""
+                    st.markdown(
+                        f"<div style='background:var(--color-background-secondary); border-radius:8px; padding:14px 16px; margin-bottom:10px;'>"
+                        f"<div style='font-size:0.8rem; color:gray;'>{type_label}　{i} / {len(rv_items)}</div>"
+                        f"<div style='font-size:1.1rem; font-weight:600; white-space:pre-wrap; margin:6px 0;'>{q_text}</div>"
+                        f"<div style='color:#2e7d32; font-size:1rem;'>✅ 答案：{q_ans}</div>"
+                        f"{analysis_html}"
+                        f"<div style='font-size:0.9rem; margin-top:6px;'>📊 我的記錄：{history}</div>"
+                        f"</div>",
+                        unsafe_allow_html=True
+                    )
 
     show_version_caption()
 
