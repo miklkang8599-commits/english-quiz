@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.83 - 復習統計ID修復版)
+# 🧩 英文全能練習系統 (V2.9.85 - 復習答案保護版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.83
+# 📌 版本編號 (VERSION): 2.9.85
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.83"
+VERSION = "2.9.85"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1823,7 +1823,7 @@ if not st.session_state.quiz_loaded:
             rv_l_opts = sorted(df_q[(df_q['版本'] == rv_v) & (df_q['單元'] == rv_u) & (df_q['年度'] == rv_y) & (df_q['冊編號'] == rv_b)]['課編號'].unique()) if rv_b else []
             rv_l = rc1[4].selectbox("課次", rv_l_opts, key="rv_l") if rv_l_opts else None
 
-        rv_scope = st.radio("顯示範圍", ["📚 全部題目", "❌ 只看錯題", "❓ 只看未作答"], horizontal=True, key="rv_scope")
+        rv_scope = st.radio("顯示範圍", ["✏️ 已經答題", "❌ 只看錯題"], horizontal=True, key="rv_scope")
 
         if st.button("📖 開始復習", type="primary", use_container_width=True, key="rv_start"):
             my_logs = df_l[df_l['姓名'] == user_name].copy() if not df_l.empty and '姓名' in df_l.columns else pd.DataFrame()
@@ -1918,10 +1918,12 @@ if not st.session_state.quiz_loaded:
                     last_correct = set()
 
                 # 依顯示範圍篩選
-                if rv_scope == "❌ 只看錯題":
-                    df_rv = df_rv[df_rv['題目ID'].isin(wrong_ever)]
-                elif rv_scope == "❓ 只看未作答":
-                    df_rv = df_rv[~df_rv['題目ID'].isin(answered_ids)]
+                if rv_scope == "✏️ 已經答題":
+                    df_rv = df_rv[df_rv['題目ID'].isin(answered_ids) |
+                                  df_rv['題目ID'].apply(lambda x: x[2:] if x.startswith('V_') else f"V_{x}").isin(answered_ids)]
+                elif rv_scope == "❌ 只看錯題":
+                    df_rv = df_rv[df_rv['題目ID'].isin(wrong_ever) |
+                                  df_rv['題目ID'].apply(lambda x: x[2:] if x.startswith('V_') else f"V_{x}").isin(wrong_ever)]
 
                 st.session_state['rv_items']   = df_rv.to_dict('records')
                 st.session_state['rv_my_logs'] = my_logs.to_dict('records') if not my_logs.empty else []
@@ -1977,25 +1979,33 @@ if not st.session_state.quiz_loaded:
 
                     q_analysis = str(item.get('解析') or '').strip()
 
+                    # 判斷是否已作答（支援新舊ID格式）
+                    qid_alt = qid[2:] if qid.startswith('V_') else f"V_{qid}"
                     if not rv_my_logs.empty and '題目ID' in rv_my_logs.columns:
                         mql = rv_my_logs[
-                            (rv_my_logs['題目ID'] == qid) &
+                            (rv_my_logs['題目ID'].isin([qid, qid_alt])) &
                             (~rv_my_logs['結果'].str.contains('📖', na=False))
                         ]
                         if '時間' in mql.columns:
                             mql = mql.sort_values('時間', ascending=True)
-                        history = "".join(mql['結果'].tolist()) if not mql.empty else "未作答"
+                        history    = "".join(mql['結果'].tolist()) if not mql.empty else "未作答"
+                        has_answer = not mql.empty
                     else:
-                        history = "未作答"
+                        history    = "未作答"
+                        has_answer = False
 
-                    analysis_html = f"<div style='color:#555; font-size:0.9rem; margin-top:4px;'>📝 {q_analysis}</div>" if q_analysis else ""
+                    # 已作答才顯示答案和解析
+                    ans_html      = f"<div style='color:#2e7d32; font-size:1rem; margin-top:6px;'>✅ 答案：{q_ans}</div>" if has_answer else "<div style='color:#999; font-size:0.9rem; margin-top:6px;'>🔒 作答後才顯示答案</div>"
+                    analysis_html = f"<div style='color:#555; font-size:0.9rem; margin-top:4px;'>📝 {q_analysis}</div>" if (q_analysis and has_answer) else ""
+                    history_html  = f"<div style='font-size:0.9rem; margin-top:6px;'>📊 我的記錄：{history}</div>"
+
                     st.markdown(
                         f"<div style='background:var(--color-background-secondary); border-radius:8px; padding:14px 16px; margin-bottom:10px;'>"
                         f"<div style='font-size:0.8rem; color:gray;'>{type_label}　{i} / {len(rv_items)}</div>"
                         f"<div style='font-size:1.1rem; font-weight:600; white-space:pre-wrap; margin:6px 0;'>{q_text}</div>"
-                        f"<div style='color:#2e7d32; font-size:1rem;'>✅ 答案：{q_ans}</div>"
+                        f"{ans_html}"
                         f"{analysis_html}"
-                        f"<div style='font-size:0.9rem; margin-top:6px;'>📊 我的記錄：{history}</div>"
+                        f"{history_html}"
                         f"</div>",
                         unsafe_allow_html=True
                     )
