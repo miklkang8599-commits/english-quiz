@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.85 - 復習答案保護版)
+# 🧩 英文全能練習系統 (V2.9.86 - 復習完整選項版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.85
+# 📌 版本編號 (VERSION): 2.9.86
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.85"
+VERSION = "2.9.86"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1823,7 +1823,7 @@ if not st.session_state.quiz_loaded:
             rv_l_opts = sorted(df_q[(df_q['版本'] == rv_v) & (df_q['單元'] == rv_u) & (df_q['年度'] == rv_y) & (df_q['冊編號'] == rv_b)]['課編號'].unique()) if rv_b else []
             rv_l = rc1[4].selectbox("課次", rv_l_opts, key="rv_l") if rv_l_opts else None
 
-        rv_scope = st.radio("顯示範圍", ["✏️ 已經答題", "❌ 只看錯題"], horizontal=True, key="rv_scope")
+        rv_scope = st.radio("顯示範圍", ["📚 全部題目", "✏️ 已經答題", "❌ 只看錯題", "❓ 只看未作答"], horizontal=True, key="rv_scope")
 
         if st.button("📖 開始復習", type="primary", use_container_width=True, key="rv_start"):
             my_logs = df_l[df_l['姓名'] == user_name].copy() if not df_l.empty and '姓名' in df_l.columns else pd.DataFrame()
@@ -1917,13 +1917,17 @@ if not st.session_state.quiz_loaded:
                     wrong_ever   = set()
                     last_correct = set()
 
-                # 依顯示範圍篩選
+                # 依顯示範圍篩選（未作答的題目答案在顯示時會自動隱藏）
                 if rv_scope == "✏️ 已經答題":
                     df_rv = df_rv[df_rv['題目ID'].isin(answered_ids) |
                                   df_rv['題目ID'].apply(lambda x: x[2:] if x.startswith('V_') else f"V_{x}").isin(answered_ids)]
                 elif rv_scope == "❌ 只看錯題":
                     df_rv = df_rv[df_rv['題目ID'].isin(wrong_ever) |
                                   df_rv['題目ID'].apply(lambda x: x[2:] if x.startswith('V_') else f"V_{x}").isin(wrong_ever)]
+                elif rv_scope == "❓ 只看未作答":
+                    df_rv = df_rv[~(df_rv['題目ID'].isin(answered_ids) |
+                                    df_rv['題目ID'].apply(lambda x: x[2:] if x.startswith('V_') else f"V_{x}").isin(answered_ids))]
+                # 📚 全部題目：不篩選，但未作答的題目答案會在顯示時隱藏
 
                 st.session_state['rv_items']   = df_rv.to_dict('records')
                 st.session_state['rv_my_logs'] = my_logs.to_dict('records') if not my_logs.empty else []
