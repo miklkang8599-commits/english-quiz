@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.86 - 復習完整選項版)
+# 🧩 英文全能練習系統 (V2.9.87 - 復習紀錄版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.86
+# 📌 版本編號 (VERSION): 2.9.87
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.86"
+VERSION = "2.9.87"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1823,7 +1823,7 @@ if not st.session_state.quiz_loaded:
             rv_l_opts = sorted(df_q[(df_q['版本'] == rv_v) & (df_q['單元'] == rv_u) & (df_q['年度'] == rv_y) & (df_q['冊編號'] == rv_b)]['課編號'].unique()) if rv_b else []
             rv_l = rc1[4].selectbox("課次", rv_l_opts, key="rv_l") if rv_l_opts else None
 
-        rv_scope = st.radio("顯示範圍", ["📚 全部題目", "✏️ 已經答題", "❌ 只看錯題", "❓ 只看未作答"], horizontal=True, key="rv_scope")
+        rv_scope = st.radio("顯示範圍", ["📚 全部題目", "✏️ 已經答題", "❌ 只看錯題", "❓ 只看未作答", "🔄 複習次數少的優先"], horizontal=True, key="rv_scope")
 
         if st.button("📖 開始復習", type="primary", use_container_width=True, key="rv_start"):
             my_logs = df_l[df_l['姓名'] == user_name].copy() if not df_l.empty and '姓名' in df_l.columns else pd.DataFrame()
@@ -1917,7 +1917,16 @@ if not st.session_state.quiz_loaded:
                     wrong_ever   = set()
                     last_correct = set()
 
-                # 依顯示範圍篩選（未作答的題目答案在顯示時會自動隱藏）
+                # 計算每題複習次數
+                review_counts = {}  # qid -> 複習次數
+                if not my_logs.empty and '題目ID' in my_logs.columns:
+                    rv_logs = my_logs[my_logs['結果'] == '📖 複習'].copy()
+                    for qid_r in df_rv['題目ID'].tolist():
+                        qid_r_alt = qid_r[2:] if qid_r.startswith('V_') else f"V_{qid_r}"
+                        cnt = len(rv_logs[rv_logs['題目ID'].isin([qid_r, qid_r_alt])])
+                        review_counts[qid_r] = cnt
+
+                # 依顯示範圍篩選
                 if rv_scope == "✏️ 已經答題":
                     df_rv = df_rv[df_rv['題目ID'].isin(answered_ids) |
                                   df_rv['題目ID'].apply(lambda x: x[2:] if x.startswith('V_') else f"V_{x}").isin(answered_ids)]
@@ -1927,11 +1936,14 @@ if not st.session_state.quiz_loaded:
                 elif rv_scope == "❓ 只看未作答":
                     df_rv = df_rv[~(df_rv['題目ID'].isin(answered_ids) |
                                     df_rv['題目ID'].apply(lambda x: x[2:] if x.startswith('V_') else f"V_{x}").isin(answered_ids))]
-                # 📚 全部題目：不篩選，但未作答的題目答案會在顯示時隱藏
+                elif rv_scope == "🔄 複習次數少的優先":
+                    df_rv['_rv_cnt'] = df_rv['題目ID'].apply(lambda x: review_counts.get(x, 0))
+                    df_rv = df_rv.sort_values('_rv_cnt', ascending=True).drop(columns=['_rv_cnt'])
 
-                st.session_state['rv_items']   = df_rv.to_dict('records')
-                st.session_state['rv_my_logs'] = my_logs.to_dict('records') if not my_logs.empty else []
-                st.session_state['rv_stats']   = {
+                st.session_state['rv_items']        = df_rv.to_dict('records')
+                st.session_state['rv_my_logs']      = my_logs.to_dict('records') if not my_logs.empty else []
+                st.session_state['rv_review_counts'] = review_counts
+                st.session_state['rv_stats']        = {
                     'total':        total_count,
                     'answered':     len(answered_ids),
                     'wrong_ever':   len(wrong_ever),
@@ -1941,9 +1953,10 @@ if not st.session_state.quiz_loaded:
 
         # ── 復習列表顯示 ──────────────────────────────────────────────────
         if st.session_state.get('rv_items') is not None:
-            rv_items   = st.session_state['rv_items']
-            rv_my_logs = pd.DataFrame(st.session_state.get('rv_my_logs', []))
-            rv_stats   = st.session_state.get('rv_stats', {})
+            rv_items        = st.session_state['rv_items']
+            rv_my_logs      = pd.DataFrame(st.session_state.get('rv_my_logs', []))
+            rv_stats        = st.session_state.get('rv_stats', {})
+            rv_review_counts = st.session_state.get('rv_review_counts', {})
 
             # 統計卡片
             if rv_stats:
@@ -2003,16 +2016,39 @@ if not st.session_state.quiz_loaded:
                     analysis_html = f"<div style='color:#555; font-size:0.9rem; margin-top:4px;'>📝 {q_analysis}</div>" if (q_analysis and has_answer) else ""
                     history_html  = f"<div style='font-size:0.9rem; margin-top:6px;'>📊 我的記錄：{history}</div>"
 
+                    # 複習次數
+                    rv_cnt       = rv_review_counts.get(qid, 0)
+                    rv_cnt_html  = f"<div style='font-size:0.85rem; color:#888; margin-top:4px;'>🔄 已複習：{rv_cnt} 次</div>"
+
                     st.markdown(
-                        f"<div style='background:var(--color-background-secondary); border-radius:8px; padding:14px 16px; margin-bottom:10px;'>"
+                        f"<div style='background:var(--color-background-secondary); border-radius:8px; padding:14px 16px; margin-bottom:4px;'>"
                         f"<div style='font-size:0.8rem; color:gray;'>{type_label}　{i} / {len(rv_items)}</div>"
                         f"<div style='font-size:1.1rem; font-weight:600; white-space:pre-wrap; margin:6px 0;'>{q_text}</div>"
                         f"{ans_html}"
                         f"{analysis_html}"
                         f"{history_html}"
+                        f"{rv_cnt_html}"
                         f"</div>",
                         unsafe_allow_html=True
                     )
+
+                    # 複習按鈕
+                    if st.button("🔄 我已複習這題", key=f"rv_done_{i}_{qid}", use_container_width=True):
+                        log_data = pd.DataFrame([{
+                            "時間":    get_now().strftime("%Y-%m-%d %H:%M:%S"),
+                            "姓名":    user_name,
+                            "分組":    st.session_state.group_id,
+                            "題目ID":  qid,
+                            "結果":    "📖 複習",
+                            "學生答案": "",
+                            "分數":    ""
+                        }])
+                        if append_to_sheet("logs", log_data):
+                            # 更新 session state 裡的複習次數
+                            rv_review_counts[qid] = rv_review_counts.get(qid, 0) + 1
+                            st.session_state['rv_review_counts'] = rv_review_counts
+                            st.success(f"✅ 已記錄複習！這題已複習 {rv_review_counts[qid]} 次")
+                    st.markdown("<div style='margin-bottom:10px;'></div>", unsafe_allow_html=True)
 
     show_version_caption()
 
