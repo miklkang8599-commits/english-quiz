@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.87 - 復習紀錄版)
+# 🧩 英文全能練習系統 (V2.9.88 - 復習按鈕限已答版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.87
+# 📌 版本編號 (VERSION): 2.9.88
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.87"
+VERSION = "2.9.88"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -2016,9 +2016,9 @@ if not st.session_state.quiz_loaded:
                     analysis_html = f"<div style='color:#555; font-size:0.9rem; margin-top:4px;'>📝 {q_analysis}</div>" if (q_analysis and has_answer) else ""
                     history_html  = f"<div style='font-size:0.9rem; margin-top:6px;'>📊 我的記錄：{history}</div>"
 
-                    # 複習次數
-                    rv_cnt       = rv_review_counts.get(qid, 0)
-                    rv_cnt_html  = f"<div style='font-size:0.85rem; color:#888; margin-top:4px;'>🔄 已複習：{rv_cnt} 次</div>"
+                    # 複習次數（只有已作答才顯示）
+                    rv_cnt      = rv_review_counts.get(qid, 0)
+                    rv_cnt_html = f"<div style='font-size:0.85rem; color:#888; margin-top:4px;'>🔄 已複習：{rv_cnt} 次</div>" if has_answer else ""
 
                     st.markdown(
                         f"<div style='background:var(--color-background-secondary); border-radius:8px; padding:14px 16px; margin-bottom:4px;'>"
@@ -2032,22 +2032,22 @@ if not st.session_state.quiz_loaded:
                         unsafe_allow_html=True
                     )
 
-                    # 複習按鈕
-                    if st.button("🔄 我已複習這題", key=f"rv_done_{i}_{qid}", use_container_width=True):
-                        log_data = pd.DataFrame([{
-                            "時間":    get_now().strftime("%Y-%m-%d %H:%M:%S"),
-                            "姓名":    user_name,
-                            "分組":    st.session_state.group_id,
-                            "題目ID":  qid,
-                            "結果":    "📖 複習",
-                            "學生答案": "",
-                            "分數":    ""
-                        }])
-                        if append_to_sheet("logs", log_data):
-                            # 更新 session state 裡的複習次數
-                            rv_review_counts[qid] = rv_review_counts.get(qid, 0) + 1
-                            st.session_state['rv_review_counts'] = rv_review_counts
-                            st.success(f"✅ 已記錄複習！這題已複習 {rv_review_counts[qid]} 次")
+                    # 複習按鈕（只有已作答才顯示）
+                    if has_answer:
+                        if st.button("🔄 我已複習這題", key=f"rv_done_{i}_{qid}", use_container_width=True):
+                            log_data = pd.DataFrame([{
+                                "時間":    get_now().strftime("%Y-%m-%d %H:%M:%S"),
+                                "姓名":    user_name,
+                                "分組":    st.session_state.group_id,
+                                "題目ID":  qid,
+                                "結果":    "📖 複習",
+                                "學生答案": "",
+                                "分數":    ""
+                            }])
+                            if append_to_sheet("logs", log_data):
+                                rv_review_counts[qid] = rv_review_counts.get(qid, 0) + 1
+                                st.session_state['rv_review_counts'] = rv_review_counts
+                                st.success(f"✅ 已記錄複習！這題已複習 {rv_review_counts[qid]} 次")
                     st.markdown("<div style='margin-bottom:10px;'></div>", unsafe_allow_html=True)
 
     show_version_caption()
