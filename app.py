@@ -1,8 +1,7 @@
-
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.80 - 復習統計修復版)
+# 🧩 英文全能練習系統 (V2.9.81 - 復習除錯版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.80
+# 📌 版本編號 (VERSION): 2.9.81
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -25,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.80"
+VERSION = "2.9.81"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1844,6 +1843,13 @@ if not st.session_state.quiz_loaded:
                     )
                 matched = matched.drop(columns=['_qid','_qidv'], errors='ignore')
                 return matched
+
+            # 除錯：顯示ID樣本
+            if rv_filter == "📋 依任務" and rv_q_ids:
+                sample_task = list(rv_q_ids)[:2]
+                sample_q = [] if df_q.empty else [_get_qid(r) for _, r in df_q.head(2).iterrows()]
+                sample_qv = [] if df_q.empty else [_get_qid(r, "V_") for _, r in df_q.head(2).iterrows()]
+                st.info(f"任務ID樣本：{sample_task}\n\n題目ID樣本：{sample_q}\n\n題目ID(V_)樣本：{sample_qv}")
 
             all_items = []
 
