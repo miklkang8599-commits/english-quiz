@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.106 - 統計除錯版)
+# 🧩 英文全能練習系統 (V2.9.107 - 統計除錯全用戶版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.106
+# 📌 版本編號 (VERSION): 2.9.107
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.106"
+VERSION = "2.9.107"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1497,9 +1497,8 @@ if not st.session_state.quiz_loaded:
                 pc2.metric("已完成", done_cnt)
 
                 # 暫時除錯
-                if is_admin(st.session_state.group_id):
-                    matched = q_ids_all & my_done if 'my_done' in dir() else set()
-                    st.caption(f"q_ids_all樣本:{list(q_ids_all)[:2]} | my_correct樣本:{list(my_correct)[:2] if 'my_correct' in dir() and my_correct else []} | 交集:{len(matched)}")
+                matched = q_ids_all & my_done if my_done else set()
+                st.caption(f"q_ids樣本:{list(q_ids_all)[:2]} | my_correct樣本:{list(my_correct)[:2] if my_correct else []} | 交集:{len(matched)}")
 
                 if all_done:
                     st.success("🎉 此任務已全部完成！")
