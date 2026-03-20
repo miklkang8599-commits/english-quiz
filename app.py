@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.107 - 統計除錯全用戶版)
+# 🧩 英文全能練習系統 (V2.9.108 - 進入練習除錯版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.107
+# 📌 版本編號 (VERSION): 2.9.108
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.107"
+VERSION = "2.9.108"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1547,6 +1547,7 @@ if not st.session_state.quiz_loaded:
                         pending_ids = q_ids_all - my_done
                         if not pending_ids:
                             pending_ids = q_ids_all  # 全部重做
+                        st.write(f"🔍 task_type={task_type} | pending={len(pending_ids)} | sample={list(pending_ids)[:2]}")
 
                         if is_reading_task:
                             df_r2 = df_r.copy()
