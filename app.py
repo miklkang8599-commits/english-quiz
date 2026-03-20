@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.103 - ADMIN任務顯示修復版)
+# 🧩 英文全能練習系統 (V2.9.105 - 寫入延遲同步版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.103
+# 📌 版本編號 (VERSION): 2.9.105
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.103"
+VERSION = "2.9.105"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -196,6 +196,7 @@ def append_to_sheet(worksheet_name: str, new_row: pd.DataFrame):
             return False
 
         load_dynamic_data.clear()
+        import time as _t; _t.sleep(0.5)
         return True
     except Exception as e:
         st.error(f"❌ Supabase 寫入失敗：{type(e).__name__}: {e}")
@@ -1474,7 +1475,7 @@ if not st.session_state.quiz_loaded:
                 all_done = done_cnt >= len(q_ids_set)
                 # 除錯
                 if done_cnt == 0 and my_correct:
-                    st.caption(f"🔍 任務ID樣本：{list(q_ids_set)[:2]} | logs✅樣本：{list(my_correct)[:2]}")
+                    pass  # 除錯已移除
             else:
                 my_done = set()
                 done_cnt, all_done = 0, False
@@ -1646,11 +1647,11 @@ if not st.session_state.quiz_loaded:
 
         st.divider()
 
-    # 除錯：讓所有人看到任務篩選結果
-    with st.expander("🔍 除錯資訊", expanded=False):
-        st.write(f"今日：{today_dt} | 使用者：{user_name} | 有效任務數：{len(my_tasks)}")
-        for info in debug_info:
-            st.write(info)
+    # 除錯：讓管理員看到原始 assignments 資料
+    if not df_a.empty and is_admin(st.session_state.group_id):
+        with st.expander("🔍 除錯：assignments 原始資料（僅管理員可見）", expanded=False):
+            st.dataframe(df_a, use_container_width=True)
+            st.write(f"今日：{today_dt} | 學生：{user_name} | 共 {len(my_tasks)} 個有效任務")
 
     # ══════════════════════════════════════════════════════════════════════
     # 原本的自由練習區（盒子 C）- 前三個 tab 暫時隱藏
@@ -2264,6 +2265,7 @@ if st.session_state.quiz_loaded:
                 write_ok = False
                 write_err = ""
                 try:
+                    import time as _time
                     sb_w   = get_supabase()
                     en_row = _to_en_logs({
                         "時間":    get_now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -2275,6 +2277,7 @@ if st.session_state.quiz_loaded:
                         "分數":    ""
                     })
                     sb_w.table("logs").insert(en_row).execute()
+                    _time.sleep(0.5)  # 等 Supabase 確認寫入
                     load_dynamic_data.clear()
                     write_ok = True
                 except Exception as e:
