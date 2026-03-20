@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.92 - 任務ID格式統一版)
+# 🧩 英文全能練習系統 (V2.9.94 - Supabase寫入修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.92
+# 📌 版本編號 (VERSION): 2.9.94
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.92"
+VERSION = "2.9.94"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -116,13 +116,35 @@ def _to_cn(df: pd.DataFrame, col_map: dict) -> pd.DataFrame:
 
 def _to_en_logs(row: dict) -> dict:
     """把中文欄位的 log 資料轉成英文欄位"""
-    rev = {v: k for k, v in LOGS_COLS.items()}
-    return {rev.get(k, k): str(v) for k, v in row.items() if rev.get(k, k) != k or k in rev.values()}
+    return {
+        "created_at":     str(row.get("時間", "")),
+        "name":           str(row.get("姓名", "")),
+        "group_id":       str(row.get("分組", "")),
+        "question_id":    str(row.get("題目ID", "")),
+        "result":         str(row.get("結果", "")),
+        "student_answer": str(row.get("學生答案", "") or ""),
+        "score":          str(row.get("分數", "") or ""),
+    }
 
 def _to_en_assign(row: dict) -> dict:
     """把中文欄位的 assignment 資料轉成英文欄位"""
-    rev = {v: k for k, v in ASSIGN_COLS.items()}
-    return {rev.get(k, k): str(v) for k, v in row.items() if rev.get(k, k) != k or k in rev.values()}
+    return {
+        "created_at":        str(row.get("建立時間", "")),
+        "task_name":         str(row.get("任務名稱", "")),
+        "target_group":      str(row.get("對象班級", "")),
+        "assigned_students": str(row.get("指派學生", "")),
+        "student_count":     str(row.get("指派人數", "")),
+        "content":           str(row.get("內容", "")),
+        "description":       str(row.get("任務說明", "")),
+        "question_count":    str(row.get("題目數", "")),
+        "question_ids":      str(row.get("題目ID清單", "")),
+        "start_date":        str(row.get("開始日期", "")),
+        "end_date":          str(row.get("結束日期", "")),
+        "ref_students":      str(row.get("參考學生", "")),
+        "status":            str(row.get("狀態", "")),
+        "task_type":         str(row.get("類型", "")),
+        "vocab_cfg":         str(row.get("單字設定", "") or ""),
+    }
 
 # ==============================================================================
 # 動態資料讀取（Supabase）
@@ -2203,11 +2225,28 @@ if st.session_state.quiz_loaded:
             st.session_state.get('current_res', '').startswith('✅')
         )
 
+        # 從題目文字自動解析選項（格式：...  (A) xxx  (B) xxx  (C) xxx  (D) xxx）
+        mcq_full = str(q.get('單選題目') or q.get('中文題目') or '')
+        parsed_opts = {}
+        for opt in ["A", "B", "C", "D"]:
+            # 先嘗試獨立欄位
+            col_val = str(q.get(f"選項{opt}") or "").strip()
+            if col_val and col_val not in ('nan', ''):
+                parsed_opts[opt] = col_val
+            else:
+                # 從題目文字解析，找 (A)...(B) 之間的內容
+                next_opts = [o for o in ["A","B","C","D"] if o > opt]
+                if next_opts:
+                    pattern = rf'\({opt}\)\s*(.*?)\s*\({next_opts[0]}\)'
+                else:
+                    pattern = rf'\({opt}\)\s*(.*?)$'
+                m = re.search(pattern, mcq_full, re.DOTALL)
+                parsed_opts[opt] = m.group(1).strip() if m else ""
+
         cols = st.columns(4)
         for i, opt in enumerate(["A", "B", "C", "D"]):
-            opt_text  = str(q.get(f"選項{opt}") or "").strip()
-            btn_label = f"({opt}) {opt_text}" if opt_text and opt_text not in ('nan','') else opt
-            # 答對後禁用所有選項按鈕
+            opt_text  = parsed_opts.get(opt, "")
+            btn_label = f"({opt}) {opt_text}" if opt_text else opt
             if cols[i].button(btn_label, key=f"mcq_{opt}",
                               use_container_width=True,
                               disabled=already_correct):
