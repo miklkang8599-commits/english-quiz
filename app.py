@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.95 - 寫入除錯版)
+# 🧩 英文全能練習系統 (V2.9.96 - 直接寫入除錯版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.95
+# 📌 版本編號 (VERSION): 2.9.96
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.95"
+VERSION = "2.9.96"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -2262,7 +2262,13 @@ if st.session_state.quiz_loaded:
                     "題目ID": q.get('題目ID', 'N/A'),
                     "結果": "✅" if is_ok else "❌"
                 }])
-                append_to_sheet("logs", log_data)
+                try:
+                    sb_test = get_supabase()
+                    en_row  = _to_en_logs(log_data.iloc[0].to_dict())
+                    sb_test.table("logs").insert(en_row).execute()
+                    load_dynamic_data.clear()
+                except Exception as e:
+                    st.error(f"❌ 寫入失敗：{e}")
                 st.rerun()
     else:
         # 題目標題（重組題，用 HTML 保留原始空格）
