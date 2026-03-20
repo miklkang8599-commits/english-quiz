@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.96 - 直接寫入除錯版)
+# 🧩 英文全能練習系統 (V2.9.97 - 寫入測試按鈕版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.96
+# 📌 版本編號 (VERSION): 2.9.97
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.96"
+VERSION = "2.9.97"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -312,13 +312,30 @@ with st.sidebar:
 # 📦 【盒子 B：導師中心】
 # ------------------------------------------------------------------------------
 if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理後台":
-    hc1, hc2 = st.columns([4, 1])
+    hc1, hc2, hc3 = st.columns([3, 1, 1])
     hc1.markdown("## 🟢 導師中心")
     if hc2.button("🔄 更新資料", use_container_width=True, key="admin_refresh"):
         load_static_data.clear()
         load_dynamic_data.clear()
         st.cache_data.clear()
         st.rerun()
+    if hc3.button("🧪 測試寫入", use_container_width=True, key="test_write"):
+        try:
+            sb_t = get_supabase()
+            test_row = {
+                "created_at": get_now().strftime("%Y-%m-%d %H:%M:%S"),
+                "name": "測試",
+                "group_id": "TEST",
+                "question_id": "TEST_001",
+                "result": "🧪",
+                "student_answer": "",
+                "score": ""
+            }
+            res = sb_t.table("logs").insert(test_row).execute()
+            st.success(f"✅ Supabase 寫入成功！")
+            load_dynamic_data.clear()
+        except Exception as e:
+            st.error(f"❌ 寫入失敗：{e}")
 
     t1, t2, t3, t4 = st.tabs(["📋 指派任務", "📈 數據監控", "📋 學生名單", "📖 題目講解"])
 
