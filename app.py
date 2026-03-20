@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.105 - 寫入延遲同步版)
+# 🧩 英文全能練習系統 (V2.9.106 - 統計除錯版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.105
+# 📌 版本編號 (VERSION): 2.9.106
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.105"
+VERSION = "2.9.106"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1471,11 +1471,14 @@ if not st.session_state.quiz_loaded:
                 my_correct = set(df_l[(df_l['姓名'] == user_name) & (df_l['結果'] == '✅')]['題目ID'].tolist())
                 my_reading = set(df_l[(df_l['姓名'] == user_name) & (df_l['結果'] == '🎤 朗讀')]['題目ID'].tolist())
                 my_done    = my_correct | my_reading
-                done_cnt = len(q_ids_all & my_done)
-                all_done = done_cnt >= len(q_ids_set)
-                # 除錯
-                if done_cnt == 0 and my_correct:
-                    pass  # 除錯已移除
+                done_cnt   = len(q_ids_all & my_done)
+                all_done   = done_cnt >= len(q_ids_set)
+            elif q_ids_set and not df_l.empty and '題目ID' not in df_l.columns:
+                # 欄位名稱不對，嘗試用英文欄位
+                my_correct = set(df_l[(df_l.get('name', df_l.get('姓名', pd.Series(dtype=str))) == user_name) & (df_l.get('result', df_l.get('結果', pd.Series(dtype=str))) == '✅')].get('question_id', pd.Series(dtype=str)).tolist()) if not df_l.empty else set()
+                my_done    = my_correct
+                done_cnt   = len(q_ids_all & my_done)
+                all_done   = done_cnt >= len(q_ids_set)
             else:
                 my_done = set()
                 done_cnt, all_done = 0, False
@@ -1492,6 +1495,11 @@ if not st.session_state.quiz_loaded:
                 pc1, pc2 = st.columns(2)
                 pc1.metric("總題數", task_q_count)
                 pc2.metric("已完成", done_cnt)
+
+                # 暫時除錯
+                if is_admin(st.session_state.group_id):
+                    matched = q_ids_all & my_done if 'my_done' in dir() else set()
+                    st.caption(f"q_ids_all樣本:{list(q_ids_all)[:2]} | my_correct樣本:{list(my_correct)[:2] if 'my_correct' in dir() and my_correct else []} | 交集:{len(matched)}")
 
                 if all_done:
                     st.success("🎉 此任務已全部完成！")
