@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.97 - 寫入測試按鈕版)
+# 🧩 英文全能練習系統 (V2.9.99 - 完成數除錯版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.97
+# 📌 版本編號 (VERSION): 2.9.99
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.97"
+VERSION = "2.9.99"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1469,9 +1469,11 @@ if not st.session_state.quiz_loaded:
                 my_correct = set(df_l[(df_l['姓名'] == user_name) & (df_l['結果'] == '✅')]['題目ID'].tolist())
                 my_reading = set(df_l[(df_l['姓名'] == user_name) & (df_l['結果'] == '🎤 朗讀')]['題目ID'].tolist())
                 my_done    = my_correct | my_reading
-                # 用 q_ids_all（包含新舊格式）比對 logs
                 done_cnt = len(q_ids_all & my_done)
-                all_done = len(q_ids_all & my_done) >= len(q_ids_set)
+                all_done = done_cnt >= len(q_ids_set)
+                # 除錯
+                if done_cnt == 0 and my_correct:
+                    st.caption(f"🔍 任務ID樣本：{list(q_ids_set)[:2]} | logs✅樣本：{list(my_correct)[:2]}")
             else:
                 my_done = set()
                 done_cnt, all_done = 0, False
@@ -2272,21 +2274,29 @@ if st.session_state.quiz_loaded:
                     "current_res": "✅ 正確！" if is_ok else f"❌ 錯誤！正確答案：{ans_key}",
                     "show_analysis": True
                 })
-                log_data = pd.DataFrame([{
-                    "時間": get_now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "姓名": st.session_state.user_name,
-                    "分組": st.session_state.group_id,
-                    "題目ID": q.get('題目ID', 'N/A'),
-                    "結果": "✅" if is_ok else "❌"
-                }])
+                # 先寫入再 rerun，確保寫入完成
+                write_ok = False
+                write_err = ""
                 try:
-                    sb_test = get_supabase()
-                    en_row  = _to_en_logs(log_data.iloc[0].to_dict())
-                    sb_test.table("logs").insert(en_row).execute()
+                    sb_w   = get_supabase()
+                    en_row = _to_en_logs({
+                        "時間":    get_now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "姓名":    st.session_state.user_name,
+                        "分組":    st.session_state.group_id,
+                        "題目ID":  q.get('題目ID', 'N/A'),
+                        "結果":    "✅" if is_ok else "❌",
+                        "學生答案": "",
+                        "分數":    ""
+                    })
+                    sb_w.table("logs").insert(en_row).execute()
                     load_dynamic_data.clear()
+                    write_ok = True
                 except Exception as e:
-                    st.error(f"❌ 寫入失敗：{e}")
-                st.rerun()
+                    write_err = str(e)
+                if not write_ok:
+                    st.error(f"❌ 寫入失敗：{write_err}")
+                else:
+                    st.rerun()
     else:
         # 題目標題（重組題，用 HTML 保留原始空格）
         reorg_q = str(q.get('重組中文題目') or q.get('中文題目') or '【無資料】')
