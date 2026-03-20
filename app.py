@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.94 - Supabase寫入修復版)
+# 🧩 英文全能練習系統 (V2.9.95 - 寫入除錯版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.94
+# 📌 版本編號 (VERSION): 2.9.95
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.94"
+VERSION = "2.9.95"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -188,17 +188,17 @@ def append_to_sheet(worksheet_name: str, new_row: pd.DataFrame):
 
         if worksheet_name == "logs":
             en_row = _to_en_logs(row_dict)
-            sb.table("logs").insert(en_row).execute()
+            result = sb.table("logs").insert(en_row).execute()
         elif worksheet_name == "assignments":
             en_row = _to_en_assign(row_dict)
-            sb.table("assignments").insert(en_row).execute()
+            result = sb.table("assignments").insert(en_row).execute()
         else:
             return False
 
         load_dynamic_data.clear()
         return True
     except Exception as e:
-        st.warning(f"⚠️ 寫入失敗：{e}")
+        st.error(f"❌ Supabase 寫入失敗：{type(e).__name__}: {e}")
         return False
 
 # ------------------------------------------------------------------------------
