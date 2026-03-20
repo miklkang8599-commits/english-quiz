@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.102 - 學生除錯版)
+# 🧩 英文全能練習系統 (V2.9.103 - ADMIN任務顯示修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.102
+# 📌 版本編號 (VERSION): 2.9.103
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.102"
+VERSION = "2.9.103"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1407,12 +1407,13 @@ if not st.session_state.quiz_loaded:
                 debug_info.append(f"❌ {task_n}：已刪除")
                 continue
 
-            # 確認學生在指派名單中
-            stu_str  = str(arow.get('指派學生', '') or arow.get('對象', '') or '')
-            assigned = [s.strip() for s in stu_str.split(',') if s.strip()]
-            if user_name not in assigned:
-                debug_info.append(f"❌ {task_n}：學生不在名單（名單：{stu_str[:50]}）")
-                continue
+            # 確認學生在指派名單中（ADMIN/TEACHER 跳過此檢查）
+            if not is_admin(st.session_state.group_id):
+                stu_str  = str(arow.get('指派學生', '') or arow.get('對象', '') or '')
+                assigned = [s.strip() for s in stu_str.split(',') if s.strip()]
+                if user_name not in assigned:
+                    debug_info.append(f"❌ {task_n}：學生不在名單（名單：{stu_str[:50]}）")
+                    continue
 
             # 日期範圍檢查
             try:
