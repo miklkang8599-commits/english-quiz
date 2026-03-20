@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.100 - 任務載入除錯版)
+# 🧩 英文全能練習系統 (V2.9.101 - 任務直接載入版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.100
+# 📌 版本編號 (VERSION): 2.9.101
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.100"
+VERSION = "2.9.101"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1536,6 +1536,8 @@ if not st.session_state.quiz_loaded:
 
                     if st.button(label, key=btn_key, type="primary", use_container_width=True):
                         pending_ids = q_ids_all - my_done
+                        if not pending_ids:
+                            pending_ids = q_ids_all  # 全部重做
 
                         if is_reading_task:
                             df_r2 = df_r.copy()
@@ -1623,15 +1625,13 @@ if not st.session_state.quiz_loaded:
                                 })
                                 st.rerun()
 
-                        elif can_preload:
-                            # 一般任務：直接從 df_q 取出未完成題目載入
+                        elif can_preload or q_ids_all:
+                            # 直接從 df_q 取出未完成題目載入（優先用題目ID清單）
                             df_q2 = df_q.copy()
                             df_q2['題目ID'] = df_q2.apply(
                                 lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1
                             )
                             pending_q = df_q2[df_q2['題目ID'].isin(pending_ids)].copy()
-                            # 除錯
-                            st.caption(f"🔍 pending_ids樣本：{list(pending_ids)[:2]} | df_q2 ID樣本：{df_q2['題目ID'].tolist()[:2]} | 匹配數：{len(pending_q)}")
                             if not pending_q.empty:
                                 st.session_state.update({
                                     "quiz_list": pending_q.to_dict('records'),
@@ -1640,24 +1640,7 @@ if not st.session_state.quiz_loaded:
                                 })
                                 st.rerun()
                             else:
-                                # fallback：進盒子 C 預帶範圍
-                                st.session_state.update({
-                                    "s_v": parts[0], "s_u": parts[1],
-                                    "s_y": parts[2], "s_b": parts[3], "s_l": parts[4],
-                                    "task_q_ids": list(pending_ids),
-                                    "range_confirmed": True,
-                                    "ans": [], "used_history": [], "shuf": [], "show_analysis": False
-                                })
-                                st.rerun()
-
-                        else:
-                            # 無法預帶：進盒子 C 讓學生自選
-                            st.session_state.update({
-                                "task_q_ids": list(pending_ids),
-                                "range_confirmed": False,
-                                "ans": [], "used_history": [], "shuf": [], "show_analysis": False
-                            })
-                            st.rerun()
+                                st.error(f"❌ 找不到任務題目（已全部完成或題目不存在）")
 
 
         st.divider()
