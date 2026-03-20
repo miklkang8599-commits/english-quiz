@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.99 - 完成數除錯版)
+# 🧩 英文全能練習系統 (V2.9.100 - 任務載入除錯版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.99
+# 📌 版本編號 (VERSION): 2.9.100
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.99"
+VERSION = "2.9.100"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1630,6 +1630,8 @@ if not st.session_state.quiz_loaded:
                                 lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1
                             )
                             pending_q = df_q2[df_q2['題目ID'].isin(pending_ids)].copy()
+                            # 除錯
+                            st.caption(f"🔍 pending_ids樣本：{list(pending_ids)[:2]} | df_q2 ID樣本：{df_q2['題目ID'].tolist()[:2]} | 匹配數：{len(pending_q)}")
                             if not pending_q.empty:
                                 st.session_state.update({
                                     "quiz_list": pending_q.to_dict('records'),
