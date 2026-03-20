@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.88 - 復習按鈕限已答版)
+# 🧩 英文全能練習系統 (V2.9.89 - 隱藏練習Tab+單選鎖定版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.88
+# 📌 版本編號 (VERSION): 2.9.89
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.88"
+VERSION = "2.9.89"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1616,9 +1616,8 @@ if not st.session_state.quiz_loaded:
             st.write(f"今日：{today_dt} | 學生：{user_name} | 共 {len(my_tasks)} 個有效任務")
 
     # ══════════════════════════════════════════════════════════════════════
-    # 原本的自由練習區（盒子 C）
+    # 原本的自由練習區（盒子 C）- 前三個 tab 暫時隱藏
     # ══════════════════════════════════════════════════════════════════════
-    st.markdown("## 🟡 練習範圍設定")
 
     # 從任務帶入的預設值
     def _idx(options, key, fallback=0):
@@ -1630,161 +1629,12 @@ if not st.session_state.quiz_loaded:
 
     tab_q, tab_r, tab_v, tab_review = st.tabs(["📝 重組／單選", "🎤 朗讀", "🔤 單字重組", "📖 復習"])
 
-    # ── Tab：重組／單選 ───────────────────────────────────────────────────
     with tab_q:
-        with st.expander("⚙️ 篩選題目範圍", expanded=not st.session_state.range_confirmed):
-            sv_opts = sorted(df_q['版本'].unique())
-            sv = st.selectbox("版本", sv_opts, index=_idx(sv_opts, 's_v'), key="s_v")
-            su_opts = sorted(df_q[df_q['版本'] == sv]['單元'].unique())
-            su = st.selectbox("單元", su_opts, index=_idx(su_opts, 's_u'), key="s_u")
-            sy_opts = sorted(df_q[(df_q['版本'] == sv) & (df_q['單元'] == su)]['年度'].unique())
-            sy = st.selectbox("年度", sy_opts, index=_idx(sy_opts, 's_y'), key="s_y")
-            sb_opts = sorted(df_q[(df_q['版本'] == sv) & (df_q['單元'] == su) & (df_q['年度'] == sy)]['冊編號'].unique())
-            sb = st.selectbox("冊別", sb_opts, index=_idx(sb_opts, 's_b'), key="s_b")
-            sl_opts = sorted(df_q[(df_q['版本'] == sv) & (df_q['單元'] == su) & (df_q['年度'] == sy) & (df_q['冊編號'] == sb)]['課編號'].unique())
-            sl = st.selectbox("課次", sl_opts, index=_idx(sl_opts, 's_l'), key="s_l")
-
-            if st.button("🔍 確認範圍", use_container_width=True):
-                st.session_state.range_confirmed = True
-                st.session_state.pop('task_q_ids', None)
-                st.rerun()
-
-        if st.session_state.range_confirmed:
-            df_scope = df_q[
-                (df_q['版本'] == st.session_state.s_v) &
-                (df_q['單元'] == st.session_state.s_u) &
-                (df_q['年度'] == st.session_state.s_y) &
-                (df_q['冊編號'] == st.session_state.s_b) &
-                (df_q['課編號'] == st.session_state.s_l)
-            ].copy()
-            df_scope['題目ID'] = df_scope.apply(
-                lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1
-            )
-
-            task_q_ids = st.session_state.get('task_q_ids', None)
-            if task_q_ids:
-                df_scope = df_scope[df_scope['題目ID'].isin(task_q_ids)].copy()
-                st.info(f"📋 任務模式（共 {len(df_scope)} 題）")
-
-            q_mode = st.radio("🎯 模式：", ["1. 起始句", "2. 未練習", "3. 錯題"], horizontal=True, key="q_mode")
-            all_sentences = sorted(df_scope['句編號'].unique(), key=lambda x: int(x) if str(x).isdigit() else 0)
-            start_q = st.selectbox("起始句編號", all_sentences, key="q_start")
-            nu_i    = st.number_input("題目數量", 1, 100, 10, key="q_nu")
-
-            if "1." in q_mode:
-                df_scope['_num'] = pd.to_numeric(df_scope['句編號'], errors='coerce').fillna(0)
-                df_final = df_scope[df_scope['_num'] >= int(start_q)].sort_values('_num').copy()
-            elif "2." in q_mode:
-                done_ids = df_l[df_l['姓名'] == st.session_state.user_name]['題目ID'].unique() if not df_l.empty else []
-                df_final = df_scope[~df_scope['題目ID'].isin(done_ids)].copy()
-            else:
-                wrong_ids = df_l[(df_l['姓名'] == st.session_state.user_name) & (df_l['結果'].str.contains('❌', na=False))]['題目ID'].unique() if not df_l.empty else []
-                df_final  = df_scope[df_scope['題目ID'].isin(wrong_ids)].copy()
-
-            st.caption(f"共 {len(df_final)} 題符合條件")
-
-            if st.button("🚀 開始練習", type="primary", use_container_width=True):
-                if not df_final.empty:
-                    st.session_state.update({
-                        "quiz_list": df_final.head(int(nu_i)).to_dict('records'),
-                        "q_idx": 0, "quiz_loaded": True,
-                        "ans": [], "used_history": [], "shuf": [], "show_analysis": False
-                    })
-                    st.rerun()
-                else:
-                    st.error("❌ 無符合題目，請重新選擇")
-
-    # ── Tab：朗讀 ─────────────────────────────────────────────────────────
+        st.info("此功能暫時關閉，請使用任務列表進入練習。")
     with tab_r:
-        if df_r.empty:
-            st.info("朗讀題庫尚無資料。")
-        else:
-            df_r2 = df_r.copy()
-            if '題目ID' not in df_r2.columns:
-                df_r2['題目ID'] = df_r2.apply(
-                    lambda r: f"R_{r.get('版本','')}_{r.get('年度','')}_{r.get('冊編號','')}_{r.get('單元','')}_{r.get('課編號','')}_{r.get('句編號','')}", axis=1
-                )
-            df_r2['單元'] = df_r2['單元'].fillna('朗讀') if '單元' in df_r2.columns else '朗讀'
-
-            with st.expander("⚙️ 篩選朗讀範圍", expanded=True):
-                rr_v = st.selectbox("版本", sorted(df_r2['版本'].unique()), key="r_v")
-                rr_u_src = df_r2[df_r2['版本'] == rr_v]
-                rr_u = st.selectbox("單元", sorted(rr_u_src['單元'].unique()), key="r_u")
-                rr_y_src = rr_u_src[rr_u_src['單元'] == rr_u]
-                rr_y = st.selectbox("年度", sorted(rr_y_src['年度'].unique()), key="r_y")
-                rr_b_src = rr_y_src[rr_y_src['年度'] == rr_y]
-                rr_b = st.selectbox("冊別", sorted(rr_b_src['冊編號'].unique()), key="r_b")
-                rr_l_src = rr_b_src[rr_b_src['冊編號'] == rr_b]
-                rr_l = st.selectbox("課次", sorted(rr_l_src['課編號'].unique()), key="r_l")
-
-            df_r_scope = rr_l_src[rr_l_src['課編號'] == rr_l].copy()
-            rnu_i = st.number_input("題目數量", 1, max(len(df_r_scope), 1), min(10, max(len(df_r_scope), 1)), key="r_nu")
-            st.caption(f"共 {len(df_r_scope)} 題")
-
-            if st.button("🎤 開始朗讀練習", type="primary", use_container_width=True):
-                if not df_r_scope.empty:
-                    records = df_r_scope.head(int(rnu_i)).to_dict('records')
-                    for r in records:
-                        r['_type'] = 'reading'
-                    st.session_state.update({
-                        "quiz_list": records,
-                        "q_idx": 0, "quiz_loaded": True,
-                        "ans": [], "used_history": [], "shuf": [], "show_analysis": False
-                    })
-                    st.rerun()
-                else:
-                    st.error("❌ 無朗讀題目，請重新選擇")
-
-    # ── Tab：單字重組 ─────────────────────────────────────────────────────
+        st.info("此功能暫時關閉，請使用任務列表進入練習。")
     with tab_v:
-        if df_v.empty:
-            st.info("單字題庫（vocab 工作表）尚無資料。")
-        else:
-            df_v2 = df_v.copy()
-            if '題目ID' not in df_v2.columns:
-                df_v2['題目ID'] = df_v2.apply(
-                    lambda r: f"V_{r.get('版本','')}_{r.get('年度','')}_{r.get('冊編號','')}_{r.get('單元','')}_{r.get('課編號','')}_{r.get('句編號','')}", axis=1
-                )
-
-            with st.expander("⚙️ 篩選單字範圍", expanded=True):
-                vv = st.selectbox("版本", sorted(df_v2['版本'].unique()), key="v_v")
-                vv_u_src = df_v2[df_v2['版本'] == vv]
-                vu = st.selectbox("單元", sorted(vv_u_src['單元'].unique()) if '單元' in vv_u_src.columns else ['單字'], key="v_u")
-                vv_y_src = vv_u_src[vv_u_src['單元'] == vu] if '單元' in vv_u_src.columns else vv_u_src
-                vy = st.selectbox("年度", sorted(vv_y_src['年度'].unique()), key="v_y")
-                vv_b_src = vv_y_src[vv_y_src['年度'] == vy]
-                vb = st.selectbox("冊別", sorted(vv_b_src['冊編號'].unique()), key="v_b")
-                vv_l_src = vv_b_src[vv_b_src['冊編號'] == vb]
-                vl = st.selectbox("課次", sorted(vv_l_src['課編號'].unique()), key="v_l")
-
-            df_v_scope = vv_l_src[vv_l_src['課編號'] == vl].copy()
-            vnu_i = st.number_input("題目數量", 1, max(len(df_v_scope), 1), min(10, max(len(df_v_scope), 1)), key="v_nu")
-
-            v_mode_sel = st.radio("模式", ["🔤 拆字母", "⌨️ 鍵盤", "學生自選"], horizontal=True, key="v_mode_sel")
-            v_timer    = st.number_input("限時（秒，0=不限時）", 0, 300, 30, key="v_timer")
-            v_extra    = st.number_input("干擾字母數量", 0, 10, 3, key="v_extra")
-
-            st.caption(f"共 {len(df_v_scope)} 題")
-
-            if st.button("🔤 開始單字練習", type="primary", use_container_width=True):
-                if not df_v_scope.empty:
-                    records = df_v_scope.head(int(vnu_i)).to_dict('records')
-                    mode_map = {"🔤 拆字母": "拆字母", "⌨️ 鍵盤": "鍵盤", "學生自選": "自選"}
-                    for rec in records:
-                        rec['_type']        = 'vocab'
-                        rec['_vocab_mode']  = mode_map.get(v_mode_sel, "自選")
-                        rec['_vocab_timer'] = v_timer
-                        rec['_vocab_extra'] = v_extra
-                    st.session_state.update({
-                        "quiz_list": records,
-                        "q_idx": 0, "quiz_loaded": True,
-                        "ans": [], "used_history": [], "shuf": [], "show_analysis": False
-                    })
-                    st.rerun()
-                else:
-                    st.error("❌ 無單字題目，請重新選擇")
-
-    # ── Tab：復習 ────────────────────────────────────────────────────────────
+        st.info("此功能暫時關閉，請使用任務列表進入練習。")
     with tab_review:
         st.subheader("📖 復習模式")
         user_name = st.session_state.user_name
@@ -2337,20 +2187,25 @@ if st.session_state.quiz_loaded:
         )
         ans_key = str(q.get("單選答案") or "").strip()
 
-        # ==============================================================
-        # ✅ 修復 3：單選題顯示選項文字
-        # ==============================================================
+        # 答對後鎖定按鈕，只顯示下一題
+        already_correct = (
+            st.session_state.get('show_analysis') and
+            st.session_state.get('current_res', '').startswith('✅')
+        )
+
         cols = st.columns(4)
         for i, opt in enumerate(["A", "B", "C", "D"]):
-            opt_text = q.get(f"選項{opt}", "")
+            opt_text  = q.get(f"選項{opt}", "")
             btn_label = f"{opt}. {opt_text}" if opt_text else f" {opt} "
-            if cols[i].button(btn_label, key=f"mcq_{opt}", use_container_width=True):
+            # 答對後禁用所有選項按鈕
+            if cols[i].button(btn_label, key=f"mcq_{opt}",
+                              use_container_width=True,
+                              disabled=already_correct):
                 is_ok = (opt.upper() == ans_key.upper())
                 st.session_state.update({
                     "current_res": "✅ 正確！" if is_ok else f"❌ 錯誤！正確答案：{ans_key}",
                     "show_analysis": True
                 })
-                # 寫入 Log
                 log_data = pd.DataFrame([{
                     "時間": get_now().strftime("%Y-%m-%d %H:%M:%S"),
                     "姓名": st.session_state.user_name,
