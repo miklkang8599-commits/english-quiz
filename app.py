@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.90 - 答題即時更新版)
+# 🧩 英文全能練習系統 (V2.9.91 - 任務完成計算修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.90
+# 📌 版本編號 (VERSION): 2.9.91
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.90"
+VERSION = "2.9.91"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1421,8 +1421,22 @@ if not st.session_state.quiz_loaded:
                 # 朗讀題完成：有朗讀紀錄 🎤
                 my_reading = set(df_l[(df_l['姓名'] == user_name) & (df_l['結果'] == '🎤 朗讀')]['題目ID'].tolist())
                 my_done    = my_correct | my_reading
-                done_cnt   = len(q_ids_set & my_done)
-                all_done   = q_ids_set.issubset(my_done)
+
+                # 同時產生 q_ids_set 的新舊格式版本，相容 V_ 前綴差異
+                q_ids_alt = set()
+                for qid in q_ids_set:
+                    if qid.startswith('V_'):
+                        q_ids_alt.add(qid[2:])
+                    else:
+                        q_ids_alt.add(f"V_{qid}")
+                q_ids_all = q_ids_set | q_ids_alt
+
+                done_cnt = len(q_ids_all & my_done)
+                # 完成判斷：任務題目（任一格式）都有對應的完成記錄
+                all_done = all(
+                    qid in my_done or (f"V_{qid}" if not qid.startswith('V_') else qid[2:]) in my_done
+                    for qid in q_ids_set
+                )
             else:
                 my_done = set()
                 done_cnt, all_done = 0, False
@@ -1432,8 +1446,8 @@ if not st.session_state.quiz_loaded:
 
             with st.expander(f"{status_icon} {task_name}　{date_info}　{done_cnt}/{task_q_count} 題完成", expanded=not all_done):
                 # 任務說明
-                task_desc_text = str(arow.get('任務說明', '')).strip()
-                if task_desc_text and task_desc_text != 'nan':
+                task_desc_text = str(arow.get('任務說明') or '').strip()
+                if task_desc_text and task_desc_text not in ('nan', 'None', ''):
                     st.info(f"📋 {task_desc_text}")
 
                 pc1, pc2 = st.columns(2)
