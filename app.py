@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.91 - 任務完成計算修復版)
+# 🧩 英文全能練習系統 (V2.9.92 - 任務ID格式統一版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.91
+# 📌 版本編號 (VERSION): 2.9.92
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.91"
+VERSION = "2.9.92"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1406,7 +1406,18 @@ if not st.session_state.quiz_loaded:
             task_end     = arow.get('結束日期', '')
             task_q_ids   = str(arow.get('題目ID清單', '') or '')
             # 過濾掉 nan 和空白
-            q_ids_set    = set([q.strip() for q in task_q_ids.split(',') if q.strip() and q.strip() != 'nan'])
+            raw_ids   = set([q.strip() for q in task_q_ids.split(',') if q.strip() and q.strip() != 'nan'])
+            # 同時產生有V_和無V_的版本，統一成無前綴格式（新格式）
+            q_ids_set = set()
+            for qid in raw_ids:
+                if qid.startswith('V_'):
+                    q_ids_set.add(qid[2:])   # 去掉 V_ 前綴
+                elif qid.startswith('R_'):
+                    q_ids_set.add(qid)        # 朗讀題保留 R_ 前綴
+                else:
+                    q_ids_set.add(qid)
+            # 同時保留原始格式供比對
+            q_ids_all = raw_ids | q_ids_set
             task_q_count = len(q_ids_set) if q_ids_set else max(int(float(str(arow.get('題目數', 0) or 0))), 0)
 
             # 計算個人完成進度（混合任務：一般題答對 + 朗讀題有紀錄）
@@ -1416,27 +1427,12 @@ if not st.session_state.quiz_loaded:
             is_mixed_task   = task_type == '混合'
 
             if q_ids_set and not df_l.empty and '題目ID' in df_l.columns:
-                # 一般題完成：答對 ✅
                 my_correct = set(df_l[(df_l['姓名'] == user_name) & (df_l['結果'] == '✅')]['題目ID'].tolist())
-                # 朗讀題完成：有朗讀紀錄 🎤
                 my_reading = set(df_l[(df_l['姓名'] == user_name) & (df_l['結果'] == '🎤 朗讀')]['題目ID'].tolist())
                 my_done    = my_correct | my_reading
-
-                # 同時產生 q_ids_set 的新舊格式版本，相容 V_ 前綴差異
-                q_ids_alt = set()
-                for qid in q_ids_set:
-                    if qid.startswith('V_'):
-                        q_ids_alt.add(qid[2:])
-                    else:
-                        q_ids_alt.add(f"V_{qid}")
-                q_ids_all = q_ids_set | q_ids_alt
-
+                # 用 q_ids_all（包含新舊格式）比對 logs
                 done_cnt = len(q_ids_all & my_done)
-                # 完成判斷：任務題目（任一格式）都有對應的完成記錄
-                all_done = all(
-                    qid in my_done or (f"V_{qid}" if not qid.startswith('V_') else qid[2:]) in my_done
-                    for qid in q_ids_set
-                )
+                all_done = len(q_ids_all & my_done) >= len(q_ids_set)
             else:
                 my_done = set()
                 done_cnt, all_done = 0, False
@@ -1498,7 +1494,7 @@ if not st.session_state.quiz_loaded:
                     label   = f"🚀 進入練習（剩餘 {task_q_count - done_cnt} 題）"
 
                     if st.button(label, key=btn_key, type="primary", use_container_width=True):
-                        pending_ids = q_ids_set - my_done
+                        pending_ids = q_ids_all - my_done
 
                         if is_reading_task:
                             df_r2 = df_r.copy()
@@ -2209,8 +2205,8 @@ if st.session_state.quiz_loaded:
 
         cols = st.columns(4)
         for i, opt in enumerate(["A", "B", "C", "D"]):
-            opt_text  = q.get(f"選項{opt}", "")
-            btn_label = f"{opt}. {opt_text}" if opt_text else f" {opt} "
+            opt_text  = str(q.get(f"選項{opt}") or "").strip()
+            btn_label = f"({opt}) {opt_text}" if opt_text and opt_text not in ('nan','') else opt
             # 答對後禁用所有選項按鈕
             if cols[i].button(btn_label, key=f"mcq_{opt}",
                               use_container_width=True,
