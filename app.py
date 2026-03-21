@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.119 - 集合任務功能版)
+# 🧩 英文全能練習系統 (V2.9.120 - 列印功能版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.119
+# 📌 版本編號 (VERSION): 2.9.120
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.119"
+VERSION = "2.9.120"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -310,6 +310,89 @@ with st.sidebar:
 def _group_label(g):
     stus = sorted(df_s[df_s['分組'] == g]['姓名'].tolist())
     return f"{g}（{'、'.join(stus)}）"
+
+# 共用：產生列印用 HTML
+def _gen_print_html(questions, mode, title="題目列表", group_logs=None, target_students=None):
+    """
+    mode:
+      1 = 只列印題目
+      2 = 題目 + 正確答案 + 解析
+      3 = 題目 + 答案 + 解析 + 學生答題紀錄
+    """
+    rows_html = ""
+    for i, q in enumerate(questions, 1):
+        q_unit  = str(q.get('單元', ''))
+        if '單選' in q_unit:
+            q_text = str(q.get('單選題目') or q.get('中文題目') or '').strip()
+            q_ans  = str(q.get('單選答案') or '').strip()
+        elif '單字' in q_unit or q.get('_type') == 'vocab':
+            q_text = str(q.get('中文意思') or '').strip()
+            q_ans  = str(q.get('英文單字') or '').strip()
+        elif q.get('_type') == 'reading' or '朗讀' in q_unit:
+            q_text = str(q.get('朗讀句子') or '').strip()
+            q_ans  = q_text
+        else:
+            q_text = str(q.get('重組中文題目') or q.get('中文題目') or '').strip()
+            q_ans  = str(q.get('重組英文答案') or q.get('英文答案') or '').strip()
+        q_analysis = str(q.get('解析') or q.get('單選解析') or '').strip()
+        qid = str(q.get('題目ID', ''))
+
+        ans_block     = ""
+        analysis_block = ""
+        record_block  = ""
+
+        if mode >= 2:
+            ans_block = f"<div class='ans'>✅ {q_ans}</div>"
+            if q_analysis:
+                analysis_block = f"<div class='note'>📝 {q_analysis}</div>"
+
+        if mode >= 3 and group_logs is not None and target_students:
+            stu_records = []
+            for stu in target_students:
+                stu_rows = group_logs[
+                    (group_logs['姓名'] == stu) &
+                    (group_logs['題目ID'] == qid) &
+                    (~group_logs['結果'].str.contains('📖', na=False))
+                ] if not group_logs.empty else pd.DataFrame()
+                if stu_rows.empty:
+                    stu_records.append(f"<span class='stu'>{stu}：未作答</span>")
+                else:
+                    hist = "".join(stu_rows.sort_values('時間')['結果'].tolist())
+                    stu_records.append(f"<span class='stu'>{stu}：{hist}</span>")
+            record_block = "<div class='records'>" + "　".join(stu_records) + "</div>"
+
+        rows_html += f"""
+        <div class='qblock'>
+          <div class='qnum'>{i}.</div>
+          <div class='qbody'>
+            <div class='qtxt'>{q_text}</div>
+            {ans_block}{analysis_block}{record_block}
+          </div>
+        </div>"""
+
+    html = f"""<!DOCTYPE html><html><head><meta charset='utf-8'>
+    <title>{title}</title>
+    <style>
+      body {{ font-family: 'Microsoft JhengHei', Arial, sans-serif; font-size:13px; margin:20px; color:#222; }}
+      h2 {{ font-size:16px; border-bottom:2px solid #333; padding-bottom:6px; }}
+      .qblock {{ display:flex; margin-bottom:14px; page-break-inside:avoid; }}
+      .qnum {{ min-width:30px; font-weight:bold; color:#555; }}
+      .qbody {{ flex:1; }}
+      .qtxt {{ margin-bottom:4px; white-space:pre-wrap; line-height:1.6; }}
+      .ans {{ color:#1a7a1a; font-size:12px; margin:2px 0; }}
+      .note {{ color:#555; font-size:11px; margin:2px 0; }}
+      .records {{ font-size:11px; color:#333; margin-top:4px; background:#f5f5f5; padding:4px 6px; border-radius:4px; }}
+      .stu {{ margin-right:10px; }}
+      @media print {{
+        body {{ margin:10px; }}
+        button {{ display:none; }}
+      }}
+    </style></head><body>
+    <h2>{title}</h2>
+    {rows_html}
+    <script>window.onload = function(){{ window.print(); }}</script>
+    </body></html>"""
+    return html
 
 # ------------------------------------------------------------------------------
 # 📦 【盒子 B：導師中心】
@@ -919,6 +1002,41 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                         except Exception as e:
                             st.error(f"刪除失敗：{e}")
 
+                    # ── 列印功能（功能5）──────────────────────────────────
+                    if q_ids_set:
+                        st.divider()
+                        st.markdown("**🖨️ 列印任務題目**")
+                        # 從題庫取得題目詳細資料
+                        def _get_task_questions(qids):
+                            df_q2 = df_q.copy()
+                            df_q2['題目ID'] = df_q2.apply(
+                                lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1
+                            )
+                            # 同時比對有無 V_ 前綴
+                            norm_ids = set()
+                            for qid in qids:
+                                norm_ids.add(qid[2:] if qid.startswith('V_') else qid)
+                            return df_q2[df_q2['題目ID'].isin(norm_ids)].to_dict('records')
+
+                        task_q_list = _get_task_questions(q_ids_set)
+                        pt1, pt2 = st.columns(2)
+                        print_task_mode = None
+                        if pt1.button("① 只印題目", use_container_width=True, key=f"print_task1_{idx}"):
+                            print_task_mode = 1
+                        if pt2.button("② 題目＋答案＋解析", use_container_width=True, key=f"print_task2_{idx}"):
+                            print_task_mode = 2
+
+                        if print_task_mode and task_q_list:
+                            import base64
+                            title_pt = f"{task_name}　共{len(task_q_list)}題"
+                            html_pt  = _gen_print_html(task_q_list, print_task_mode, title=title_pt)
+                            b64_pt   = base64.b64encode(html_pt.encode('utf-8')).decode()
+                            st.markdown(
+                                f'<a href="data:text/html;base64,{b64_pt}" target="_blank" download="task_print.html">'
+                                f'<button style="background:#e05;color:white;border:none;padding:8px 20px;border-radius:6px;cursor:pointer;font-size:14px;">'
+                                f'🖨️ 點此開啟列印預覽</button></a>',
+                                unsafe_allow_html=True
+                            )
     with t2:
         st.subheader("📊 數據監控")
 
@@ -1431,6 +1549,36 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                                 ans_disp = f" `{ans_val}`" if ans_val and ans_val not in ('—', '') else ''
                                 lines.append(f"{icon}{ans_disp} _{t_str}_")
                             st.markdown(f"　👤 **{stu}**：" + "　／　".join(lines))
+
+        # ── 列印功能（功能4）────────────────────────────────────────────
+        if not df_rev_scope.empty:
+            st.divider()
+            st.markdown("**🖨️ 列印題目**")
+            pc1, pc2, pc3 = st.columns(3)
+            print_mode = None
+            if pc1.button("① 只印題目", use_container_width=True, key="print_rev_1"):
+                print_mode = 1
+            if pc2.button("② 題目＋答案＋解析", use_container_width=True, key="print_rev_2"):
+                print_mode = 2
+            if pc3.button("③ 題目＋答案＋解析＋作答記錄", use_container_width=True, key="print_rev_3"):
+                print_mode = 3
+
+            if print_mode:
+                q_list = df_rev_scope.to_dict('records')
+                title  = f"題目講解 - {rev_group} - 共{len(q_list)}題"
+                html   = _gen_print_html(
+                    q_list, print_mode, title=title,
+                    group_logs=df_group_logs if print_mode == 3 else None,
+                    target_students=target_students if print_mode == 3 else None
+                )
+                import base64
+                b64 = base64.b64encode(html.encode('utf-8')).decode()
+                st.markdown(
+                    f'<a href="data:text/html;base64,{b64}" target="_blank" download="print.html">'
+                    f'<button style="background:#e05;color:white;border:none;padding:8px 20px;border-radius:6px;cursor:pointer;font-size:14px;">'
+                    f'🖨️ 點此開啟列印預覽</button></a>',
+                    unsafe_allow_html=True
+                )
 
         # ── 朗讀講解 ──────────────────────────────────────────────────────
         with rev4_tab2:
