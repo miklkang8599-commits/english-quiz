@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.133 - PDF自動更新版)
+# 🧩 英文全能練習系統 (V2.9.134 - PDF中文字體修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.133
+# 📌 版本編號 (VERSION): 2.9.134
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.133"
+VERSION = "2.9.134"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -405,30 +405,35 @@ def _gen_print_pdf(questions, mode, title="題目列表", group_logs=None, targe
     from reportlab.lib import colors
     import io, os, urllib.request
 
-    # 下載思源黑體（支援繁中）
-    font_path = "/tmp/NotoSansTC.ttf"
+    # 下載中文字體，嘗試多個來源
+    font_path = "/tmp/CJKfont.ttf"
+    fn = 'Helvetica'  # 預設
+
     if not os.path.exists(font_path):
+        urls = [
+            "https://github.com/notofonts/noto-cjk/raw/main/Sans/SubsetOTF/TC/NotoSansCJKtc-Regular.otf",
+            "https://fonts.gstatic.com/ea/notosanstc/v1/NotoSansTC-Regular.otf",
+            "https://raw.githubusercontent.com/googlefonts/noto-cjk/main/Sans/OTF/TraditionalChinese/NotoSansCJKtc-Regular.otf",
+        ]
+        for url in urls:
+            try:
+                urllib.request.urlretrieve(url, font_path)
+                if os.path.getsize(font_path) > 1000:
+                    break
+            except:
+                continue
+
+    if os.path.exists(font_path) and os.path.getsize(font_path) > 1000:
         try:
-            urllib.request.urlretrieve(
-                "https://github.com/googlefonts/noto-cjk/raw/main/Sans/SubsetOTF/TC/NotoSansCJKtc-Regular.otf",
-                font_path
-            )
+            pdfmetrics.registerFont(TTFont('CJKFont', font_path))
+            fn = 'CJKFont'
         except:
-            font_path = None
+            fn = 'Helvetica'
 
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4,
                             leftMargin=15*mm, rightMargin=15*mm,
                             topMargin=15*mm, bottomMargin=15*mm)
-
-    if font_path and os.path.exists(font_path):
-        try:
-            pdfmetrics.registerFont(TTFont('NotoSansTC', font_path))
-            fn = 'NotoSansTC'
-        except:
-            fn = 'Helvetica'
-    else:
-        fn = 'Helvetica'
 
     style_title = ParagraphStyle('title', fontName=fn, fontSize=14, leading=20, spaceAfter=6)
     style_q     = ParagraphStyle('q',     fontName=fn, fontSize=11, leading=16, spaceAfter=4)
