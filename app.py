@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.134 - PDF中文字體修復版)
+# 🧩 英文全能練習系統 (V2.9.135 - PDF內建CJK字體版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.134
+# 📌 版本編號 (VERSION): 2.9.135
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.134"
+VERSION = "2.9.135"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -401,34 +401,19 @@ def _gen_print_pdf(questions, mode, title="題目列表", group_logs=None, targe
     from reportlab.lib.units import mm
     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable
     from reportlab.pdfbase import pdfmetrics
-    from reportlab.pdfbase.ttfonts import TTFont
+    from reportlab.pdfbase.cidfonts import UnicodeCIDFont
     from reportlab.lib import colors
-    import io, os, urllib.request
+    import io
 
-    # 下載中文字體，嘗試多個來源
-    font_path = "/tmp/CJKfont.ttf"
-    fn = 'Helvetica'  # 預設
-
-    if not os.path.exists(font_path):
-        urls = [
-            "https://github.com/notofonts/noto-cjk/raw/main/Sans/SubsetOTF/TC/NotoSansCJKtc-Regular.otf",
-            "https://fonts.gstatic.com/ea/notosanstc/v1/NotoSansTC-Regular.otf",
-            "https://raw.githubusercontent.com/googlefonts/noto-cjk/main/Sans/OTF/TraditionalChinese/NotoSansCJKtc-Regular.otf",
-        ]
-        for url in urls:
-            try:
-                urllib.request.urlretrieve(url, font_path)
-                if os.path.getsize(font_path) > 1000:
-                    break
-            except:
-                continue
-
-    if os.path.exists(font_path) and os.path.getsize(font_path) > 1000:
+    # 使用 reportlab 內建 CJK 字體（不需下載）
+    fn = 'Helvetica'
+    for cjk_font in ['STSong-Light', 'HeiseiMin-W3', 'HeiseiKakuGo-W5']:
         try:
-            pdfmetrics.registerFont(TTFont('CJKFont', font_path))
-            fn = 'CJKFont'
+            pdfmetrics.registerFont(UnicodeCIDFont(cjk_font))
+            fn = cjk_font
+            break
         except:
-            fn = 'Helvetica'
+            continue
 
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4,
