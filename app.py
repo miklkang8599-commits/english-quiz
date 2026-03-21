@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.130 - PDF下載版)
+# 🧩 英文全能練習系統 (V2.9.131 - PDF重複下載修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.130
+# 📌 版本編號 (VERSION): 2.9.131
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.130"
+VERSION = "2.9.131"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1283,16 +1283,20 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                             )
                             t1_mode_num = 1 if "①" in export_mode_t1 else 2
                             title_tsk   = f"{task_name}-共{len(task_q_list)}題"
+                            cnt_key     = f'dl_task_cnt_{idx}'
+                            if cnt_key not in st.session_state:
+                                st.session_state[cnt_key] = 0
                             try:
                                 pdf_task = _gen_print_pdf(task_q_list, t1_mode_num, title=title_tsk)
-                                st.download_button(
+                                if st.download_button(
                                     label=f"⬇️ 下載 PDF（{export_mode_t1[:1]}）",
                                     data=pdf_task,
                                     file_name=f"{title_tsk}.pdf",
                                     mime="application/pdf",
                                     use_container_width=True,
-                                    key=f"dl_pdf_task_{idx}"
-                                )
+                                    key=f"dl_pdf_task_{idx}_{st.session_state[cnt_key]}"
+                                ):
+                                    st.session_state[cnt_key] += 1
                             except Exception as e:
                                 st.error(f"❌ PDF 產生失敗：{e}")
     with t2:
@@ -1823,20 +1827,24 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             q_list     = df_rev_scope.to_dict('records')
             ts         = get_now().strftime('%m%d_%H%M')
             title_base = f"{rev_group}-題目講解-{ts}-共{len(q_list)}題"
+            # 用計數器確保每次 rerun 都是新 key，可重複下載
+            if 'dl_t4_cnt' not in st.session_state:
+                st.session_state['dl_t4_cnt'] = 0
             try:
                 pdf_data = _gen_print_pdf(
                     q_list, mode_num, title=title_base,
                     group_logs=df_group_logs if mode_num == 3 and not df_group_logs.empty else None,
                     target_students=target_students if mode_num == 3 else None
                 )
-                st.download_button(
+                if st.download_button(
                     label=f"⬇️ 下載 PDF（{export_mode[:1]}）",
                     data=pdf_data,
                     file_name=f"{title_base}.pdf",
                     mime="application/pdf",
                     use_container_width=True,
-                    key="dl_pdf_t4"
-                )
+                    key=f"dl_pdf_t4_{st.session_state['dl_t4_cnt']}"
+                ):
+                    st.session_state['dl_t4_cnt'] += 1
             except Exception as e:
                 st.error(f"❌ PDF 產生失敗：{e}")
 
