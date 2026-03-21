@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.115 - 多功能更新版)
+# 🧩 英文全能練習系統 (V2.9.117 - 講解篩選即時版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.115
+# 📌 版本編號 (VERSION): 2.9.117
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.115"
+VERSION = "2.9.117"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1138,14 +1138,43 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
         if df_rev_scope.empty:
             st.info("此範圍尚無題目。")
         else:
-            st.markdown(f"**📋 共 {len(df_rev_scope)} 題，點選一題開始講解：**")
+            # 取得目標學生的所有答題紀錄（直接查 Supabase）
+            try:
+                sb_rev4 = get_supabase()
+                res_rev4 = sb_rev4.table("logs").select("*").in_("name", target_students).execute()
+                if res_rev4.data:
+                    df_group_logs = pd.DataFrame(res_rev4.data)
+                    df_group_logs = _to_cn(df_group_logs, LOGS_COLS)
+                    df_group_logs = df_group_logs.drop(columns=['id'], errors='ignore')
+                    df_group_logs = df_group_logs.sort_values('時間', ascending=False)
+                else:
+                    df_group_logs = pd.DataFrame()
+            except:
+                df_group_logs = df_l[df_l['姓名'].isin(target_students)].copy() if not df_l.empty else pd.DataFrame()
 
-            # 取得目標學生的所有答題紀錄（保留全部歷史）
-            if not df_l.empty and '題目ID' in df_l.columns:
-                df_group_logs = df_l[df_l['姓名'].isin(target_students)].copy()
-                df_group_logs = df_group_logs.sort_values('時間', ascending=False)
-            else:
-                df_group_logs = pd.DataFrame()
+            # 依顯示範圍篩選題目
+            scope = st.session_state.get('rev_scope_t4', '📚 全部題目')
+            if scope != '📚 全部題目':
+                if not df_group_logs.empty and '結果' in df_group_logs.columns:
+                    answered_ids  = set(df_group_logs[~df_group_logs['結果'].str.contains('📖', na=False)]['題目ID'].tolist())
+                    wrong_ids     = set(df_group_logs[df_group_logs['結果'] == '❌']['題目ID'].tolist())
+                    review_counts = df_group_logs[df_group_logs['結果'] == '📖 複習'].groupby('題目ID').size().to_dict()
+                else:
+                    answered_ids  = set()
+                    wrong_ids     = set()
+                    review_counts = {}
+
+                if scope == '✏️ 已經答題':
+                    df_rev_scope = df_rev_scope[df_rev_scope['題目ID'].isin(answered_ids)]
+                elif scope == '❌ 只看錯題':
+                    df_rev_scope = df_rev_scope[df_rev_scope['題目ID'].isin(wrong_ids)]
+                elif scope == '❓ 只看未作答':
+                    df_rev_scope = df_rev_scope[~df_rev_scope['題目ID'].isin(answered_ids)]
+                elif scope == '🔄 複習次數少的優先':
+                    df_rev_scope['_rv_cnt'] = df_rev_scope['題目ID'].apply(lambda x: review_counts.get(x, 0))
+                    df_rev_scope = df_rev_scope.sort_values('_rv_cnt').drop(columns=['_rv_cnt'])
+
+            st.markdown(f"**📋 共 {len(df_rev_scope)} 題，點選一題開始講解：**")
 
             is_mcq_scope = "單選" in str(st.session_state.get('rev_u', ''))
 
