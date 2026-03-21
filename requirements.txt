@@ -2,3 +2,4 @@ st-gsheets-connection
 pandas
 openai
 supabase
+reportlab
