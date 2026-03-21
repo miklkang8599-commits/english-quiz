@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.121 - 下載列印修復版)
+# 🧩 英文全能練習系統 (V2.9.122 - 直接下載列印版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.121
+# 📌 版本編號 (VERSION): 2.9.122
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.121"
+VERSION = "2.9.122"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1006,36 +1006,31 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     if q_ids_set:
                         st.divider()
                         st.markdown("**🖨️ 列印任務題目**")
-                        # 從題庫取得題目詳細資料
+
                         def _get_task_questions(qids):
                             df_q2 = df_q.copy()
                             df_q2['題目ID'] = df_q2.apply(
                                 lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1
                             )
-                            # 同時比對有無 V_ 前綴
-                            norm_ids = set()
-                            for qid in qids:
-                                norm_ids.add(qid[2:] if qid.startswith('V_') else qid)
+                            norm_ids = set(qid[2:] if qid.startswith('V_') else qid for qid in qids)
                             return df_q2[df_q2['題目ID'].isin(norm_ids)].to_dict('records')
 
                         task_q_list = _get_task_questions(q_ids_set)
-                        pt1, pt2 = st.columns(2)
-                        print_task_mode = None
-                        if pt1.button("① 只印題目", use_container_width=True, key=f"print_task1_{idx}"):
-                            print_task_mode = 1
-                        if pt2.button("② 題目＋答案＋解析", use_container_width=True, key=f"print_task2_{idx}"):
-                            print_task_mode = 2
-
-                        if print_task_mode and task_q_list:
-                            title_pt = f"{task_name}　共{len(task_q_list)}題"
-                            html_pt  = _gen_print_html(task_q_list, print_task_mode, title=title_pt)
-                            st.download_button(
-                                label="🖨️ 下載列印檔案（HTML）",
-                                data=html_pt.encode('utf-8'),
-                                file_name=f"task_print_{get_now().strftime('%m%d_%H%M')}.html",
-                                mime="text/html",
-                                use_container_width=True,
-                                key=f"dl_task_{idx}_{print_task_mode}"
+                        if task_q_list:
+                            pt1, pt2 = st.columns(2)
+                            pt1.download_button(
+                                "① 只印題目",
+                                data=_gen_print_html(task_q_list, 1, title=f"{task_name}　共{len(task_q_list)}題").encode('utf-8'),
+                                file_name=f"task1_{get_now().strftime('%m%d_%H%M')}.html",
+                                mime="text/html", use_container_width=True,
+                                key=f"dl_task1_{idx}"
+                            )
+                            pt2.download_button(
+                                "② 題目＋答案＋解析",
+                                data=_gen_print_html(task_q_list, 2, title=f"{task_name}　共{len(task_q_list)}題").encode('utf-8'),
+                                file_name=f"task2_{get_now().strftime('%m%d_%H%M')}.html",
+                                mime="text/html", use_container_width=True,
+                                key=f"dl_task2_{idx}"
                             )
                             st.caption("下載後用瀏覽器開啟，按 Ctrl+P 列印")
     with t2:
@@ -1555,32 +1550,33 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
         if not df_rev_scope.empty:
             st.divider()
             st.markdown("**🖨️ 列印題目**")
-            pc1, pc2, pc3 = st.columns(3)
-            print_mode = None
-            if pc1.button("① 只印題目", use_container_width=True, key="print_rev_1"):
-                print_mode = 1
-            if pc2.button("② 題目＋答案＋解析", use_container_width=True, key="print_rev_2"):
-                print_mode = 2
-            if pc3.button("③ 題目＋答案＋解析＋作答記錄", use_container_width=True, key="print_rev_3"):
-                print_mode = 3
+            q_list = df_rev_scope.to_dict('records')
 
-            if print_mode:
-                q_list = df_rev_scope.to_dict('records')
-                title  = f"題目講解 - {rev_group} - 共{len(q_list)}題"
-                html   = _gen_print_html(
-                    q_list, print_mode, title=title,
-                    group_logs=df_group_logs if print_mode == 3 else None,
-                    target_students=target_students if print_mode == 3 else None
-                )
-                st.download_button(
-                    label="🖨️ 下載列印檔案（HTML）",
-                    data=html.encode('utf-8'),
-                    file_name=f"review_print_{rev_group}_{get_now().strftime('%m%d_%H%M')}.html",
-                    mime="text/html",
-                    use_container_width=True,
-                    key=f"dl_rev_{print_mode}"
-                )
-                st.caption("下載後用瀏覽器開啟，按 Ctrl+P 列印")
+            def _make_html(mode):
+                return _gen_print_html(
+                    q_list, mode,
+                    title=f"題目講解 - {rev_group} - 共{len(q_list)}題",
+                    group_logs=df_group_logs if mode == 3 else None,
+                    target_students=target_students if mode == 3 else None
+                ).encode('utf-8')
+
+            pc1, pc2, pc3 = st.columns(3)
+            pc1.download_button(
+                "① 只印題目", data=_make_html(1),
+                file_name=f"print1_{rev_group}_{get_now().strftime('%m%d_%H%M')}.html",
+                mime="text/html", use_container_width=True, key="dl_rev_1"
+            )
+            pc2.download_button(
+                "② 題目＋答案＋解析", data=_make_html(2),
+                file_name=f"print2_{rev_group}_{get_now().strftime('%m%d_%H%M')}.html",
+                mime="text/html", use_container_width=True, key="dl_rev_2"
+            )
+            pc3.download_button(
+                "③ 含作答記錄", data=_make_html(3),
+                file_name=f"print3_{rev_group}_{get_now().strftime('%m%d_%H%M')}.html",
+                mime="text/html", use_container_width=True, key="dl_rev_3"
+            )
+            st.caption("下載後用瀏覽器開啟，按 Ctrl+P 列印")
 
         # ── 朗讀講解 ──────────────────────────────────────────────────────
         with rev4_tab2:
