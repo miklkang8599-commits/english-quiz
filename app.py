@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.136 - PDF全黑格式修復版)
+# 🧩 英文全能練習系統 (V2.9.137 - PDF格式重設版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.136
+# 📌 版本編號 (VERSION): 2.9.137
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.136"
+VERSION = "2.9.137"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -395,85 +395,99 @@ def _gen_print_html(questions, mode, title="題目列表", group_logs=None, targ
     return html
 
 def _gen_print_pdf(questions, mode, title="題目列表", group_logs=None, target_students=None):
-    """產生 PDF bytes，支援中文"""
+    """產生 PDF bytes，支援中文，格式清晰"""
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.lib.units import mm
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable, Table, TableStyle
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.cidfonts import UnicodeCIDFont
     from reportlab.lib import colors
     import io
 
-    # 使用 reportlab 內建 CJK 字體（不需下載）
+    # 內建 CJK 字體
     fn = 'Helvetica'
-    for cjk_font in ['STSong-Light', 'HeiseiMin-W3', 'HeiseiKakuGo-W5']:
+    for cjk in ['STSong-Light', 'HeiseiMin-W3']:
         try:
-            pdfmetrics.registerFont(UnicodeCIDFont(cjk_font))
-            fn = cjk_font
+            pdfmetrics.registerFont(UnicodeCIDFont(cjk))
+            fn = cjk
             break
         except:
             continue
 
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4,
-                            leftMargin=15*mm, rightMargin=15*mm,
-                            topMargin=15*mm, bottomMargin=15*mm)
+                            leftMargin=20*mm, rightMargin=20*mm,
+                            topMargin=20*mm, bottomMargin=20*mm)
 
     black = colors.black
-    style_title = ParagraphStyle('title', fontName=fn, fontSize=13, leading=20, spaceAfter=4,  textColor=black)
-    style_q     = ParagraphStyle('q',     fontName=fn, fontSize=11, leading=18, spaceAfter=2,  textColor=black, leftIndent=0)
-    style_ans   = ParagraphStyle('ans',   fontName=fn, fontSize=11, leading=16, spaceAfter=2,  textColor=black, leftIndent=0)
-    style_note  = ParagraphStyle('note',  fontName=fn, fontSize=10, leading=14, spaceAfter=2,  textColor=black, leftIndent=0)
-    style_rec   = ParagraphStyle('rec',   fontName=fn, fontSize=10, leading=14, spaceAfter=4,  textColor=black, leftIndent=0)
+    style_title = ParagraphStyle('title', fontName=fn, fontSize=13, leading=18,
+                                 spaceAfter=6, textColor=black, fontWeight='bold')
+    style_q     = ParagraphStyle('q',    fontName=fn, fontSize=11, leading=18,
+                                 spaceAfter=0, textColor=black, leftIndent=0)
+    style_sub   = ParagraphStyle('sub',  fontName=fn, fontSize=11, leading=16,
+                                 spaceAfter=0, textColor=black, leftIndent=0)
+    style_blank = ParagraphStyle('blank',fontName=fn, fontSize=8,  leading=10,
+                                 spaceAfter=0, textColor=black)
 
-    story = [Paragraph(title, style_title), HRFlowable(width="100%", thickness=1), Spacer(1, 3*mm)]
+    def safe(t):
+        return str(t).replace('&','&amp;').replace('<','&lt;').replace('>','&gt;')
+
+    story = []
+    story.append(Paragraph(safe(title), style_title))
+    story.append(HRFlowable(width="100%", thickness=1, color=black))
+    story.append(Spacer(1, 4*mm))
 
     for i, q in enumerate(questions, 1):
-        q_unit = str(q.get('單元', ''))
-        if '單選' in q_unit:
-            q_text = str(q.get('單選題目') or q.get('中文題目') or '')
-            q_ans  = str(q.get('單選答案') or '').strip()
-        elif '單字' in q_unit or q.get('_type') == 'vocab':
-            q_text = str(q.get('中文意思') or '')
-            q_ans  = str(q.get('英文單字') or '').strip()
-        elif q.get('_type') == 'reading' or '朗讀' in q_unit:
-            q_text = str(q.get('朗讀句子') or '')
+        q_unit = str(q.get("單元", ""))
+        if "單選" in q_unit:
+            q_text = str(q.get("單選題目") or q.get("中文題目") or "")
+            q_ans  = str(q.get("單選答案") or "").strip()
+        elif "單字" in q_unit or q.get("_type") == "vocab":
+            q_text = str(q.get("中文意思") or "")
+            q_ans  = str(q.get("英文單字") or "").strip()
+        elif q.get("_type") == "reading" or "朗讀" in q_unit:
+            q_text = str(q.get("朗讀句子") or "")
             q_ans  = q_text.strip()
         else:
-            q_text = str(q.get('重組中文題目') or q.get('中文題目') or '')
-            q_ans  = str(q.get('重組英文答案') or q.get('英文答案') or '').strip()
-        q_analysis = str(q.get('解析') or q.get('單選解析') or '').strip()
-        qid = str(q.get('題目ID', ''))
+            q_text = str(q.get("重組中文題目") or q.get("中文題目") or "")
+            q_ans  = str(q.get("重組英文答案") or q.get("英文答案") or "").strip()
+        q_analysis = str(q.get("解析") or q.get("單選解析") or "").strip()
+        qid = str(q.get("題目ID", ""))
 
-        # 保留原始空格（用 XML 空格）
-        def safe(t):
-            return t.replace('&','&amp;').replace('<','&lt;').replace('>','&gt;').replace(' ','&#160;')
+        # 題目
+        story.append(Paragraph(f"{i}.  {safe(q_text)}", style_q))
 
-        story.append(Paragraph(f"{i}.&#160;{safe(q_text)}", style_q))
-        if mode >= 2:
-            story.append(Paragraph(f"答案：{safe(q_ans)}", style_ans))
+        if mode == 1:
+            # 只有題目：底下留答題空間
+            story.append(Spacer(1, 8*mm))
+            story.append(HRFlowable(width="100%", thickness=0.3, color=colors.lightgrey))
+            story.append(Spacer(1, 3*mm))
+        elif mode >= 2:
+            # 答案
+            story.append(Spacer(1, 2*mm))
+            story.append(Paragraph(f"答案：{safe(q_ans)}", style_sub))
             if q_analysis:
-                story.append(Paragraph(f"解析：{safe(q_analysis)}", style_note))
-        if mode >= 3 and group_logs is not None and target_students:
-            recs = []
-            for stu in target_students:
-                rows = group_logs[
-                    (group_logs['姓名'] == stu) &
-                    (group_logs['題目ID'] == qid) &
-                    (~group_logs['結果'].str.contains('📖', na=False))
-                ] if not group_logs.empty else pd.DataFrame()
-                if rows.empty:
-                    recs.append(f"{stu}：未作答")
-                else:
-                    hist = "".join(rows.sort_values('時間')['結果'].tolist())
+                story.append(Paragraph(f"解析：{safe(q_analysis)}", style_sub))
+            if mode >= 3 and group_logs is not None and target_students:
+                recs = []
+                for stu in target_students:
+                    rows = group_logs[
+                        (group_logs["姓名"] == stu) &
+                        (group_logs["題目ID"] == qid) &
+                        (~group_logs["結果"].str.contains("📖", na=False))
+                    ] if not group_logs.empty else pd.DataFrame()
+                    hist = "".join(rows.sort_values("時間")["結果"].tolist()) if not rows.empty else "未作答"
                     recs.append(f"{stu}：{hist}")
-            story.append(Paragraph("　".join(recs), style_rec))
-        story.append(Spacer(1, 2*mm))
+                story.append(Paragraph("　".join(recs), style_sub))
+            story.append(Spacer(1, 4*mm))
+            story.append(HRFlowable(width="100%", thickness=0.3, color=colors.lightgrey))
+            story.append(Spacer(1, 3*mm))
 
     doc.build(story)
     buf.seek(0)
     return buf.read()
+
 
 # ── Google Drive 上傳功能 ──────────────────────────────────────────────────
 GDRIVE_FOLDER_ID = "1OrJ4sbSPywtErLGoOpRxijVyZyoIg3lm"
