@@ -1,16 +1,18 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.114 - 統計修復版)
+# 🧩 英文全能練習系統 (V2.9.113 - 動態資料即時版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.114
-# 📅 更新日期: 2026-03-21
+# 📌 版本編號 (VERSION): 2.9.113
+# 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
-#    1. [核心] Optimistic Update：寫入 log 後立即存入 session_state._pending_logs
-#              load_dynamic_data 每次 merge，確保當日練習馬上反映在所有統計
-#    2. [核心] append_to_sheet 支援多行寫入（講解時一次寫多學生）
-#    3. [復習] rv_my_logs 改為從最新 df_l 動態讀取，不再用 snapshot
-#    4. [復習] 複習次數每次 rerun 重新計算，不用舊 session_state
-#    5. [題目ID] vocab 題寫入 log 時統一去掉 V_ 前綴，比對邏輯一致
-#    6. [清理] _pending_logs 定期清除已被 Supabase 確認的暫存紀錄
+#    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
+#    2. [資料] conn.create() → append 邏輯，logs/assignments 不再被覆蓋。
+#    3. [功能] 單選題補上選項文字 (選項A/B/C/D 欄位)。
+#    4. [穩定] 句編號 int() 轉換改用 pd.to_numeric 加保護。
+#    5. [效能] load_dynamic_data 加上 @st.cache_data(ttl=10)。
+#    6. [穩定] 資料載入失敗時提早 st.stop()，避免後續 None 崩潰。
+# 🆕 新增功能：
+#    7. [Box B] 新增「📖 題目講解」tab：篩選學生與題目範圍、顯示各學生
+#              最近答案、老師可輸入講解備註、點選完成後寫入 logs (結果='📖 講解')。
 # ==============================================================================
 
 import streamlit as st
@@ -22,58 +24,50 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.114"
+VERSION = "2.9.113"
 
+# ==============================================================================
+# ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
+# ==============================================================================
 st.set_page_config(page_title=f"英文練習系統 V{VERSION}", layout="wide")
 
 # ------------------------------------------------------------------------------
 # 📦 【盒子 A：系統核心 (時區與基礎邏輯)】
 # ------------------------------------------------------------------------------
 def get_now():
+    """物理鎖定台灣時間 (GMT+8)"""
     return datetime.utcnow() + timedelta(hours=8)
 
 def standardize(v):
+    """ID 標準化"""
     val = str(v).split('.')[0].strip()
     return val.zfill(4) if val.isdigit() else val
 
 def clean_string_for_compare(s):
+    """標點忽略比對邏輯 (含括號相容)"""
     s = s.lower().replace(" ", "").replace("\u2018", "'").replace("\u2019", "'")
     s = re.sub(r'[.,?!:;()]', '', s)
     return s.strip()
 
 def show_version_caption():
+    """全域版號顯示組件"""
     st.caption(f"🚀 系統版本：Ver {VERSION} | 🌍 台灣時間鎖定 (GMT+8)")
 
 def is_admin(group_id):
+    """ADMIN 和 TEACHER 都有管理後台權限"""
     return group_id in ("ADMIN", "TEACHER")
 
-# ✅ 修復 5：統一 vocab 題目ID（去掉 V_ 前綴）
-def normalize_qid(qid: str) -> str:
-    """寫入 log 時統一使用無前綴格式，避免比對錯誤"""
-    if str(qid).startswith("V_"):
-        return qid[2:]
-    return qid
-
-# ✅ 雙向 ID 比對 helper
-def qid_variants(qid: str) -> set:
-    """回傳題目ID的所有可能格式（有V_前綴和無V_前綴）"""
-    qid = str(qid)
-    if qid.startswith("V_"):
-        return {qid, qid[2:]}
-    elif qid.startswith("R_"):
-        return {qid}
-    else:
-        return {qid, f"V_{qid}"}
-
+# 初始化 Session State
 st.session_state.setdefault('range_confirmed', False)
 st.session_state.setdefault('quiz_loaded', False)
 st.session_state.setdefault('ans', [])
 st.session_state.setdefault('used_history', [])
 st.session_state.setdefault('show_analysis', False)
 
+# 建立 GSheets 連線
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=600)  # 靜態資料快取 10 分鐘（題庫/學生帳號不常變動）
 def load_static_data():
     try:
         df_q  = conn.read(worksheet="questions", ttl=600).fillna("").astype(str).replace(r'\.0$', '', regex=True)
@@ -90,6 +84,9 @@ def load_static_data():
     except Exception as e:
         return None, None, pd.DataFrame(), pd.DataFrame()
 
+# ==============================================================================
+# Supabase 客戶端
+# ==============================================================================
 @st.cache_resource
 def get_supabase() -> Client:
     return create_client(
@@ -97,6 +94,7 @@ def get_supabase() -> Client:
         st.secrets["SUPABASE_KEY"]
     )
 
+# 欄位對應：Supabase英文 ↔ 程式中文
 LOGS_COLS = {
     "created_at": "時間", "name": "姓名", "group_id": "分組",
     "question_id": "題目ID", "result": "結果",
@@ -113,9 +111,11 @@ ASSIGN_COLS = {
 }
 
 def _to_cn(df: pd.DataFrame, col_map: dict) -> pd.DataFrame:
+    """把 Supabase 英文欄位名轉回程式用的中文欄位名"""
     return df.rename(columns=col_map)
 
 def _to_en_logs(row: dict) -> dict:
+    """把中文欄位的 log 資料轉成英文欄位"""
     return {
         "created_at":     str(row.get("時間", "")),
         "name":           str(row.get("姓名", "")),
@@ -127,6 +127,7 @@ def _to_en_logs(row: dict) -> dict:
     }
 
 def _to_en_assign(row: dict) -> dict:
+    """把中文欄位的 assignment 資料轉成英文欄位"""
     return {
         "created_at":        str(row.get("建立時間", "")),
         "task_name":         str(row.get("任務名稱", "")),
@@ -146,20 +147,22 @@ def _to_en_assign(row: dict) -> dict:
     }
 
 # ==============================================================================
-# ✅ 修復 1 + 6：動態資料讀取（Supabase）+ Optimistic merge + 清理過期暫存
+# 動態資料讀取（Supabase）- 移除快取，每次 rerun 直接讀最新
 # ==============================================================================
 def load_dynamic_data():
     try:
         sb = get_supabase()
-
+        # 讀取 assignments
         res_a = sb.table("assignments").select("*").execute()
         if res_a.data:
             df_a = pd.DataFrame(res_a.data)
             df_a = _to_cn(df_a, ASSIGN_COLS)
+            # 移除 id 欄
             df_a = df_a.drop(columns=['id'], errors='ignore')
         else:
             df_a = pd.DataFrame()
 
+        # 讀取 logs
         res_l = sb.table("logs").select("*").order("created_at", desc=False).execute()
         if res_l.data:
             df_l = pd.DataFrame(res_l.data)
@@ -168,64 +171,30 @@ def load_dynamic_data():
         else:
             df_l = pd.DataFrame()
 
-        # ✅ 修復 6：清除已被 Supabase 確認的暫存紀錄
-        if not df_l.empty and st.session_state.get('_pending_logs'):
-            confirmed_keys = set(
-                zip(
-                    df_l.get('時間', pd.Series(dtype=str)).tolist(),
-                    df_l.get('姓名', pd.Series(dtype=str)).tolist(),
-                    df_l.get('題目ID', pd.Series(dtype=str)).tolist()
-                )
-            )
-            st.session_state['_pending_logs'] = [
-                r for r in st.session_state['_pending_logs']
-                if (r.get('時間',''), r.get('姓名',''), r.get('題目ID','')) not in confirmed_keys
-            ]
-
-        # ✅ 修復 1：合併 optimistic 暫存（當日寫入但 Supabase 尚未回傳的紀錄）
-        local_rows = st.session_state.get('_pending_logs', [])
-        if local_rows:
-            df_pending = pd.DataFrame(local_rows)
-            df_l = pd.concat([df_l, df_pending], ignore_index=True).drop_duplicates(
-                subset=['時間', '姓名', '題目ID'], keep='last'
-            )
-
         return df_a, df_l
     except Exception as e:
         st.warning(f"⚠️ Supabase 讀取失敗：{e}")
         return pd.DataFrame(), pd.DataFrame()
 
 # ==============================================================================
-# ✅ 修復 1 + 2：動態資料寫入（Supabase）+ 支援多行 + Optimistic update
+# 動態資料寫入（Supabase）
 # ==============================================================================
 def append_to_sheet(worksheet_name: str, new_row: pd.DataFrame):
+    """寫入一筆資料到 Supabase"""
     try:
         sb = get_supabase()
+        row_dict = new_row.iloc[0].to_dict()
 
-        for i in range(len(new_row)):
-            row_dict = new_row.iloc[i].to_dict()
+        if worksheet_name == "logs":
+            en_row = _to_en_logs(row_dict)
+            result = sb.table("logs").insert(en_row).execute()
+        elif worksheet_name == "assignments":
+            en_row = _to_en_assign(row_dict)
+            result = sb.table("assignments").insert(en_row).execute()
+        else:
+            return False
 
-            if worksheet_name == "logs":
-                en_row = _to_en_logs(row_dict)
-                sb.table("logs").insert(en_row).execute()
-
-                # ✅ Optimistic update：立即存入 session_state
-                pending = st.session_state.setdefault('_pending_logs', [])
-                pending.append({
-                    "時間":    row_dict.get("時間", ""),
-                    "姓名":    row_dict.get("姓名", ""),
-                    "分組":    row_dict.get("分組", ""),
-                    "題目ID":  row_dict.get("題目ID", ""),
-                    "結果":    row_dict.get("結果", ""),
-                    "學生答案": str(row_dict.get("學生答案", "") or ""),
-                    "分數":    str(row_dict.get("分數", "") or ""),
-                })
-
-            elif worksheet_name == "assignments":
-                en_row = _to_en_assign(row_dict)
-                sb.table("assignments").insert(en_row).execute()
-
-        import time as _t; _t.sleep(0.3)
+        import time as _t; _t.sleep(0.5)
         return True
     except Exception as e:
         st.error(f"❌ Supabase 寫入失敗：{type(e).__name__}: {e}")
@@ -271,6 +240,9 @@ if not st.session_state.get('logged_in', False):
 df_q, df_s, df_r, df_v = load_static_data()
 df_a, df_l = load_dynamic_data()
 
+# ==============================================================================
+# ✅ 修復 6：資料載入失敗時提早停止，避免後續 None 錯誤
+# ==============================================================================
 if df_q is None or df_s is None:
     st.warning("⚠️ 伺服器忙碌中，60 秒後自動重試...")
     import time
@@ -292,8 +264,6 @@ with st.sidebar:
 
     st.divider()
     st.markdown("🏆 **成就排行**")
-
-    # ✅ 修復 1：df_l 已包含 _pending_logs，排行榜自動反映當日最新練習
     if not df_l.empty and '時間' in df_l.columns:
         now_sb   = get_now()
         period   = st.radio("統計區間", ["今日", "本週", "本月"], index=1, horizontal=True, key="sb_period", label_visibility="collapsed")
@@ -305,6 +275,7 @@ with st.sidebar:
         else:
             prefix = now_sb.strftime("%Y-%m")
 
+        # 判斷群組：ADMIN 看全部，學生看自己群組
         target_group = st.session_state.group_id if not is_admin(st.session_state.group_id) else None
         df_lb = df_l.copy()
         if target_group:
@@ -316,10 +287,12 @@ with st.sidebar:
             df_lb = df_lb[df_lb['時間'].str.startswith(prefix)]
 
         df_lb_correct = df_lb[df_lb['結果'] == '✅']
+        # 朗讀題：分數欄 >= 60 算達標（若無分數欄則只要有紀錄就算）
         df_lb_reading = df_lb[df_lb['結果'] == '🎤 朗讀'].copy()
         if '分數' in df_lb_reading.columns:
             df_lb_reading = df_lb_reading[pd.to_numeric(df_lb_reading['分數'], errors='coerce').fillna(0) >= 60]
 
+        # 取學生名單
         if target_group:
             members = sorted(df_s[df_s['分組'] == target_group]['姓名'].tolist())
         else:
@@ -343,8 +316,6 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
     if hc2.button("🔄 更新資料", use_container_width=True, key="admin_refresh"):
         load_static_data.clear()
         st.cache_data.clear()
-        # ✅ 清除 optimistic 暫存，強制從 Supabase 重新讀取
-        st.session_state.pop('_pending_logs', None)
         st.rerun()
     if hc3.button("🧪 測試寫入", use_container_width=True, key="test_write"):
         try:
@@ -366,6 +337,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
     t1, t2, t3, t4 = st.tabs(["📋 指派任務", "📈 數據監控", "📋 學生名單", "📖 題目講解"])
 
     with t1:
+        # 發布成功後清空表單（在 widget 渲染前執行）
         if st.session_state.pop('t1_clear_form', False):
             for k in ['t1_group', 't1_mode', 't1_stu',
                       't1_inc_q', 't1_inc_reading', 't1_inc_vocab',
@@ -376,11 +348,16 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                       'vt_mode', 'vt_timer', 'vt_extra']:
                 st.session_state.pop(k, None)
 
+        # ══════════════════════════════════════════════════════════════════
+        # 區塊一：發布新任務
+        # ══════════════════════════════════════════════════════════════════
         st.subheader("📢 發布新任務")
 
+        # ── 基本設定 ──────────────────────────────────────────────────────
         all_groups    = sorted(df_s[~df_s['分組'].isin(['ADMIN','TEACHER'])]['分組'].unique().tolist())
         target_groups = st.multiselect("目標班級/分組（可複選）", all_groups, default=[], key="t1_group")
 
+        # 指派對象：依選取班級合併學生名單
         if target_groups:
             group_members = sorted(df_s[df_s['分組'].isin(target_groups)]['姓名'].tolist())
         else:
@@ -392,13 +369,16 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
         else:
             target_students_t1 = group_members
 
+        # 寫入任務時記錄所有選取班級
         target_group = ",".join(target_groups) if target_groups else ""
 
+        # 開始／結束日期
         dc1, dc2 = st.columns(2)
         now_tw_t1  = get_now()
         date_start = dc1.date_input("📅 開始日期", value=now_tw_t1.date(), key="t1_start")
         date_end   = dc2.date_input("📅 結束日期", value=now_tw_t1.date() + timedelta(days=7), key="t1_end")
 
+        # ── 題目範圍篩選（選填） ──────────────────────────────────────────
         include_q = st.checkbox("📝 加入重組／單選題", value=True, key="t1_inc_q")
         df_t1_final = pd.DataFrame()
 
@@ -434,6 +414,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 df_t1_scope = df_t1_scope.head(int(t1_q_count)).copy()
             st.caption(f"篩選後：{len(df_t1_scope)} 題")
 
+            # 參考學生錯題篩選
             st.markdown("**👥 參考學生錯題（選填）**")
             ref_col1, ref_col2, ref_col3 = st.columns(3)
             all_students  = sorted(df_s[~df_s['分組'].isin(['ADMIN','TEACHER'])]['姓名'].tolist())
@@ -472,6 +453,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
 
         st.divider()
 
+        # ── 朗讀題目範圍（選填） ──────────────────────────────────────────
         include_reading = st.checkbox("🎤 加入朗讀題", key="t1_inc_reading")
         df_r_final = pd.DataFrame()
 
@@ -503,11 +485,13 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 r_total = len(df_r_final)
                 st.caption(f"此範圍共 {r_total} 題")
 
+                # 起始句編號 & 題目數量
                 rs1, rs2 = st.columns(2)
                 r_sent_opts = sorted(df_r_final['句編號'].unique(), key=lambda x: int(x) if str(x).isdigit() else 0) if '句編號' in df_r_final.columns else []
                 r_start_sent = rs1.selectbox("🔢 起始句編號", r_sent_opts, key="rt_start_sent") if r_sent_opts else None
                 r_q_count    = rs2.number_input("🔢 題目數量", min_value=0, max_value=max(r_total, 1), value=r_total, key="rt_q_count")
 
+                # 套用起始句與數量
                 if r_start_sent and '句編號' in df_r_final.columns:
                     df_r_final['_num'] = pd.to_numeric(df_r_final['句編號'], errors='coerce').fillna(0)
                     df_r_final = df_r_final[df_r_final['_num'] >= int(r_start_sent)].sort_values('_num').copy()
@@ -521,6 +505,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
 
         st.divider()
 
+        # ── 單字重組範圍（選填） ──────────────────────────────────────────
         include_vocab = st.checkbox("🔤 加入單字重組題", key="t1_inc_vocab")
         df_v_final = pd.DataFrame()
 
@@ -561,6 +546,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 if vt_count > 0:
                     df_v_scope_t1 = df_v_scope_t1.head(int(vt_count)).copy()
 
+                # 難度設定
                 vm1, vm2, vm3 = st.columns(3)
                 vt_mode  = vm1.selectbox("模式鎖定", ["學生自選", "拆字母", "鍵盤"], key="vt_mode")
                 vt_timer = vm2.number_input("限時（秒，0=不限）", 0, 300, 30, key="vt_timer")
@@ -575,6 +561,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
 
         st.divider()
 
+        # 合計
         total_q = len(df_t1_final) + len(df_r_final) + len(df_v_final)
         st.info(f"📊 本次任務合計：重組/單選 {len(df_t1_final)} 題 ＋ 朗讀 {len(df_r_final)} 題 ＋ 單字 {len(df_v_final)} 題 ＝ **{total_q} 題**")
 
@@ -607,6 +594,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 else:
                     task_type = "混合"
 
+                # vocab 難度設定存入任務
                 vocab_cfg = ""
                 if has_v:
                     vt_mode_val  = st.session_state.get('vt_mode', '學生自選')
@@ -614,6 +602,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     vt_extra_val = st.session_state.get('vt_extra', 3)
                     vocab_cfg = f"{vt_mode_val}|{vt_timer_val}|{vt_extra_val}"
 
+                # 自動產生任務說明摘要
                 desc_parts = []
                 if q_ids:
                     start_sent_label = f" 起始句{st.session_state.get('t1_start_sent', '')}" if st.session_state.get('t1_start_sent') else ""
@@ -621,6 +610,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 if r_ids:
                     r_start = st.session_state.get('rt_start_sent', '')
                     r_start_label = f" 起始句{r_start}" if r_start else ""
+                    # 取朗讀篩選範圍（若有選的話）
                     rv_ = st.session_state.get('rt_v', '')
                     ru_ = st.session_state.get('rt_u', '')
                     ry_ = st.session_state.get('rt_y', '')
@@ -665,6 +655,9 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     st.session_state['t1_clear_form'] = True
                     st.rerun()
 
+        # ══════════════════════════════════════════════════════════════════
+        # 區塊二：任務列表
+        # ══════════════════════════════════════════════════════════════════
         st.divider()
         st.subheader("📋 任務列表")
 
@@ -687,25 +680,12 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 task_q_count  = len(q_ids_set) if q_ids_set else max(int(float(str(row.get('題目數', 0)) or 0)), 0)
                 assign_count  = len(assigned_stus)
 
-                # ✅ 修復 1：df_l 已含 _pending_logs，任務完成統計即時反映
+                # 計算完成人數：每位指派學生都答過所有題目ID（有任一作答紀錄即算）
                 completed = 0
                 if assigned_stus and q_ids_set and not df_l.empty and '題目ID' in df_l.columns:
-                    # 建立雙向ID比對集合
-                    q_ids_all_variants = set()
-                    for qid in q_ids_set:
-                        q_ids_all_variants.update(qid_variants(qid))
-
                     for stu in assigned_stus:
-                        stu_done = set(df_l[
-                            (df_l['姓名'] == stu) &
-                            (~df_l['結果'].str.contains('📖', na=False))
-                        ]['題目ID'].tolist())
-                        # 把每個任務ID轉成所有變體，看是否有任一變體被完成
-                        all_done_for_stu = all(
-                            bool(qid_variants(qid) & stu_done)
-                            for qid in q_ids_set
-                        )
-                        if all_done_for_stu:
+                        stu_done = set(df_l[(df_l['姓名'] == stu) & (~df_l['結果'].str.contains('📖', na=False))]['題目ID'].tolist())
+                        if q_ids_set.issubset(stu_done):
                             completed += 1
 
                 all_done  = (completed == assign_count and assign_count > 0)
@@ -713,6 +693,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 date_info = f"{task_start} ～ {task_end}" if task_start else ""
 
                 with st.expander(f"{done_icon} {task_name}　{task_group}　{date_info}　✅{completed}/{assign_count}人"):
+                    # 任務說明
                     admin_desc = str(row.get('任務說明', '')).strip()
                     if admin_desc and admin_desc != 'nan':
                         st.info(f"📋 {admin_desc}")
@@ -723,29 +704,22 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     ic3.metric("題目數", task_q_count)
                     ic4.metric("狀態", "🟢 全部完成" if all_done else ("🔴 進行中" if task_status != '已結束' else "⚫ 已結束"))
 
+                    # 各學生完成狀況
                     if assigned_stus and q_ids_set and not df_l.empty and '題目ID' in df_l.columns:
                         st.markdown("**學生完成狀況：**")
                         sc = st.columns(min(len(assigned_stus), 5))
                         for i, stu in enumerate(assigned_stus):
-                            stu_done = set(df_l[
-                                (df_l['姓名'] == stu) &
-                                (~df_l['結果'].str.contains('📖', na=False))
-                            ]['題目ID'].tolist())
-                            done_q = sum(
-                                1 for qid in q_ids_set
-                                if qid_variants(qid) & stu_done
-                            )
-                            stu_all_done = all(
-                                bool(qid_variants(qid) & stu_done)
-                                for qid in q_ids_set
-                            )
-                            sc[i % 5].markdown(f"{'✅' if stu_all_done else '🔄'} **{stu}**  \n{done_q}/{task_q_count} 題")
+                            stu_done = set(df_l[(df_l['姓名'] == stu) & (~df_l['結果'].str.contains('📖', na=False))]['題目ID'].tolist())
+                            done_q   = len(q_ids_set & stu_done)
+                            sc[i % 5].markdown(f"{'✅' if q_ids_set.issubset(stu_done) else '🔄'} **{stu}**  \n{done_q}/{task_q_count} 題")
 
                     st.divider()
                     st.markdown("**✏️ 修改任務內容**")
 
+                    # 任務名稱
                     new_name = st.text_input("任務名稱", value=task_name, key=f"edit_name_{idx}")
 
+                    # 日期
                     ed1, ed2 = st.columns(2)
                     try:
                         cur_start = datetime.strptime(task_start, "%Y-%m-%d").date() if task_start else get_now().date()
@@ -756,6 +730,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     new_start = ed1.date_input("開始日期", value=cur_start, key=f"edit_start_{idx}")
                     new_end   = ed2.date_input("結束日期", value=cur_end,   key=f"edit_end_{idx}")
 
+                    # 學生（可刪除）
                     st.markdown("**👥 指派學生（取消勾選即移除）**")
                     all_stu_pool = sorted(df_s[~df_s['分組'].isin(['ADMIN','TEACHER'])]['姓名'].tolist())
                     new_stus = st.multiselect(
@@ -802,13 +777,13 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
     with t2:
         st.subheader("📊 數據監控")
 
-        # ✅ 修復 1：df_l 已含最新資料，直接用
         if df_l.empty:
             st.info("目前尚無作答紀錄。")
         else:
             df_l2 = df_l.copy()
             df_l2['時間'] = pd.to_datetime(df_l2['時間'], errors='coerce')
 
+            # ── 第一排：時間 / 群組 / 學生 / 結果 ────────────────────────
             fc1, fc2, fc3, fc4 = st.columns(4)
 
             now_tw   = get_now()
@@ -838,6 +813,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             sel_stu    = fc3.selectbox("👤 學生", ["不限"] + stu_pool, key="log_stu")
             sel_result = fc4.selectbox("📋 結果", ["全部", "✅ 正確", "❌ 錯誤", "📖 講解", "🎤 朗讀"], key="log_result")
 
+            # ── 第二排：題目範圍篩選 ──────────────────────────────────────
             qc1, qc2, qc3, qc4, qc5, qc6 = st.columns(6)
 
             fv_opts = ["全部"] + sorted(df_q['版本'].unique())
@@ -858,6 +834,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             fs_src = fl_src[fl_src['課編號'] == fl] if fl != "全部" else fl_src
             fs = qc6.selectbox("句編號", ["全部"] + sorted(fs_src['句編號'].unique(), key=lambda x: int(x) if str(x).isdigit() else 0), key="log_fs")
 
+            # ── 套用篩選 ──────────────────────────────────────────────────
             mask = pd.Series([True] * len(df_l2), index=df_l2.index)
             if date_from:
                 mask &= (df_l2['時間'].dt.date >= date_from) & (df_l2['時間'].dt.date <= date_to)
@@ -869,6 +846,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 result_map = {"✅ 正確": "✅", "❌ 錯誤": "❌", "📖 講解": "📖 講解", "🎤 朗讀": "🎤 朗讀"}
                 mask &= df_l2['結果'].str.startswith(result_map[sel_result])
 
+            # 題目ID 包含各層篩選條件
             if fv != "全部":
                 mask &= df_l2['題目ID'].str.startswith(fv, na=False)
             if fu != "全部":
@@ -891,6 +869,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
     with t3:
         st.subheader("👥 學生帳號清單")
 
+        # ── 篩選 ──────────────────────────────────────────────────────────
         sa1, sa2 = st.columns(2)
         s_group_filter = sa1.selectbox(
             "班級/分組",
@@ -899,13 +878,16 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
         )
         s_name_filter = sa2.text_input("🔍 姓名搜尋", placeholder="輸入姓名關鍵字", key="t3_sname")
 
+        # 套用篩選
         df_s_show = df_s[~df_s['分組'].isin(['ADMIN','TEACHER'])].copy()
         if s_group_filter != "全部":
             df_s_show = df_s_show[df_s_show['分組'] == s_group_filter]
         if s_name_filter.strip():
             df_s_show = df_s_show[df_s_show['姓名'].str.contains(s_name_filter.strip(), na=False)]
 
+        # 帳號、密碼補零至4位，並移除無名欄位
         df_s_display = df_s_show.copy()
+        # 移除 Unnamed 欄位
         df_s_display = df_s_display[[c for c in df_s_display.columns if not str(c).startswith('Unnamed')]]
         for col in ['帳號', '密碼']:
             if col in df_s_display.columns:
@@ -919,8 +901,10 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
         st.divider()
         st.subheader("🎤 朗讀紀錄明細")
 
+        # ── 篩選條件 ──────────────────────────────────────────────────────
         f1, f2, f3 = st.columns(3)
 
+        # 班級
         t3_group = f1.selectbox(
             "👥 班級",
             ["全部"] + sorted(df_s[~df_s['分組'].isin(['ADMIN','TEACHER'])]['分組'].unique().tolist()),
@@ -931,8 +915,10 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
         else:
             t3_pool = sorted(df_s[df_s['分組'] == t3_group]['姓名'].tolist())
 
+        # 姓名搜尋
         t3_name = f2.text_input("🔍 姓名搜尋", placeholder="輸入姓名關鍵字", key="t3_name")
 
+        # 時間
         now_t3   = get_now()
         t3_time  = f3.selectbox("🕐 時間範圍", ["全部", "今日", "本週", "本月", "自訂"], key="t3_time")
         if t3_time == "今日":
@@ -950,6 +936,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
         else:
             t3_from, t3_to = None, None
 
+        # 題目範圍
         st.markdown("**⚙️ 題目範圍（選填）**")
         qc = st.columns(5)
         t3_v_opts = ["全部"] + sorted(df_r['版本'].unique().tolist()) if not df_r.empty else ["全部"]
@@ -967,10 +954,11 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
         t3_l_opts = ["全部"] + sorted(t3_l_src['課編號'].unique().tolist()) if not df_r.empty else ["全部"]
         t3_l = qc[4].selectbox("課次", t3_l_opts, key="t3_l")
 
+        # ── 套用篩選 ──────────────────────────────────────────────────────
+        # 姓名過濾
         if t3_name.strip():
             t3_pool = [n for n in t3_pool if t3_name.strip() in n]
 
-        # ✅ 修復 1：df_l 已含最新紀錄
         if not df_l.empty and '題目ID' in df_l.columns:
             reading_logs = df_l[
                 (df_l['姓名'].isin(t3_pool)) &
@@ -982,6 +970,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 reading_logs = reading_logs[reading_logs['時間_dt'].dt.date >= t3_from]
                 reading_logs = reading_logs[reading_logs['時間_dt'].dt.date <= t3_to]
 
+            # 題目範圍：R_版本_年度_冊編號_單元_課編號_句編號
             if t3_v != "全部":
                 reading_logs = reading_logs[reading_logs['題目ID'].str.contains(f"_{t3_v}_", na=False) | reading_logs['題目ID'].str.startswith(f"R_{t3_v}_", na=False)]
             if t3_b != "全部":
@@ -1006,11 +995,15 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     display_cols = [c for c in ['時間', '題目ID', '學生答案', '分數'] if c in stu_logs.columns]
                     st.dataframe(stu_logs[display_cols].reset_index(drop=True), use_container_width=True)
 
+    # --------------------------------------------------------------------------
+    # 🆕 【Tab 4：題目講解】
+    # --------------------------------------------------------------------------
     with t4:
         st.subheader("📖 題目講解")
 
         rev4_tab1, rev4_tab2 = st.tabs(["📝 重組／單選", "🎤 朗讀"])
 
+        # ── 重組／單選講解 ────────────────────────────────────────────────
         with rev4_tab1:
             rev_group = st.selectbox(
                 "👥 班級/分組",
@@ -1019,6 +1012,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             )
             students_in_group = sorted(df_s[df_s['分組'] == rev_group]['姓名'].tolist())
 
+            # 任務篩選
             rev_task_ids     = None
             task_stu_default = students_in_group
             if not df_a.empty and '任務名稱' in df_a.columns:
@@ -1044,6 +1038,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                                 st.session_state['rev_y'] = parts[2]
                                 st.session_state['rev_b'] = parts[3]
                                 st.session_state['rev_l'] = parts[4]
+                            # 帶入指派學生
                             stu_str = str(row.get('指派學生', '') or '')
                             task_stus = [s.strip() for s in stu_str.split(',') if s.strip()]
                             valid = [s for s in task_stus if s in students_in_group]
@@ -1065,6 +1060,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 else:
                     task_stu_default = students_in_group
 
+            # 確保 session state 有預設值（避免 default 和 session state 衝突）
             if 'rev_students' not in st.session_state:
                 st.session_state['rev_students'] = [s for s in task_stu_default if s in students_in_group]
             rev_students = st.multiselect(
@@ -1079,7 +1075,9 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 try: return opts.index(val) if val in opts else 0
                 except: return 0
 
+            # 選了任務時隱藏題目範圍選單，直接用任務題目ID
             if rev_task_ids:
+                # 從 df_q 查（重組/單選）
                 df_rev_q = df_q.copy()
                 df_rev_q['題目ID']   = df_rev_q.apply(lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1)
                 df_rev_q['題目ID_v'] = df_rev_q.apply(lambda r: f"V_{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1)
@@ -1088,6 +1086,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     df_rev_q['題目ID'] = df_rev_q.apply(lambda r: r['題目ID_v'] if r['題目ID_v'] in rev_task_ids else r['題目ID'], axis=1)
                 df_rev_q = df_rev_q.drop(columns=['題目ID_v'], errors='ignore')
 
+                # 從 df_v 查（單字重組）
                 df_rev_v = pd.DataFrame()
                 if not df_v.empty:
                     df_rev_v2 = df_v.copy()
@@ -1125,122 +1124,130 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1
                 )
 
-            if df_rev_scope.empty:
-                st.info("此範圍尚無題目。")
+
+        if df_rev_scope.empty:
+            st.info("此範圍尚無題目。")
+        else:
+            st.markdown(f"**📋 共 {len(df_rev_scope)} 題，點選一題開始講解：**")
+
+            # 取得目標學生的所有答題紀錄（保留全部歷史）
+            if not df_l.empty and '題目ID' in df_l.columns:
+                df_group_logs = df_l[df_l['姓名'].isin(target_students)].copy()
+                df_group_logs = df_group_logs.sort_values('時間', ascending=False)
             else:
-                st.markdown(f"**📋 共 {len(df_rev_scope)} 題，點選一題開始講解：**")
+                df_group_logs = pd.DataFrame()
 
-                # ✅ 修復 1：df_l 已含最新紀錄
-                if not df_l.empty and '題目ID' in df_l.columns:
-                    df_group_logs = df_l[df_l['姓名'].isin(target_students)].copy()
-                    df_group_logs = df_group_logs.sort_values('時間', ascending=False)
+            is_mcq_scope = "單選" in str(st.session_state.get('rev_u', ''))
+
+            for _, qrow in df_rev_scope.iterrows():
+                qid       = qrow['題目ID']
+                q_unit    = str(qrow.get('單元', ''))
+                # 依單元判斷題型
+                if '單選' in q_unit:
+                    title_col = "單選題目"
+                    ans_col   = "單選答案"
+                elif '單字' in q_unit:
+                    title_col = "中文意思"
+                    ans_col   = "英文單字"
                 else:
-                    df_group_logs = pd.DataFrame()
+                    title_col = "重組中文題目"
+                    ans_col   = "重組英文答案"
+                q_title = str(qrow.get(title_col) or qrow.get('中文題目') or qrow.get('中文意思') or '【無資料】').strip()
+                q_ans   = str(qrow.get(ans_col) or qrow.get('英文答案') or qrow.get('英文單字') or '').strip()
 
-                for _, qrow in df_rev_scope.iterrows():
-                    qid       = qrow['題目ID']
-                    q_unit    = str(qrow.get('單元', ''))
-                    if '單選' in q_unit:
-                        title_col = "單選題目"
-                        ans_col   = "單選答案"
-                    elif '單字' in q_unit:
-                        title_col = "中文意思"
-                        ans_col   = "英文單字"
+                # 統計（排除講解紀錄，只算真實作答）
+                if not df_group_logs.empty:
+                    q_logs_all = df_group_logs[df_group_logs['題目ID'] == qid]
+                    q_logs_ans = q_logs_all[~q_logs_all['結果'].str.contains('📖', na=False)]
+                    attempted  = q_logs_ans['姓名'].nunique()
+                    correct    = len(q_logs_ans[q_logs_ans['結果'] == '✅'].drop_duplicates(subset=['姓名']))
+                    reviewed   = len(q_logs_all[q_logs_all['結果'] == '📖 講解'])
+                else:
+                    q_logs_all = pd.DataFrame()
+                    attempted, correct, reviewed = 0, 0, 0
+
+                # 每位學生完整作答歷史
+                stu_tags = []
+                for stu in target_students:
+                    if not q_logs_all.empty:
+                        stu_ans_rows = q_logs_all[
+                            (q_logs_all['姓名'] == stu) &
+                            (~q_logs_all['結果'].str.contains('📖', na=False))
+                        ].sort_values('時間', ascending=True)
+                        stu_rev_rows = q_logs_all[
+                            (q_logs_all['姓名'] == stu) &
+                            (q_logs_all['結果'] == '📖 講解')
+                        ]
                     else:
-                        title_col = "重組中文題目"
-                        ans_col   = "重組英文答案"
-                    q_title = str(qrow.get(title_col) or qrow.get('中文題目') or qrow.get('中文意思') or '【無資料】').strip()
-                    q_ans   = str(qrow.get(ans_col) or qrow.get('英文答案') or qrow.get('英文單字') or '').strip()
+                        stu_ans_rows = pd.DataFrame()
+                        stu_rev_rows = pd.DataFrame()
 
-                    # ✅ 修復 3：雙向 ID 比對（支援有無 V_ 前綴）
-                    qid_all = qid_variants(qid)
-                    if not df_group_logs.empty:
-                        q_logs_all = df_group_logs[df_group_logs['題目ID'].isin(qid_all)]
-                        q_logs_ans = q_logs_all[~q_logs_all['結果'].str.contains('📖', na=False)]
-                        attempted  = q_logs_ans['姓名'].nunique()
-                        correct    = len(q_logs_ans[q_logs_ans['結果'] == '✅'].drop_duplicates(subset=['姓名']))
-                        reviewed   = len(q_logs_all[q_logs_all['結果'] == '📖 講解'])
+                    if stu_ans_rows.empty:
+                        history = "未作答"
                     else:
-                        q_logs_all = pd.DataFrame()
-                        attempted, correct, reviewed = 0, 0, 0
+                        history = "".join(stu_ans_rows['結果'].tolist())
+                    rev = "📖" if not stu_rev_rows.empty else ""
+                    stu_tags.append(f"{stu}：{history}{rev}")
 
-                    stu_tags = []
+                stu_tag_str = "　|　".join(stu_tags)
+                label = (
+                    f"句 {qrow['句編號']}｜{q_title[:16]}{'…' if len(q_title)>16 else ''}"
+                    f"　　{stu_tag_str}"
+                )
+
+                with st.expander(label):
+
+                    # ── 題目放大顯示 ──────────────────────────────────────
+                    st.markdown(
+                        f"<div style='font-size:1.35rem; font-weight:600; padding:12px 0 4px; white-space:pre-wrap;'>"
+                        f"📝 {q_title}</div>",
+                        unsafe_allow_html=True
+                    )
+                    st.markdown(
+                        f"<div style='font-size:1.2rem; color:green; padding-bottom:12px; white-space:pre-wrap;'>"
+                        f"✅ 正確答案：{q_ans}</div>",
+                        unsafe_allow_html=True
+                    )
+                    st.divider()
+
+                    # ── 講解完成按鈕 ──────────────────────────────────────
+                    btn_key = f"rev_done_{qid}"
+                    if st.button("📖 講解完成，寫入紀錄", key=btn_key, type="primary", use_container_width=True):
+                        now_str = get_now().strftime("%Y-%m-%d %H:%M:%S")
+                        rows = [
+                            {"時間": now_str, "姓名": stu, "分組": rev_group,
+                             "題目ID": qid, "結果": "📖 講解", "學生答案": ""}
+                            for stu in target_students
+                        ]
+                        if append_to_sheet("logs", pd.DataFrame(rows)):
+                            st.success(f"✅ 已為 {len(target_students)} 位學生寫入講解紀錄！")
+                            st.rerun()
+
+                    # ── 學生作答歷史（放在按鈕下方） ──────────────────────
+                    st.markdown("---")
+                    st.markdown("**👥 學生作答歷史**")
                     for stu in target_students:
                         if not q_logs_all.empty:
-                            stu_ans_rows = q_logs_all[
+                            stu_rows = q_logs_all[
                                 (q_logs_all['姓名'] == stu) &
                                 (~q_logs_all['結果'].str.contains('📖', na=False))
-                            ].sort_values('時間', ascending=True)
-                            stu_rev_rows = q_logs_all[
-                                (q_logs_all['姓名'] == stu) &
-                                (q_logs_all['結果'] == '📖 講解')
                             ]
                         else:
-                            stu_ans_rows = pd.DataFrame()
-                            stu_rev_rows = pd.DataFrame()
+                            stu_rows = pd.DataFrame()
 
-                        if stu_ans_rows.empty:
-                            history = "未作答"
+                        if stu_rows.empty:
+                            st.markdown(f"　👤 **{stu}**：尚未作答")
                         else:
-                            history = "".join(stu_ans_rows['結果'].tolist())
-                        rev = "📖" if not stu_rev_rows.empty else ""
-                        stu_tags.append(f"{stu}：{history}{rev}")
+                            lines = []
+                            for _, r in stu_rows.iterrows():
+                                icon    = r.get('結果', '—')
+                                ans_val = r.get('學生答案', '')
+                                t_str   = str(r.get('時間', ''))[:16]
+                                ans_disp = f" `{ans_val}`" if ans_val and ans_val not in ('—', '') else ''
+                                lines.append(f"{icon}{ans_disp} _{t_str}_")
+                            st.markdown(f"　👤 **{stu}**：" + "　／　".join(lines))
 
-                    stu_tag_str = "　|　".join(stu_tags)
-                    label = (
-                        f"句 {qrow['句編號']}｜{q_title[:16]}{'…' if len(q_title)>16 else ''}"
-                        f"　　{stu_tag_str}"
-                    )
-
-                    with st.expander(label):
-                        st.markdown(
-                            f"<div style='font-size:1.35rem; font-weight:600; padding:12px 0 4px; white-space:pre-wrap;'>"
-                            f"📝 {q_title}</div>",
-                            unsafe_allow_html=True
-                        )
-                        st.markdown(
-                            f"<div style='font-size:1.2rem; color:green; padding-bottom:12px; white-space:pre-wrap;'>"
-                            f"✅ 正確答案：{q_ans}</div>",
-                            unsafe_allow_html=True
-                        )
-                        st.divider()
-
-                        btn_key = f"rev_done_{qid}"
-                        if st.button("📖 講解完成，寫入紀錄", key=btn_key, type="primary", use_container_width=True):
-                            now_str = get_now().strftime("%Y-%m-%d %H:%M:%S")
-                            rows = [
-                                {"時間": now_str, "姓名": stu, "分組": rev_group,
-                                 "題目ID": qid, "結果": "📖 講解", "學生答案": ""}
-                                for stu in target_students
-                            ]
-                            # ✅ 修復 2：append_to_sheet 現在支援多行，一次全部寫入
-                            if append_to_sheet("logs", pd.DataFrame(rows)):
-                                st.success(f"✅ 已為 {len(target_students)} 位學生寫入講解紀錄！")
-                                st.rerun()
-
-                        st.markdown("---")
-                        st.markdown("**👥 學生作答歷史**")
-                        for stu in target_students:
-                            if not q_logs_all.empty:
-                                stu_rows = q_logs_all[
-                                    (q_logs_all['姓名'] == stu) &
-                                    (~q_logs_all['結果'].str.contains('📖', na=False))
-                                ]
-                            else:
-                                stu_rows = pd.DataFrame()
-
-                            if stu_rows.empty:
-                                st.markdown(f"　👤 **{stu}**：尚未作答")
-                            else:
-                                lines = []
-                                for _, r in stu_rows.iterrows():
-                                    icon    = r.get('結果', '—')
-                                    ans_val = r.get('學生答案', '')
-                                    t_str   = str(r.get('時間', ''))[:16]
-                                    ans_disp = f" `{ans_val}`" if ans_val and ans_val not in ('—', '') else ''
-                                    lines.append(f"{icon}{ans_disp} _{t_str}_")
-                                st.markdown(f"　👤 **{stu}**：" + "　／　".join(lines))
-
+        # ── 朗讀講解 ──────────────────────────────────────────────────────
         with rev4_tab2:
             rrev_group = st.selectbox(
                 "👥 班級/分組",
@@ -1249,12 +1256,14 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             )
             rrev_stus_pool = sorted(df_s[df_s['分組'] == rrev_group]['姓名'].tolist())
 
+            # 任務篩選
             rrev_task_ids    = None
             rrev_stu_default = rrev_stus_pool
             if not df_a.empty and '任務名稱' in df_a.columns:
                 df_a_rrev = df_a[
                     df_a.get('狀態', pd.Series(dtype=str)).fillna('') != '已刪除'
                 ].copy()
+                # 依班級精確過濾
                 if not df_a_rrev.empty and '對象班級' in df_a_rrev.columns:
                     df_a_rrev = df_a_rrev[df_a_rrev['對象班級'].apply(
                         lambda v: rrev_group in [g.strip() for g in str(v).split(',')]
@@ -1303,12 +1312,13 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 if rrev_task_ids:
                     df_rrev_scope = df_rrev_scope[df_rrev_scope['題目ID'].isin(rrev_task_ids)].copy()
 
+
                 if df_rrev_scope.empty:
                     st.info("此範圍尚無朗讀題目。")
                 else:
                     st.markdown(f"**📋 共 {len(df_rrev_scope)} 題**")
 
-                    # ✅ 修復 1：df_l 已含最新紀錄
+                    # 取得目標學生朗讀 log
                     if not df_l.empty and '題目ID' in df_l.columns:
                         rrev_logs = df_l[
                             (df_l['姓名'].isin(rrev_targets)) &
@@ -1321,6 +1331,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                         qid       = qrow['題目ID']
                         read_text = str(qrow.get('朗讀句子') or qrow.get('英文句子') or '').strip()
 
+                        # 各學生最近一次分數
                         stu_tags = []
                         for stu in rrev_targets:
                             stu_rows_r = rrev_logs[rrev_logs['姓名'] == stu] if not rrev_logs.empty else pd.DataFrame()
@@ -1340,12 +1351,12 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                             )
                             st.divider()
 
+                            # 講解完成按鈕
                             rrev_btn = f"rrev_done_{qid}"
                             if st.button("📖 講解完成，寫入紀錄", key=rrev_btn, type="primary", use_container_width=True):
                                 now_str = get_now().strftime("%Y-%m-%d %H:%M:%S")
                                 rows_r  = [{"時間": now_str, "姓名": stu, "分組": rrev_group,
                                             "題目ID": qid, "結果": "📖 講解", "學生答案": ""} for stu in rrev_targets]
-                                # ✅ 修復 2：支援多行寫入
                                 if append_to_sheet("logs", pd.DataFrame(rows_r)):
                                     st.success(f"✅ 已為 {len(rrev_targets)} 位學生寫入講解紀錄！")
                                     st.rerun()
@@ -1373,18 +1384,24 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
 # ------------------------------------------------------------------------------
 if not st.session_state.quiz_loaded:
 
+    # ══════════════════════════════════════════════════════════════════════
+    # 🆕 學生任務列表（登入後優先顯示）
+    # ══════════════════════════════════════════════════════════════════════
     user_name = st.session_state.user_name
     today_dt  = get_now().date()
 
+    # 找出指派給這位學生、未刪除、日期有效的任務
     my_tasks = []
-    debug_info = []
+    debug_info = []  # 除錯用
     if not df_a.empty:
         for _, arow in df_a.iterrows():
             task_n = str(arow.get('任務名稱', ''))
+            # 過濾已刪除
             if str(arow.get('狀態', '')).strip() == '已刪除':
                 debug_info.append(f"❌ {task_n}：已刪除")
                 continue
 
+            # 確認學生在指派名單中（ADMIN/TEACHER 跳過此檢查）
             if not is_admin(st.session_state.group_id):
                 stu_str  = str(arow.get('指派學生', '') or arow.get('對象', '') or '')
                 assigned = [s.strip() for s in stu_str.split(',') if s.strip()]
@@ -1392,6 +1409,7 @@ if not st.session_state.quiz_loaded:
                     debug_info.append(f"❌ {task_n}：學生不在名單（名單：{stu_str[:50]}）")
                     continue
 
+            # 日期範圍檢查
             try:
                 end_str = str(arow.get('結束日期', '')).strip()
                 if not end_str or end_str == 'nan':
@@ -1406,6 +1424,7 @@ if not st.session_state.quiz_loaded:
                 continue
 
             debug_info.append(f"✅ {task_n}：符合條件")
+            # 題目ID清單必須有資料才顯示
             task_ids_str = str(arow.get('題目ID清單', '') or '')
             valid_ids = [q.strip() for q in task_ids_str.split(',') if q.strip() and q.strip() != 'nan']
             if not valid_ids:
@@ -1420,40 +1439,40 @@ if not st.session_state.quiz_loaded:
             task_start   = arow.get('開始日期', '')
             task_end     = arow.get('結束日期', '')
             task_q_ids   = str(arow.get('題目ID清單', '') or '')
+            # 過濾掉 nan 和空白
             raw_ids   = set([q.strip() for q in task_q_ids.split(',') if q.strip() and q.strip() != 'nan'])
-
-            # ✅ 修復 5：統一 ID 格式（去掉 V_ 前綴，保留 R_ 前綴）
+            # 同時產生有V_和無V_的版本，統一成無前綴格式（新格式）
             q_ids_set = set()
             for qid in raw_ids:
-                q_ids_set.add(normalize_qid(qid))
-
-            # 雙向比對集合
-            q_ids_all = set()
-            for qid in q_ids_set:
-                q_ids_all.update(qid_variants(qid))
-
+                if qid.startswith('V_'):
+                    q_ids_set.add(qid[2:])   # 去掉 V_ 前綴
+                elif qid.startswith('R_'):
+                    q_ids_set.add(qid)        # 朗讀題保留 R_ 前綴
+                else:
+                    q_ids_set.add(qid)
+            # 同時保留原始格式供比對
+            q_ids_all = raw_ids | q_ids_set
             task_q_count = len(q_ids_set) if q_ids_set else max(int(float(str(arow.get('題目數', 0) or 0))), 0)
 
+            # 計算個人完成進度（混合任務：一般題答對 + 朗讀題有紀錄）
             task_type       = str(arow.get('類型', '一般'))
             is_reading_task = task_type == '朗讀'
             is_vocab_task   = task_type == '單字'
             is_mixed_task   = task_type == '混合'
 
             if q_ids_set:
-                # ✅ 修復 1：優先用 df_l（已含 _pending_logs）來計算進度，避免 Supabase 延遲
-                if not df_l.empty and '題目ID' in df_l.columns:
-                    my_correct = set(df_l[
-                        (df_l['姓名'] == user_name) & (df_l['結果'] == '✅')
-                    ]['題目ID'].tolist())
-                    my_reading = set(df_l[
-                        (df_l['姓名'] == user_name) & (df_l['結果'] == '🎤 朗讀')
-                    ]['題目ID'].tolist())
-                    my_done = my_correct | my_reading
-                else:
+                try:
+                    sb_check = get_supabase()
+                    res = sb_check.table("logs").select("question_id").eq("name", user_name).eq("result", "✅").execute()
+                    my_correct = set([r["question_id"] for r in res.data]) if res.data else set()
+                    res_r = sb_check.table("logs").select("question_id").eq("name", user_name).eq("result", "🎤 朗讀").execute()
+                    my_reading = set([r["question_id"] for r in res_r.data]) if res_r.data else set()
+                    my_done    = my_correct | my_reading
+                    done_cnt   = len(q_ids_all & my_done)
+                    all_done   = done_cnt >= len(q_ids_set)
+                except:
                     my_done = set()
-
-                done_cnt   = sum(1 for qid in q_ids_set if qid_variants(qid) & my_done)
-                all_done   = done_cnt >= len(q_ids_set)
+                    done_cnt, all_done = 0, False
             else:
                 my_done = set()
                 done_cnt, all_done = 0, False
@@ -1462,6 +1481,7 @@ if not st.session_state.quiz_loaded:
             date_info   = f"{task_start} ～ {task_end}" if task_start else ""
 
             with st.expander(f"{status_icon} {task_name}　{date_info}　{done_cnt}/{task_q_count} 題完成", expanded=not all_done):
+                # 任務說明
                 task_desc_text = str(arow.get('任務說明') or '').strip()
                 if task_desc_text and task_desc_text not in ('nan', 'None', ''):
                     st.info(f"📋 {task_desc_text}")
@@ -1472,6 +1492,7 @@ if not st.session_state.quiz_loaded:
 
                 if all_done:
                     st.success("🎉 此任務已全部完成！")
+                    # 再次練習按鈕（載入全部任務題目）
                     retry_key = f"retry_task_{task_name}"
                     if st.button("🔁 再次練習（全部題目）", key=retry_key, use_container_width=True):
                         if is_reading_task:
@@ -1513,18 +1534,10 @@ if not st.session_state.quiz_loaded:
                     label   = f"🚀 進入練習（剩餘 {task_q_count - done_cnt} 題）"
 
                     if st.button(label, key=btn_key, type="primary", use_container_width=True):
-                        # ✅ 修復 5：pending_ids 用統一格式（無 V_ 前綴）計算，再雙向展開
-                        pending_ids_normalized = set(
-                            qid for qid in q_ids_set
-                            if not (qid_variants(qid) & my_done)
-                        )
-                        if not pending_ids_normalized:
-                            pending_ids_normalized = q_ids_set
-
-                        # 展開成雙向格式供 df 過濾
-                        pending_ids_all = set()
-                        for qid in pending_ids_normalized:
-                            pending_ids_all.update(qid_variants(qid))
+                        pending_ids = q_ids_all - my_done
+                        if not pending_ids:
+                            pending_ids = q_ids_all  # 全部重做
+                        st.write(f"🔍 task_type={task_type} | pending={len(pending_ids)} | sample={list(pending_ids)[:2]}")
 
                         if is_reading_task:
                             df_r2 = df_r.copy()
@@ -1532,7 +1545,7 @@ if not st.session_state.quiz_loaded:
                                 df_r2['題目ID'] = df_r2.apply(
                                     lambda r: f"R_{r.get('版本','')}_{r.get('年度','')}_{r.get('冊編號','')}_{r.get('單元','')}_{r.get('課編號','')}_{r.get('句編號','')}", axis=1
                                 )
-                            pending = df_r2[df_r2['題目ID'].isin(pending_ids_all)].copy()
+                            pending = df_r2[df_r2['題目ID'].isin(pending_ids)].copy()
                             if not pending.empty:
                                 records = pending.to_dict('records')
                                 for r in records:
@@ -1545,12 +1558,13 @@ if not st.session_state.quiz_loaded:
                                 st.rerun()
 
                         elif is_vocab_task:
+                            # 純單字任務
                             df_v2 = df_v.copy() if not df_v.empty else pd.DataFrame()
                             if not df_v2.empty and '題目ID' not in df_v2.columns:
                                 df_v2['題目ID'] = df_v2.apply(
                                     lambda r: f"V_{r.get('版本','')}_{r.get('年度','')}_{r.get('冊編號','')}_{r.get('單元','')}_{r.get('課編號','')}_{r.get('句編號','')}", axis=1
                                 )
-                            pending = df_v2[df_v2['題目ID'].isin(pending_ids_all)].copy() if not df_v2.empty else pd.DataFrame()
+                            pending = df_v2[df_v2['題目ID'].isin(pending_ids)].copy() if not df_v2.empty else pd.DataFrame()
                             if not pending.empty:
                                 vocab_cfg_str = str(arow.get('單字設定', '') or '')
                                 vcfg = vocab_cfg_str.split('|') if vocab_cfg_str else []
@@ -1587,9 +1601,9 @@ if not st.session_state.quiz_loaded:
                                 df_v2['題目ID'] = df_v2.apply(
                                     lambda r: f"V_{r.get('版本','')}_{r.get('年度','')}_{r.get('冊編號','')}_{r.get('單元','')}_{r.get('課編號','')}_{r.get('句編號','')}", axis=1
                                 )
-                            pending_q = df_q2[df_q2['題目ID'].isin(pending_ids_all)].copy()
-                            pending_r = df_r2[df_r2['題目ID'].isin(pending_ids_all)].copy() if not df_r2.empty else pd.DataFrame()
-                            pending_v = df_v2[df_v2['題目ID'].isin(pending_ids_all)].copy() if not df_v2.empty else pd.DataFrame()
+                            pending_q = df_q2[df_q2['題目ID'].isin(pending_ids)].copy()
+                            pending_r = df_r2[df_r2['題目ID'].isin(pending_ids)].copy() if not df_r2.empty else pd.DataFrame()
+                            pending_v = df_v2[df_v2['題目ID'].isin(pending_ids)].copy() if not df_v2.empty else pd.DataFrame()
                             if not pending_r.empty:
                                 pending_r['_type'] = 'reading'
                             if not pending_v.empty:
@@ -1612,11 +1626,12 @@ if not st.session_state.quiz_loaded:
                                 st.rerun()
 
                         elif can_preload or q_ids_all:
+                            # 直接從 df_q 取出未完成題目載入（優先用題目ID清單）
                             df_q2 = df_q.copy()
                             df_q2['題目ID'] = df_q2.apply(
                                 lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1
                             )
-                            pending_q = df_q2[df_q2['題目ID'].isin(pending_ids_all)].copy()
+                            pending_q = df_q2[df_q2['題目ID'].isin(pending_ids)].copy()
                             if not pending_q.empty:
                                 st.session_state.update({
                                     "quiz_list": pending_q.to_dict('records'),
@@ -1627,13 +1642,20 @@ if not st.session_state.quiz_loaded:
                             else:
                                 st.error(f"❌ 找不到任務題目（已全部完成或題目不存在）")
 
+
         st.divider()
 
+    # 除錯：讓管理員看到原始 assignments 資料
     if not df_a.empty and is_admin(st.session_state.group_id):
         with st.expander("🔍 除錯：assignments 原始資料（僅管理員可見）", expanded=False):
             st.dataframe(df_a, use_container_width=True)
             st.write(f"今日：{today_dt} | 學生：{user_name} | 共 {len(my_tasks)} 個有效任務")
 
+    # ══════════════════════════════════════════════════════════════════════
+    # 原本的自由練習區（盒子 C）- 前三個 tab 暫時隱藏
+    # ══════════════════════════════════════════════════════════════════════
+
+    # 從任務帶入的預設值
     def _idx(options, key, fallback=0):
         val = st.session_state.get(key, None)
         try:
@@ -1673,6 +1695,7 @@ if not st.session_state.quiz_loaded:
                     st.info(f"📋 {sel_rv_task}　共 {len(rv_q_ids)} 題")
             else:
                 st.info("目前沒有指派任務。")
+
         else:
             rc1 = st.columns(5)
             rv_v_opts = sorted(df_q['版本'].unique()) if not df_q.empty else []
@@ -1689,13 +1712,13 @@ if not st.session_state.quiz_loaded:
         rv_scope = st.radio("顯示範圍", ["📚 全部題目", "✏️ 已經答題", "❌ 只看錯題", "❓ 只看未作答", "🔄 複習次數少的優先"], horizontal=True, key="rv_scope")
 
         if st.button("📖 開始復習", type="primary", use_container_width=True, key="rv_start"):
-            # ✅ 修復 3：直接用 df_l（含 _pending_logs），不需要另存 snapshot
             my_logs = df_l[df_l['姓名'] == user_name].copy() if not df_l.empty and '姓名' in df_l.columns else pd.DataFrame()
 
             def _get_qid(r, prefix=""):
                 return f"{prefix}{r.get('版本','')}_{r.get('年度','')}_{r.get('冊編號','')}_{r.get('單元','')}_{r.get('課編號','')}_{r.get('句編號','')}"
 
             def _match_ids(df_src, id_set, prefix="", extra_prefix="V_"):
+                """同時比對有無前綴的題目ID"""
                 d = df_src.copy()
                 d['_qid']  = d.apply(lambda r: _get_qid(r, prefix), axis=1)
                 d['_qidv'] = d.apply(lambda r: _get_qid(r, extra_prefix), axis=1)
@@ -1706,6 +1729,13 @@ if not st.session_state.quiz_loaded:
                     )
                 matched = matched.drop(columns=['_qid','_qidv'], errors='ignore')
                 return matched
+
+            # 除錯：顯示ID樣本
+            if rv_filter == "📋 依任務" and rv_q_ids:
+                sample_task = list(rv_q_ids)[:2]
+                sample_q = [] if df_q.empty else [_get_qid(r) for _, r in df_q.head(2).iterrows()]
+                sample_qv = [] if df_q.empty else [_get_qid(r, "V_") for _, r in df_q.head(2).iterrows()]
+                st.info(f"任務ID樣本：{sample_task}\n\n題目ID樣本：{sample_q}\n\n題目ID(V_)樣本：{sample_qv}")
 
             all_items = []
 
@@ -1744,12 +1774,18 @@ if not st.session_state.quiz_loaded:
             else:
                 df_rv = pd.concat(all_items, ignore_index=True)
 
+                # 計算統計（在篩選前，用雙向ID比對）
                 total_count = len(df_rv)
                 if not my_logs.empty and '題目ID' in my_logs.columns:
                     all_qids = set(df_rv['題目ID'].tolist())
-                    all_match = set()
+                    # 同時產生有V_和無V_的版本來比對logs
+                    all_qids_alt = set()
                     for qid in all_qids:
-                        all_match.update(qid_variants(qid))
+                        if qid.startswith('V_'):
+                            all_qids_alt.add(qid[2:])
+                        else:
+                            all_qids_alt.add(f"V_{qid}")
+                    all_match = all_qids | all_qids_alt
 
                     logs_in_scope = my_logs[
                         my_logs['題目ID'].isin(all_match) &
@@ -1767,28 +1803,33 @@ if not st.session_state.quiz_loaded:
                     wrong_ever   = set()
                     last_correct = set()
 
-                # ✅ 修復 4：複習次數從最新 df_l 計算
-                review_counts = {}
+                # 計算每題複習次數
+                review_counts = {}  # qid -> 複習次數
                 if not my_logs.empty and '題目ID' in my_logs.columns:
-                    rv_logs_cnt = my_logs[my_logs['結果'] == '📖 複習'].copy()
+                    rv_logs = my_logs[my_logs['結果'] == '📖 複習'].copy()
                     for qid_r in df_rv['題目ID'].tolist():
-                        cnt = len(rv_logs_cnt[rv_logs_cnt['題目ID'].isin(qid_variants(qid_r))])
+                        qid_r_alt = qid_r[2:] if qid_r.startswith('V_') else f"V_{qid_r}"
+                        cnt = len(rv_logs[rv_logs['題目ID'].isin([qid_r, qid_r_alt])])
                         review_counts[qid_r] = cnt
 
+                # 依顯示範圍篩選
                 if rv_scope == "✏️ 已經答題":
-                    df_rv = df_rv[df_rv['題目ID'].apply(lambda x: bool(qid_variants(x) & answered_ids))]
+                    df_rv = df_rv[df_rv['題目ID'].isin(answered_ids) |
+                                  df_rv['題目ID'].apply(lambda x: x[2:] if x.startswith('V_') else f"V_{x}").isin(answered_ids)]
                 elif rv_scope == "❌ 只看錯題":
-                    df_rv = df_rv[df_rv['題目ID'].apply(lambda x: bool(qid_variants(x) & wrong_ever))]
+                    df_rv = df_rv[df_rv['題目ID'].isin(wrong_ever) |
+                                  df_rv['題目ID'].apply(lambda x: x[2:] if x.startswith('V_') else f"V_{x}").isin(wrong_ever)]
                 elif rv_scope == "❓ 只看未作答":
-                    df_rv = df_rv[df_rv['題目ID'].apply(lambda x: not bool(qid_variants(x) & answered_ids))]
+                    df_rv = df_rv[~(df_rv['題目ID'].isin(answered_ids) |
+                                    df_rv['題目ID'].apply(lambda x: x[2:] if x.startswith('V_') else f"V_{x}").isin(answered_ids))]
                 elif rv_scope == "🔄 複習次數少的優先":
                     df_rv['_rv_cnt'] = df_rv['題目ID'].apply(lambda x: review_counts.get(x, 0))
                     df_rv = df_rv.sort_values('_rv_cnt', ascending=True).drop(columns=['_rv_cnt'])
 
-                st.session_state['rv_items']         = df_rv.to_dict('records')
-                # ✅ 修復 3：不再存 rv_my_logs snapshot，改用 df_l 動態讀
+                st.session_state['rv_items']        = df_rv.to_dict('records')
+                st.session_state['rv_my_logs']      = my_logs.to_dict('records') if not my_logs.empty else []
                 st.session_state['rv_review_counts'] = review_counts
-                st.session_state['rv_stats']         = {
+                st.session_state['rv_stats']        = {
                     'total':        total_count,
                     'answered':     len(answered_ids),
                     'wrong_ever':   len(wrong_ever),
@@ -1796,22 +1837,14 @@ if not st.session_state.quiz_loaded:
                 }
                 st.rerun()
 
+        # ── 復習列表顯示 ──────────────────────────────────────────────────
         if st.session_state.get('rv_items') is not None:
-            rv_items         = st.session_state['rv_items']
-            # ✅ 修復 3：每次 rerun 從最新 df_l 動態讀，不用舊 snapshot
-            rv_my_logs       = df_l[df_l['姓名'] == user_name].copy() if not df_l.empty and '姓名' in df_l.columns else pd.DataFrame()
-            rv_stats         = st.session_state.get('rv_stats', {})
+            rv_items        = st.session_state['rv_items']
+            rv_my_logs      = pd.DataFrame(st.session_state.get('rv_my_logs', []))
+            rv_stats        = st.session_state.get('rv_stats', {})
+            rv_review_counts = st.session_state.get('rv_review_counts', {})
 
-            # ✅ 修復 4：複習次數每次 rerun 重新計算
-            rv_review_counts = {}
-            if not rv_my_logs.empty and '題目ID' in rv_my_logs.columns and '結果' in rv_my_logs.columns:
-                rv_logs_fresh = rv_my_logs[rv_my_logs['結果'] == '📖 複習'].copy()
-                for item in rv_items:
-                    qid = item.get('題目ID', '')
-                    cnt = len(rv_logs_fresh[rv_logs_fresh['題目ID'].isin(qid_variants(qid))])
-                    rv_review_counts[qid] = cnt
-            st.session_state['rv_review_counts'] = rv_review_counts
-
+            # 統計卡片
             if rv_stats:
                 s1, s2, s3, s4 = st.columns(4)
                 s1.metric("📚 總題數",    rv_stats.get('total', 0))
@@ -1849,11 +1882,11 @@ if not st.session_state.quiz_loaded:
 
                     q_analysis = str(item.get('解析') or '').strip()
 
-                    # ✅ 修復 3：用最新 rv_my_logs 比對，雙向 ID 支援
-                    qid_all = qid_variants(qid)
+                    # 判斷是否已作答（支援新舊ID格式）
+                    qid_alt = qid[2:] if qid.startswith('V_') else f"V_{qid}"
                     if not rv_my_logs.empty and '題目ID' in rv_my_logs.columns:
                         mql = rv_my_logs[
-                            (rv_my_logs['題目ID'].isin(qid_all)) &
+                            (rv_my_logs['題目ID'].isin([qid, qid_alt])) &
                             (~rv_my_logs['結果'].str.contains('📖', na=False))
                         ]
                         if '時間' in mql.columns:
@@ -1864,10 +1897,12 @@ if not st.session_state.quiz_loaded:
                         history    = "未作答"
                         has_answer = False
 
+                    # 已作答才顯示答案和解析
                     ans_html      = f"<div style='color:#2e7d32; font-size:1rem; margin-top:6px;'>✅ 答案：{q_ans}</div>" if has_answer else "<div style='color:#999; font-size:0.9rem; margin-top:6px;'>🔒 作答後才顯示答案</div>"
                     analysis_html = f"<div style='color:#555; font-size:0.9rem; margin-top:4px;'>📝 {q_analysis}</div>" if (q_analysis and has_answer) else ""
                     history_html  = f"<div style='font-size:0.9rem; margin-top:6px;'>📊 我的記錄：{history}</div>"
 
+                    # 複習次數（只有已作答才顯示）
                     rv_cnt      = rv_review_counts.get(qid, 0)
                     rv_cnt_html = f"<div style='font-size:0.85rem; color:#888; margin-top:4px;'>🔄 已複習：{rv_cnt} 次</div>" if has_answer else ""
 
@@ -1883,6 +1918,7 @@ if not st.session_state.quiz_loaded:
                         unsafe_allow_html=True
                     )
 
+                    # 複習按鈕（只有已作答才顯示）
                     if has_answer:
                         if st.button("🔄 我已複習這題", key=f"rv_done_{i}_{qid}", use_container_width=True):
                             log_data = pd.DataFrame([{
@@ -1895,8 +1931,9 @@ if not st.session_state.quiz_loaded:
                                 "分數":    ""
                             }])
                             if append_to_sheet("logs", log_data):
-                                st.success(f"✅ 已記錄複習！這題已複習 {rv_review_counts.get(qid, 0) + 1} 次")
-                                st.rerun()
+                                rv_review_counts[qid] = rv_review_counts.get(qid, 0) + 1
+                                st.session_state['rv_review_counts'] = rv_review_counts
+                                st.success(f"✅ 已記錄複習！這題已複習 {rv_review_counts[qid]} 次")
                     st.markdown("<div style='margin-bottom:10px;'></div>", unsafe_allow_html=True)
 
     show_version_caption()
@@ -1911,6 +1948,7 @@ if st.session_state.quiz_loaded:
     is_reading = q.get("_type") == "reading" or "朗讀" in q.get("單元", "")
     is_vocab   = q.get("_type") == "vocab"
 
+    # 題目標題
     if is_reading:
         st.markdown("#### 🎤 請朗讀以下英文句子：")
         read_text = str(q.get("朗讀句子") or q.get("英文句子") or q.get("英文答案") or "").strip()
@@ -1922,9 +1960,11 @@ if st.session_state.quiz_loaded:
         )
         st.write("")
 
+        # 若已有評分，先顯示分數、TTS 和重錄提示
         if st.session_state.get('show_analysis') and is_reading:
             st.warning(st.session_state.current_res)
 
+            # 播放學生版和標準版
             tts_stu = st.session_state.get('tts_student')
             tts_std = st.session_state.get('tts_standard')
             stt_shown = st.session_state.get('stt_text_shown', '')
@@ -1943,6 +1983,7 @@ if st.session_state.quiz_loaded:
             else:
                 st.caption("👇 點擊下方按鈕開始錄音")
 
+        # 放大錄音按鈕的 CSS
         st.markdown("""
             <style>
             [data-testid="stAudioInput"] {
@@ -1951,6 +1992,7 @@ if st.session_state.quiz_loaded:
             </style>
         """, unsafe_allow_html=True)
 
+        # 麥克風一直顯示（不管有沒有評分過）
         audio_data = st.audio_input("🎙️ 錄音", key=f"audio_{st.session_state.q_idx}")
 
         if audio_data:
@@ -1960,6 +2002,7 @@ if st.session_state.quiz_loaded:
                         import openai
                         openai.api_key = st.secrets["OPENAI_API_KEY"]
 
+                        # Step 1：Whisper STT
                         audio_data.seek(0)
                         transcript = openai.audio.transcriptions.create(
                             model="whisper-1",
@@ -1968,6 +2011,7 @@ if st.session_state.quiz_loaded:
                         )
                         stt_text = transcript.text.strip()
 
+                        # Step 2：GPT-4o-mini 評分
                         client = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
                         score_resp = client.chat.completions.create(
                             model="gpt-4o-mini",
@@ -1995,6 +2039,7 @@ if st.session_state.quiz_loaded:
                         else:
                             result_display = f"❌ 請再試試 {score} 分"
 
+                        # TTS：產生學生版和標準版音檔，存為 base64 避免 rerun 後 bytes 失效
                         import base64
                         tts_stu_raw = client.audio.speech.create(
                             model="tts-1", voice="alloy", input=stt_text
@@ -2012,7 +2057,7 @@ if st.session_state.quiz_loaded:
                             "stt_text_shown": stt_text
                         })
 
-                        # ✅ 修復 5：朗讀題 ID 以 R_ 開頭，不需 normalize，直接用原始 ID
+                        # 寫入 Log（每次送出都記一筆）
                         log_data = pd.DataFrame([{
                             "時間":    get_now().strftime("%Y-%m-%d %H:%M:%S"),
                             "姓名":    st.session_state.user_name,
@@ -2029,6 +2074,7 @@ if st.session_state.quiz_loaded:
                         st.error(f"❌ 評分失敗：{e}")
 
     elif is_vocab:
+        # ── 單字重組題型 ──────────────────────────────────────────────────
         import random as _random, string as _string
 
         word     = str(q.get("英文單字") or "").strip()
@@ -2040,6 +2086,7 @@ if st.session_state.quiz_loaded:
         st.markdown(f"<div style=\'font-size:1.3rem;font-weight:600;padding:12px;background:var(--color-background-secondary);border-radius:8px;\'>📖 {meaning}</div>", unsafe_allow_html=True)
         st.write("")
 
+        # 限時倒數
         if use_timer > 0:
             if st.session_state.get("vocab_q_idx") != st.session_state.q_idx:
                 st.session_state["vocab_start_time"] = get_now().timestamp()
@@ -2049,17 +2096,12 @@ if st.session_state.quiz_loaded:
             st.markdown(f"⏱️ 剩餘時間：**{remain} 秒**")
             if remain == 0 and not st.session_state.get("show_analysis"):
                 st.session_state.update({"current_res": f"⏰ 時間到！答案是：{word}", "show_analysis": True})
-                # ✅ 修復 5：vocab 題 ID 去掉 V_ 前綴再寫入
-                append_to_sheet("logs", pd.DataFrame([{
-                    "時間": get_now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "姓名": st.session_state.user_name,
-                    "分組": st.session_state.group_id,
-                    "題目ID": normalize_qid(q.get("題目ID","N/A")),
-                    "結果": "❌"
-                }]))
+                append_to_sheet("logs", pd.DataFrame([{"時間": get_now().strftime("%Y-%m-%d %H:%M:%S"), "姓名": st.session_state.user_name, "分組": st.session_state.group_id, "題目ID": q.get("題目ID","N/A"), "結果": "❌"}]))
                 st.rerun()
 
+        # 模式切換
         if task_mode in ("自選", "學生自選"):
+            # 學生可隨時切換，用全域 key 保持狀態（不綁定題目 index）
             vocab_mode = st.radio(
                 "輸入模式",
                 ["🔤 拆字母", "⌨️ 鍵盤"],
@@ -2069,7 +2111,9 @@ if st.session_state.quiz_loaded:
             )
         else:
             vocab_mode = "🔤 拆字母" if task_mode == "拆字母" else "⌨️ 鍵盤"
+            # 老師鎖定模式，不顯示切換
 
+        # 初始化字母池
         pool_key = f"vocab_pool_{st.session_state.q_idx}"
         if pool_key not in st.session_state:
             letters = list(word.upper())
@@ -2085,6 +2129,7 @@ if st.session_state.quiz_loaded:
         if ans_key_v not in st.session_state:
             st.session_state[ans_key_v] = []
 
+        # ── 拆字母模式 ────────────────────────────────────────────────────
         if "拆字母" in vocab_mode:
             current_ans = st.session_state[ans_key_v]
             if current_ans:
@@ -2110,7 +2155,7 @@ if st.session_state.quiz_loaded:
                 cols_v = st.columns(min(len(avail), 8))
                 for ci, (i, ltr) in enumerate(avail):
                     if cols_v[ci % 8].button(ltr.lower(), key=f"vl_{st.session_state.q_idx}_{i}", use_container_width=True):
-                        st.session_state[ans_key_v].append(ltr)
+                        st.session_state[ans_key_v].append(ltr)  # 仍存大寫供比對
                         used_st = st.session_state.get(f"vocab_used_{st.session_state.q_idx}", [])
                         used_st.append(i)
                         st.session_state[f"vocab_used_{st.session_state.q_idx}"] = used_st
@@ -2119,17 +2164,10 @@ if st.session_state.quiz_loaded:
                 if st.button("✅ 檢查答案", type="primary", use_container_width=True, key=f"vb_check_{st.session_state.q_idx}"):
                     is_ok = "".join(current_ans).upper() == word.upper()
                     st.session_state.update({"current_res": "✅ 正確！" if is_ok else f"❌ 錯誤！正確答案：{word}", "show_analysis": True})
-                    # ✅ 修復 5：vocab 題 ID 去掉 V_ 前綴
-                    append_to_sheet("logs", pd.DataFrame([{
-                        "時間": get_now().strftime("%Y-%m-%d %H:%M:%S"),
-                        "姓名": st.session_state.user_name,
-                        "分組": st.session_state.group_id,
-                        "題目ID": normalize_qid(q.get("題目ID","N/A")),
-                        "結果": "✅" if is_ok else "❌",
-                        "學生答案": "".join(current_ans)
-                    }]))
+                    append_to_sheet("logs", pd.DataFrame([{"時間": get_now().strftime("%Y-%m-%d %H:%M:%S"), "姓名": st.session_state.user_name, "分組": st.session_state.group_id, "題目ID": q.get("題目ID","N/A"), "結果": "✅" if is_ok else "❌", "學生答案": "".join(current_ans)}]))
                     st.rerun()
 
+        # ── 鍵盤模式 ──────────────────────────────────────────────────────
         else:
             if not st.session_state.get("show_analysis"):
                 kb_ans = st.session_state.get(f"vocab_kb_{st.session_state.q_idx}", "")
@@ -2149,17 +2187,10 @@ if st.session_state.quiz_loaded:
                     if st.button("✅ 檢查答案", type="primary", use_container_width=True, key=f"kb_check_{st.session_state.q_idx}"):
                         is_ok = kb_current.upper() == word.upper()
                         st.session_state.update({"current_res": "✅ 正確！" if is_ok else f"❌ 錯誤！正確答案：{word}", "show_analysis": True})
-                        # ✅ 修復 5：vocab 題 ID 去掉 V_ 前綴
-                        append_to_sheet("logs", pd.DataFrame([{
-                            "時間": get_now().strftime("%Y-%m-%d %H:%M:%S"),
-                            "姓名": st.session_state.user_name,
-                            "分組": st.session_state.group_id,
-                            "題目ID": normalize_qid(q.get("題目ID","N/A")),
-                            "結果": "✅" if is_ok else "❌",
-                            "學生答案": kb_current
-                        }]))
+                        append_to_sheet("logs", pd.DataFrame([{"時間": get_now().strftime("%Y-%m-%d %H:%M:%S"), "姓名": st.session_state.user_name, "分組": st.session_state.group_id, "題目ID": q.get("題目ID","N/A"), "結果": "✅" if is_ok else "❌", "學生答案": kb_current}]))
                         st.rerun()
 
+        # 答對後播放 TTS
         if st.session_state.get("show_analysis") and is_vocab:
             res = st.session_state.get("current_res", "")
             tts_key = f"vocab_tts_{st.session_state.q_idx}"
@@ -2181,7 +2212,9 @@ if st.session_state.quiz_loaded:
             else:
                 st.warning(res)
 
+
     elif is_mcq:
+        # 題目標題（用 HTML 保留原始空格）
         mcq_q = str(q.get('單選題目') or q.get('中文題目') or '【無資料】')
         st.markdown(
             f"<div style='font-size:1.1rem; font-weight:600; padding:8px 0; white-space:pre-wrap;'>"
@@ -2190,18 +2223,22 @@ if st.session_state.quiz_loaded:
         )
         ans_key = str(q.get("單選答案") or "").strip()
 
+        # 答對後鎖定按鈕，只顯示下一題
         already_correct = (
             st.session_state.get('show_analysis') and
             st.session_state.get('current_res', '').startswith('✅')
         )
 
+        # 從題目文字自動解析選項（格式：...  (A) xxx  (B) xxx  (C) xxx  (D) xxx）
         mcq_full = str(q.get('單選題目') or q.get('中文題目') or '')
         parsed_opts = {}
         for opt in ["A", "B", "C", "D"]:
+            # 先嘗試獨立欄位
             col_val = str(q.get(f"選項{opt}") or "").strip()
             if col_val and col_val not in ('nan', ''):
                 parsed_opts[opt] = col_val
             else:
+                # 從題目文字解析，找 (A)...(B) 之間的內容
                 next_opts = [o for o in ["A","B","C","D"] if o > opt]
                 if next_opts:
                     pattern = rf'\({opt}\)\s*(.*?)\s*\({next_opts[0]}\)'
@@ -2222,6 +2259,7 @@ if st.session_state.quiz_loaded:
                     "current_res": "✅ 正確！" if is_ok else f"❌ 錯誤！正確答案：{ans_key}",
                     "show_analysis": True
                 })
+                # 先寫入再 rerun，確保寫入完成
                 write_ok = False
                 write_err = ""
                 try:
@@ -2237,18 +2275,7 @@ if st.session_state.quiz_loaded:
                         "分數":    ""
                     })
                     sb_w.table("logs").insert(en_row).execute()
-                    # ✅ 修復 1：單選題也加入 optimistic update
-                    pending = st.session_state.setdefault('_pending_logs', [])
-                    pending.append({
-                        "時間":    get_now().strftime("%Y-%m-%d %H:%M:%S"),
-                        "姓名":    st.session_state.user_name,
-                        "分組":    st.session_state.group_id,
-                        "題目ID":  q.get('題目ID', 'N/A'),
-                        "結果":    "✅" if is_ok else "❌",
-                        "學生答案": "",
-                        "分數":    "",
-                    })
-                    _time.sleep(0.3)
+                    _time.sleep(0.5)  # 等 Supabase 確認寫入
                     write_ok = True
                 except Exception as e:
                     write_err = str(e)
@@ -2257,6 +2284,7 @@ if st.session_state.quiz_loaded:
                 else:
                     st.rerun()
     else:
+        # 題目標題（重組題，用 HTML 保留原始空格）
         reorg_q = str(q.get('重組中文題目') or q.get('中文題目') or '【無資料】')
         st.markdown(
             f"<div style='font-size:1.1rem; font-weight:600; padding:8px 0; white-space:pre-wrap;'>"
@@ -2265,6 +2293,7 @@ if st.session_state.quiz_loaded:
         )
         ans_key = str(q.get("重組英文答案") or q.get("英文答案") or "").strip()
 
+        # 重組題介面
         st.info(" ".join(st.session_state.ans) if st.session_state.ans else "請依序點選單字按鈕...")
 
         c_ctrl = st.columns(2)
@@ -2277,6 +2306,7 @@ if st.session_state.quiz_loaded:
             st.session_state.update({"ans": [], "used_history": []})
             st.rerun()
 
+        # 單字切分與打亂
         tk = re.findall(r"[\w']+|[.,?!:;()]", ans_key)
         if not st.session_state.get('shuf'):
             st.session_state.shuf = tk.copy()
@@ -2297,6 +2327,7 @@ if st.session_state.quiz_loaded:
                     "current_res": "✅ 正確！" if is_ok else f"❌ 錯誤！正確答案：{ans_key}",
                     "show_analysis": True
                 })
+                # ✅ 修復 2：改用 append 寫入 Log
                 log_data = pd.DataFrame([{
                     "時間": get_now().strftime("%Y-%m-%d %H:%M:%S"),
                     "姓名": st.session_state.user_name,
@@ -2309,6 +2340,7 @@ if st.session_state.quiz_loaded:
 
     if st.session_state.get('show_analysis') and not is_reading:
         st.warning(st.session_state.current_res)
+        # 朗讀題的分數已在麥克風上方顯示，不在此重複
     st.divider()
     c_nav = st.columns(2)
 
