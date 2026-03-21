@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.141 - PDF繁中加粗版)
+# 🧩 英文全能練習系統 (V2.9.142 - PDF明體14號版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.141
+# 📌 版本編號 (VERSION): 2.9.142
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.141"
+VERSION = "2.9.142"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -406,15 +406,15 @@ def _gen_print_pdf(questions, mode, title="題目列表", group_logs=None, targe
     import io
 
     # 內建 CJK 字體
+    # 鎖定使用 HeiseiMin-W3（明體，支援繁體中文）
     fn = 'Helvetica'
-    for cjk in ['HeiseiKakuGo-W5', 'STSong-Light', 'HeiseiMin-W3']:
+    for cjk in ['HeiseiMin-W3', 'HeiseiKakuGo-W5', 'STSong-Light']:
         try:
             pdfmetrics.registerFont(UnicodeCIDFont(cjk))
             fn = cjk
             break
         except:
             continue
-    # 用 strokeWidth 加粗（提升列印清晰度）
 
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4,
