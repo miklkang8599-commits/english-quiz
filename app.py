@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.127 - Google Sheets匯出版)
+# 🧩 英文全能練習系統 (V2.9.128 - 頁面列印版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.127
+# 📌 版本編號 (VERSION): 2.9.128
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.127"
+VERSION = "2.9.128"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1261,10 +1261,9 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                         except Exception as e:
                             st.error(f"刪除失敗：{e}")
 
-                    # ── 匯出到 Google Sheets（功能5）────────────────
+                    # ── 列印版顯示（功能5）───────────────────────────
                     if q_ids_set:
                         st.divider()
-                        st.markdown("**📊 匯出任務題目到 Google Sheets**")
 
                         def _get_task_questions(qids):
                             df_q2 = df_q.copy()
@@ -1277,28 +1276,44 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                         task_q_list = _get_task_questions(q_ids_set)
                         if task_q_list:
                             export_mode_t1 = st.radio(
-                                "內容模式",
+                                "📋 列印內容",
                                 ["① 只有題目", "② 題目＋答案＋解析"],
                                 horizontal=True, key=f"export_mode_task_{idx}"
                             )
                             t1_mode_num = 1 if "①" in export_mode_t1 else 2
-                            title_tsk   = f"{task_name}-共{len(task_q_list)}題"
 
-                            if st.button("📊 建立 Google Sheets", type="primary",
-                                        use_container_width=True, key=f"export_sheets_task_{idx}"):
-                                with st.spinner("建立試算表中..."):
-                                    try:
-                                        link = _create_question_sheet(
-                                            task_q_list, t1_mode_num, title=title_tsk
-                                        )
-                                        st.success("✅ 建立成功！")
-                                        st.markdown(f"[🔗 開啟 Google Sheets]({link})")
-                                        st.session_state[f'task_sheet_link_{idx}'] = link
-                                    except Exception as e:
-                                        st.error(f"❌ 失敗：{e}")
+                            if st.button("📋 顯示列印版（再按 Ctrl+P 列印）",
+                                        type="primary", use_container_width=True,
+                                        key=f"show_print_task_{idx}"):
+                                st.session_state[f'show_print_task_{idx}'] = True
+                                st.session_state[f'print_mode_task_{idx}'] = t1_mode_num
 
-                            if st.session_state.get(f'task_sheet_link_{idx}'):
-                                st.caption(f"上次建立：{st.session_state[f'task_sheet_link_{idx}']}")
+                            if st.session_state.get(f'show_print_task_{idx}'):
+                                m  = st.session_state.get(f'print_mode_task_{idx}', 1)
+                                ts = get_now().strftime('%Y-%m-%d %H:%M')
+                                st.markdown(f"**{task_name}　{ts}　共 {len(task_q_list)} 題**")
+                                st.markdown("---")
+                                for i2, q in enumerate(task_q_list, 1):
+                                    q_unit = str(q.get('單元', ''))
+                                    if '單選' in q_unit:
+                                        q_text = str(q.get('單選題目') or q.get('中文題目') or '').strip()
+                                        q_ans  = str(q.get('單選答案') or '').strip()
+                                    elif '單字' in q_unit:
+                                        q_text = str(q.get('中文意思') or '').strip()
+                                        q_ans  = str(q.get('英文單字') or '').strip()
+                                    else:
+                                        q_text = str(q.get('重組中文題目') or q.get('中文題目') or '').strip()
+                                        q_ans  = str(q.get('重組英文答案') or q.get('英文答案') or '').strip()
+                                    q_analysis = str(q.get('解析') or q.get('單選解析') or '').strip()
+                                    st.markdown(f"**{i2}.** {q_text}")
+                                    if m >= 2:
+                                        st.markdown(f"&nbsp;&nbsp;&nbsp;✅ **答案：** {q_ans}")
+                                        if q_analysis:
+                                            st.markdown(f"&nbsp;&nbsp;&nbsp;📝 **解析：** {q_analysis}")
+                                    st.markdown("---")
+                                if st.button("✖ 關閉列印版", key=f"close_print_task_{idx}"):
+                                    st.session_state[f'show_print_task_{idx}'] = False
+                                    st.rerun()
     with t2:
         st.subheader("📊 數據監控")
 
@@ -1814,37 +1829,64 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                                 lines.append(f"{icon}{ans_disp} _{t_str}_")
                             st.markdown(f"　👤 **{stu}**：" + "　／　".join(lines))
 
-        # ── 匯出到 Google Sheets（功能4）─────────────────────────────────
+        # ── 列印版顯示（功能4）───────────────────────────────────────────
         if not df_rev_scope.empty:
             st.divider()
-            st.markdown("**📊 匯出題目到 Google Sheets**")
-            q_list     = df_rev_scope.to_dict('records')
-            ts         = get_now().strftime('%m%d_%H%M')
-            title_base = f"{rev_group}-題目講解-{ts}-共{len(q_list)}題"
-
             export_mode = st.radio(
-                "內容模式",
+                "📋 列印內容",
                 ["① 只有題目", "② 題目＋答案＋解析", "③ 題目＋答案＋解析＋作答記錄"],
                 horizontal=True, key="export_mode_t4"
             )
             mode_num = 1 if "①" in export_mode else (2 if "②" in export_mode else 3)
 
-            if st.button("📊 建立 Google Sheets", type="primary", use_container_width=True, key="export_sheets_t4"):
-                with st.spinner("建立試算表中..."):
-                    try:
-                        link = _create_question_sheet(
-                            q_list, mode_num, title=title_base,
-                            group_logs=df_group_logs if mode_num == 3 else None,
-                            target_students=target_students if mode_num == 3 else None
-                        )
-                        st.success("✅ 建立成功！")
-                        st.markdown(f"[🔗 開啟 Google Sheets]({link})")
-                        st.session_state['last_sheet_link_t4'] = link
-                    except Exception as e:
-                        st.error(f"❌ 失敗：{e}")
+            if st.button("📋 顯示列印版（再按 Ctrl+P 列印）", type="primary",
+                         use_container_width=True, key="show_print_t4"):
+                st.session_state['show_print_t4'] = True
+                st.session_state['print_mode_t4'] = mode_num
 
-            if st.session_state.get('last_sheet_link_t4'):
-                st.caption(f"上次建立：{st.session_state['last_sheet_link_t4']}")
+            if st.session_state.get('show_print_t4'):
+                m    = st.session_state.get('print_mode_t4', 1)
+                ql   = df_rev_scope.to_dict('records')
+                ts   = get_now().strftime('%Y-%m-%d %H:%M')
+                hdr  = f"**{rev_group} 題目講解　{ts}　共 {len(ql)} 題**"
+                st.markdown(hdr)
+                st.markdown("---")
+                for i, q in enumerate(ql, 1):
+                    q_unit = str(q.get('單元', ''))
+                    if '單選' in q_unit:
+                        q_text = str(q.get('單選題目') or q.get('中文題目') or '').strip()
+                        q_ans  = str(q.get('單選答案') or '').strip()
+                    elif '單字' in q_unit or q.get('_type') == 'vocab':
+                        q_text = str(q.get('中文意思') or '').strip()
+                        q_ans  = str(q.get('英文單字') or '').strip()
+                    elif q.get('_type') == 'reading' or '朗讀' in q_unit:
+                        q_text = str(q.get('朗讀句子') or '').strip()
+                        q_ans  = q_text
+                    else:
+                        q_text = str(q.get('重組中文題目') or q.get('中文題目') or '').strip()
+                        q_ans  = str(q.get('重組英文答案') or q.get('英文答案') or '').strip()
+                    q_analysis = str(q.get('解析') or q.get('單選解析') or '').strip()
+                    qid = str(q.get('題目ID', ''))
+
+                    st.markdown(f"**{i}.** {q_text}")
+                    if m >= 2:
+                        st.markdown(f"&nbsp;&nbsp;&nbsp;✅ **答案：** {q_ans}")
+                        if q_analysis:
+                            st.markdown(f"&nbsp;&nbsp;&nbsp;📝 **解析：** {q_analysis}")
+                    if m >= 3 and not df_group_logs.empty:
+                        for stu in target_students:
+                            rows = df_group_logs[
+                                (df_group_logs['姓名'] == stu) &
+                                (df_group_logs['題目ID'] == qid) &
+                                (~df_group_logs['結果'].str.contains('📖', na=False))
+                            ]
+                            hist = "".join(rows.sort_values('時間')['結果'].tolist()) if not rows.empty else "未作答"
+                            st.markdown(f"&nbsp;&nbsp;&nbsp;👤 **{stu}：** {hist}")
+                    st.markdown("---")
+
+                if st.button("✖ 關閉列印版", key="close_print_t4"):
+                    st.session_state['show_print_t4'] = False
+                    st.rerun()
 
         # ── 朗讀講解 ──────────────────────────────────────────────────────
         with rev4_tab2:
