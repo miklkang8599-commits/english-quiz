@@ -4,3 +4,4 @@ openai
 supabase
 reportlab
 google-api-python-client
+gspread
