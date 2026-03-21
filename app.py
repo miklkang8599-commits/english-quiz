@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.140 - PDF字體14版)
+# 🧩 英文全能練習系統 (V2.9.141 - PDF繁中加粗版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.140
+# 📌 版本編號 (VERSION): 2.9.141
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.140"
+VERSION = "2.9.141"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -414,6 +414,7 @@ def _gen_print_pdf(questions, mode, title="題目列表", group_logs=None, targe
             break
         except:
             continue
+    # 用 strokeWidth 加粗（提升列印清晰度）
 
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4,
@@ -456,7 +457,7 @@ def _gen_print_pdf(questions, mode, title="題目列表", group_logs=None, targe
         qid = str(q.get("題目ID", ""))
 
         # 題目
-        story.append(Paragraph(f"{i}.  {safe(q_text)}", style_q))
+        story.append(Paragraph(f"<b>{i}.</b>  {safe(q_text)}", style_q))
 
         if mode == 1:
             # 只有題目：底下留 2mm 空白
@@ -464,9 +465,9 @@ def _gen_print_pdf(questions, mode, title="題目列表", group_logs=None, targe
         elif mode >= 2:
             # 答案
             story.append(Spacer(1, 2*mm))
-            story.append(Paragraph(f"答案：{safe(q_ans)}", style_sub))
+            story.append(Paragraph(f"<b>答案：</b>{safe(q_ans)}", style_sub))
             if q_analysis:
-                story.append(Paragraph(f"解析：{safe(q_analysis)}", style_sub))
+                story.append(Paragraph(f"<b>解析：</b>{safe(q_analysis)}", style_sub))
             if mode >= 3 and group_logs is not None and target_students:
                 recs = []
                 for stu in target_students:
