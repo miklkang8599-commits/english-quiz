@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.120 - 列印功能版)
+# 🧩 英文全能練習系統 (V2.9.121 - 下載列印修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.120
+# 📌 版本編號 (VERSION): 2.9.121
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.120"
+VERSION = "2.9.121"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1027,16 +1027,17 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                             print_task_mode = 2
 
                         if print_task_mode and task_q_list:
-                            import base64
                             title_pt = f"{task_name}　共{len(task_q_list)}題"
                             html_pt  = _gen_print_html(task_q_list, print_task_mode, title=title_pt)
-                            b64_pt   = base64.b64encode(html_pt.encode('utf-8')).decode()
-                            st.markdown(
-                                f'<a href="data:text/html;base64,{b64_pt}" target="_blank" download="task_print.html">'
-                                f'<button style="background:#e05;color:white;border:none;padding:8px 20px;border-radius:6px;cursor:pointer;font-size:14px;">'
-                                f'🖨️ 點此開啟列印預覽</button></a>',
-                                unsafe_allow_html=True
+                            st.download_button(
+                                label="🖨️ 下載列印檔案（HTML）",
+                                data=html_pt.encode('utf-8'),
+                                file_name=f"task_print_{get_now().strftime('%m%d_%H%M')}.html",
+                                mime="text/html",
+                                use_container_width=True,
+                                key=f"dl_task_{idx}_{print_task_mode}"
                             )
+                            st.caption("下載後用瀏覽器開啟，按 Ctrl+P 列印")
     with t2:
         st.subheader("📊 數據監控")
 
@@ -1571,14 +1572,15 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     group_logs=df_group_logs if print_mode == 3 else None,
                     target_students=target_students if print_mode == 3 else None
                 )
-                import base64
-                b64 = base64.b64encode(html.encode('utf-8')).decode()
-                st.markdown(
-                    f'<a href="data:text/html;base64,{b64}" target="_blank" download="print.html">'
-                    f'<button style="background:#e05;color:white;border:none;padding:8px 20px;border-radius:6px;cursor:pointer;font-size:14px;">'
-                    f'🖨️ 點此開啟列印預覽</button></a>',
-                    unsafe_allow_html=True
+                st.download_button(
+                    label="🖨️ 下載列印檔案（HTML）",
+                    data=html.encode('utf-8'),
+                    file_name=f"review_print_{rev_group}_{get_now().strftime('%m%d_%H%M')}.html",
+                    mime="text/html",
+                    use_container_width=True,
+                    key=f"dl_rev_{print_mode}"
                 )
+                st.caption("下載後用瀏覽器開啟，按 Ctrl+P 列印")
 
         # ── 朗讀講解 ──────────────────────────────────────────────────────
         with rev4_tab2:
