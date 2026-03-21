@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.129 - 列印key衝突修復版)
+# 🧩 英文全能練習系統 (V2.9.130 - PDF下載版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.129
+# 📌 版本編號 (VERSION): 2.9.130
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.129"
+VERSION = "2.9.130"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1261,9 +1261,10 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                         except Exception as e:
                             st.error(f"刪除失敗：{e}")
 
-                    # ── 列印版顯示（功能5）───────────────────────────
+                    # ── 下載 PDF（功能5）─────────────────────────────
                     if q_ids_set:
                         st.divider()
+                        st.markdown("**🖨️ 下載 PDF**")
 
                         def _get_task_questions(qids):
                             df_q2 = df_q.copy()
@@ -1276,44 +1277,24 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                         task_q_list = _get_task_questions(q_ids_set)
                         if task_q_list:
                             export_mode_t1 = st.radio(
-                                "📋 列印內容",
+                                "列印內容",
                                 ["① 只有題目", "② 題目＋答案＋解析"],
                                 horizontal=True, key=f"export_mode_task_{idx}"
                             )
                             t1_mode_num = 1 if "①" in export_mode_t1 else 2
-
-                            if st.button("📋 顯示列印版（再按 Ctrl+P 列印）",
-                                        type="primary", use_container_width=True,
-                                        key=f"btn_print_task_{idx}"):
-                                st.session_state[f'print_task_visible_{idx}'] = True
-                                st.session_state[f'print_task_mode_{idx}'] = t1_mode_num
-
-                            if st.session_state.get(f'print_task_visible_{idx}'):
-                                m  = st.session_state.get(f'print_task_mode_{idx}', 1)
-                                ts = get_now().strftime('%Y-%m-%d %H:%M')
-                                st.markdown(f"**{task_name}　{ts}　共 {len(task_q_list)} 題**")
-                                st.markdown("---")
-                                for i2, q in enumerate(task_q_list, 1):
-                                    q_unit = str(q.get('單元', ''))
-                                    if '單選' in q_unit:
-                                        q_text = str(q.get('單選題目') or q.get('中文題目') or '').strip()
-                                        q_ans  = str(q.get('單選答案') or '').strip()
-                                    elif '單字' in q_unit:
-                                        q_text = str(q.get('中文意思') or '').strip()
-                                        q_ans  = str(q.get('英文單字') or '').strip()
-                                    else:
-                                        q_text = str(q.get('重組中文題目') or q.get('中文題目') or '').strip()
-                                        q_ans  = str(q.get('重組英文答案') or q.get('英文答案') or '').strip()
-                                    q_analysis = str(q.get('解析') or q.get('單選解析') or '').strip()
-                                    st.markdown(f"**{i2}.** {q_text}")
-                                    if m >= 2:
-                                        st.markdown(f"&nbsp;&nbsp;&nbsp;✅ **答案：** {q_ans}")
-                                        if q_analysis:
-                                            st.markdown(f"&nbsp;&nbsp;&nbsp;📝 **解析：** {q_analysis}")
-                                    st.markdown("---")
-                                if st.button("✖ 關閉列印版", key=f"btn_close_print_task_{idx}"):
-                                    st.session_state[f'print_task_visible_{idx}'] = False
-                                    st.rerun()
+                            title_tsk   = f"{task_name}-共{len(task_q_list)}題"
+                            try:
+                                pdf_task = _gen_print_pdf(task_q_list, t1_mode_num, title=title_tsk)
+                                st.download_button(
+                                    label=f"⬇️ 下載 PDF（{export_mode_t1[:1]}）",
+                                    data=pdf_task,
+                                    file_name=f"{title_tsk}.pdf",
+                                    mime="application/pdf",
+                                    use_container_width=True,
+                                    key=f"dl_pdf_task_{idx}"
+                                )
+                            except Exception as e:
+                                st.error(f"❌ PDF 產生失敗：{e}")
     with t2:
         st.subheader("📊 數據監控")
 
@@ -1829,64 +1810,35 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                                 lines.append(f"{icon}{ans_disp} _{t_str}_")
                             st.markdown(f"　👤 **{stu}**：" + "　／　".join(lines))
 
-        # ── 列印版顯示（功能4）───────────────────────────────────────────
+        # ── 下載 PDF（功能4）─────────────────────────────────────────────
         if not df_rev_scope.empty:
             st.divider()
+            st.markdown("**🖨️ 下載 PDF**")
             export_mode = st.radio(
-                "📋 列印內容",
+                "列印內容",
                 ["① 只有題目", "② 題目＋答案＋解析", "③ 題目＋答案＋解析＋作答記錄"],
                 horizontal=True, key="export_mode_t4"
             )
-            mode_num = 1 if "①" in export_mode else (2 if "②" in export_mode else 3)
-
-            if st.button("📋 顯示列印版（再按 Ctrl+P 列印）", type="primary",
-                         use_container_width=True, key="btn_show_print_t4"):
-                st.session_state['print_t4_visible'] = True
-                st.session_state['print_t4_mode']    = mode_num
-
-            if st.session_state.get('print_t4_visible'):
-                m    = st.session_state.get('print_t4_mode', 1)
-                ql   = df_rev_scope.to_dict('records')
-                ts   = get_now().strftime('%Y-%m-%d %H:%M')
-                hdr  = f"**{rev_group} 題目講解　{ts}　共 {len(ql)} 題**"
-                st.markdown(hdr)
-                st.markdown("---")
-                for i, q in enumerate(ql, 1):
-                    q_unit = str(q.get('單元', ''))
-                    if '單選' in q_unit:
-                        q_text = str(q.get('單選題目') or q.get('中文題目') or '').strip()
-                        q_ans  = str(q.get('單選答案') or '').strip()
-                    elif '單字' in q_unit or q.get('_type') == 'vocab':
-                        q_text = str(q.get('中文意思') or '').strip()
-                        q_ans  = str(q.get('英文單字') or '').strip()
-                    elif q.get('_type') == 'reading' or '朗讀' in q_unit:
-                        q_text = str(q.get('朗讀句子') or '').strip()
-                        q_ans  = q_text
-                    else:
-                        q_text = str(q.get('重組中文題目') or q.get('中文題目') or '').strip()
-                        q_ans  = str(q.get('重組英文答案') or q.get('英文答案') or '').strip()
-                    q_analysis = str(q.get('解析') or q.get('單選解析') or '').strip()
-                    qid = str(q.get('題目ID', ''))
-
-                    st.markdown(f"**{i}.** {q_text}")
-                    if m >= 2:
-                        st.markdown(f"&nbsp;&nbsp;&nbsp;✅ **答案：** {q_ans}")
-                        if q_analysis:
-                            st.markdown(f"&nbsp;&nbsp;&nbsp;📝 **解析：** {q_analysis}")
-                    if m >= 3 and not df_group_logs.empty:
-                        for stu in target_students:
-                            rows = df_group_logs[
-                                (df_group_logs['姓名'] == stu) &
-                                (df_group_logs['題目ID'] == qid) &
-                                (~df_group_logs['結果'].str.contains('📖', na=False))
-                            ]
-                            hist = "".join(rows.sort_values('時間')['結果'].tolist()) if not rows.empty else "未作答"
-                            st.markdown(f"&nbsp;&nbsp;&nbsp;👤 **{stu}：** {hist}")
-                    st.markdown("---")
-
-                if st.button("✖ 關閉列印版", key="btn_close_print_t4"):
-                    st.session_state['print_t4_visible'] = False
-                    st.rerun()
+            mode_num   = 1 if "①" in export_mode else (2 if "②" in export_mode else 3)
+            q_list     = df_rev_scope.to_dict('records')
+            ts         = get_now().strftime('%m%d_%H%M')
+            title_base = f"{rev_group}-題目講解-{ts}-共{len(q_list)}題"
+            try:
+                pdf_data = _gen_print_pdf(
+                    q_list, mode_num, title=title_base,
+                    group_logs=df_group_logs if mode_num == 3 and not df_group_logs.empty else None,
+                    target_students=target_students if mode_num == 3 else None
+                )
+                st.download_button(
+                    label=f"⬇️ 下載 PDF（{export_mode[:1]}）",
+                    data=pdf_data,
+                    file_name=f"{title_base}.pdf",
+                    mime="application/pdf",
+                    use_container_width=True,
+                    key="dl_pdf_t4"
+                )
+            except Exception as e:
+                st.error(f"❌ PDF 產生失敗：{e}")
 
         # ── 朗讀講解 ──────────────────────────────────────────────────────
         with rev4_tab2:
