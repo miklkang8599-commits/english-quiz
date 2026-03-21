@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.111 - 正式版)
+# 🧩 英文全能練習系統 (V2.9.113 - 動態資料即時版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.111
+# 📌 版本編號 (VERSION): 2.9.113
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.111"
+VERSION = "2.9.113"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -147,9 +147,8 @@ def _to_en_assign(row: dict) -> dict:
     }
 
 # ==============================================================================
-# 動態資料讀取（Supabase）
+# 動態資料讀取（Supabase）- 移除快取，每次 rerun 直接讀最新
 # ==============================================================================
-@st.cache_data(ttl=0)  # 動態資料不快取，確保每次都讀最新
 def load_dynamic_data():
     try:
         sb = get_supabase()
@@ -195,7 +194,6 @@ def append_to_sheet(worksheet_name: str, new_row: pd.DataFrame):
         else:
             return False
 
-        load_dynamic_data.clear()
         import time as _t; _t.sleep(0.5)
         return True
     except Exception as e:
@@ -317,7 +315,6 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
     hc1.markdown("## 🟢 導師中心")
     if hc2.button("🔄 更新資料", use_container_width=True, key="admin_refresh"):
         load_static_data.clear()
-        load_dynamic_data.clear()
         st.cache_data.clear()
         st.rerun()
     if hc3.button("🧪 測試寫入", use_container_width=True, key="test_write"):
@@ -334,7 +331,6 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             }
             res = sb_t.table("logs").insert(test_row).execute()
             st.success(f"✅ Supabase 寫入成功！")
-            load_dynamic_data.clear()
         except Exception as e:
             st.error(f"❌ 寫入失敗：{e}")
 
@@ -657,7 +653,6 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 if append_to_sheet("assignments", new_task):
                     st.success(f"✅ 任務已發布！共 {len(all_ids)} 題（重組/單選 {len(df_t1_final)} ＋ 朗讀 {len(df_r_final)}），指派給 {len(target_students_t1)} 位學生")
                     st.session_state['t1_clear_form'] = True
-                    load_dynamic_data.clear()
                     st.rerun()
 
         # ══════════════════════════════════════════════════════════════════
@@ -760,7 +755,6 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                                     "assigned_students": ",".join(new_stus),
                                     "student_count":     str(len(new_stus))
                                 }).eq("created_at", task_created).execute()
-                                load_dynamic_data.clear()
                                 st.success("✅ 任務已更新")
                                 st.rerun()
                             except Exception as e:
@@ -775,7 +769,6 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                             sb.table("assignments").update({
                                 "status": "已刪除"
                             }).eq("created_at", task_created).execute()
-                            load_dynamic_data.clear()
                             st.success("✅ 任務已標記刪除")
                             st.rerun()
                         except Exception as e:
@@ -1067,10 +1060,12 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 else:
                     task_stu_default = students_in_group
 
+            # 確保 session state 有預設值（避免 default 和 session state 衝突）
+            if 'rev_students' not in st.session_state:
+                st.session_state['rev_students'] = [s for s in task_stu_default if s in students_in_group]
             rev_students = st.multiselect(
                 "👤 學生（預設全選，可自由增刪）",
                 options=students_in_group,
-                default=[s for s in st.session_state.get('rev_students', task_stu_default) if s in students_in_group],
                 key="rev_students"
             )
             target_students = rev_students if rev_students else students_in_group
@@ -1226,7 +1221,6 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                         ]
                         if append_to_sheet("logs", pd.DataFrame(rows)):
                             st.success(f"✅ 已為 {len(target_students)} 位學生寫入講解紀錄！")
-                            load_dynamic_data.clear()
                             st.rerun()
 
                     # ── 學生作答歷史（放在按鈕下方） ──────────────────────
@@ -1365,7 +1359,6 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                                             "題目ID": qid, "結果": "📖 講解", "學生答案": ""} for stu in rrev_targets]
                                 if append_to_sheet("logs", pd.DataFrame(rows_r)):
                                     st.success(f"✅ 已為 {len(rrev_targets)} 位學生寫入講解紀錄！")
-                                    load_dynamic_data.clear()
                                     st.rerun()
 
                             st.markdown("---")
@@ -2283,7 +2276,6 @@ if st.session_state.quiz_loaded:
                     })
                     sb_w.table("logs").insert(en_row).execute()
                     _time.sleep(0.5)  # 等 Supabase 確認寫入
-                    load_dynamic_data.clear()
                     write_ok = True
                 except Exception as e:
                     write_err = str(e)
