@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.128 - 頁面列印版)
+# 🧩 英文全能練習系統 (V2.9.129 - 列印key衝突修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.128
+# 📌 版本編號 (VERSION): 2.9.129
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.128"
+VERSION = "2.9.129"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1284,12 +1284,12 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
 
                             if st.button("📋 顯示列印版（再按 Ctrl+P 列印）",
                                         type="primary", use_container_width=True,
-                                        key=f"show_print_task_{idx}"):
-                                st.session_state[f'show_print_task_{idx}'] = True
-                                st.session_state[f'print_mode_task_{idx}'] = t1_mode_num
+                                        key=f"btn_print_task_{idx}"):
+                                st.session_state[f'print_task_visible_{idx}'] = True
+                                st.session_state[f'print_task_mode_{idx}'] = t1_mode_num
 
-                            if st.session_state.get(f'show_print_task_{idx}'):
-                                m  = st.session_state.get(f'print_mode_task_{idx}', 1)
+                            if st.session_state.get(f'print_task_visible_{idx}'):
+                                m  = st.session_state.get(f'print_task_mode_{idx}', 1)
                                 ts = get_now().strftime('%Y-%m-%d %H:%M')
                                 st.markdown(f"**{task_name}　{ts}　共 {len(task_q_list)} 題**")
                                 st.markdown("---")
@@ -1311,8 +1311,8 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                                         if q_analysis:
                                             st.markdown(f"&nbsp;&nbsp;&nbsp;📝 **解析：** {q_analysis}")
                                     st.markdown("---")
-                                if st.button("✖ 關閉列印版", key=f"close_print_task_{idx}"):
-                                    st.session_state[f'show_print_task_{idx}'] = False
+                                if st.button("✖ 關閉列印版", key=f"btn_close_print_task_{idx}"):
+                                    st.session_state[f'print_task_visible_{idx}'] = False
                                     st.rerun()
     with t2:
         st.subheader("📊 數據監控")
@@ -1840,12 +1840,12 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             mode_num = 1 if "①" in export_mode else (2 if "②" in export_mode else 3)
 
             if st.button("📋 顯示列印版（再按 Ctrl+P 列印）", type="primary",
-                         use_container_width=True, key="show_print_t4"):
-                st.session_state['show_print_t4'] = True
-                st.session_state['print_mode_t4'] = mode_num
+                         use_container_width=True, key="btn_show_print_t4"):
+                st.session_state['print_t4_visible'] = True
+                st.session_state['print_t4_mode']    = mode_num
 
-            if st.session_state.get('show_print_t4'):
-                m    = st.session_state.get('print_mode_t4', 1)
+            if st.session_state.get('print_t4_visible'):
+                m    = st.session_state.get('print_t4_mode', 1)
                 ql   = df_rev_scope.to_dict('records')
                 ts   = get_now().strftime('%Y-%m-%d %H:%M')
                 hdr  = f"**{rev_group} 題目講解　{ts}　共 {len(ql)} 題**"
@@ -1884,8 +1884,8 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                             st.markdown(f"&nbsp;&nbsp;&nbsp;👤 **{stu}：** {hist}")
                     st.markdown("---")
 
-                if st.button("✖ 關閉列印版", key="close_print_t4"):
-                    st.session_state['show_print_t4'] = False
+                if st.button("✖ 關閉列印版", key="btn_close_print_t4"):
+                    st.session_state['print_t4_visible'] = False
                     st.rerun()
 
         # ── 朗讀講解 ──────────────────────────────────────────────────────
