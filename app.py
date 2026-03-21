@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.142 - PDF明體14號版)
+# 🧩 英文全能練習系統 (V2.9.143 - PDF+CSV下載版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.142
+# 📌 版本編號 (VERSION): 2.9.143
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.142"
+VERSION = "2.9.143"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -659,6 +659,48 @@ def _gen_plain_text(questions, mode, title="題目列表", group_logs=None, targ
                 lines.append(f"   {stu}：{hist}")
         lines.append("")
     return "\n".join(lines)
+
+def _gen_csv(questions, mode, group_logs=None, target_students=None):
+    """產生 CSV，每題一行，可直接貼入 Google Sheets"""
+    import csv, io
+    output = io.StringIO()
+    headers = ["#", "題目"]
+    if mode >= 2:
+        headers += ["答案", "解析"]
+    if mode >= 3 and target_students:
+        headers += target_students
+    writer = csv.writer(output)
+    writer.writerow(headers)
+    for i, q in enumerate(questions, 1):
+        q_unit = str(q.get("單元", ""))
+        if "單選" in q_unit:
+            q_text = str(q.get("單選題目") or q.get("中文題目") or "").strip()
+            q_ans  = str(q.get("單選答案") or "").strip()
+        elif "單字" in q_unit or q.get("_type") == "vocab":
+            q_text = str(q.get("中文意思") or "").strip()
+            q_ans  = str(q.get("英文單字") or "").strip()
+        elif q.get("_type") == "reading" or "朗讀" in q_unit:
+            q_text = str(q.get("朗讀句子") or "").strip()
+            q_ans  = q_text
+        else:
+            q_text = str(q.get("重組中文題目") or q.get("中文題目") or "").strip()
+            q_ans  = str(q.get("重組英文答案") or q.get("英文答案") or "").strip()
+        q_analysis = str(q.get("解析") or q.get("單選解析") or "").strip()
+        qid = str(q.get("題目ID", ""))
+        row = [i, q_text]
+        if mode >= 2:
+            row += [q_ans, q_analysis]
+        if mode >= 3 and group_logs is not None and target_students:
+            for stu in target_students:
+                rows = group_logs[
+                    (group_logs["姓名"] == stu) & (group_logs["題目ID"] == qid) &
+                    (~group_logs["結果"].str.contains("📖", na=False))
+                ] if not group_logs.empty else pd.DataFrame()
+                hist = "".join(rows.sort_values("時間")["結果"].tolist()) if not rows.empty else "未作答"
+                row.append(hist)
+        writer.writerow(row)
+    return ("\ufeff" + output.getvalue()).encode("utf-8")
+
 if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理後台":
     hc1, hc2, hc3 = st.columns([3, 1, 1])
     hc1.markdown("## 🟢 導師中心")
@@ -1301,7 +1343,8 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
 
                             if st.session_state.get(f'pdf_task_data_{idx}'):
                                 cnt_t = st.session_state.get(f'pdf_task_cnt_{idx}', 0)
-                                st.download_button(
+                                tl1, tl2 = st.columns(2)
+                                tl1.download_button(
                                     label=f"⬇️ 下載 PDF（{export_mode_t1[:1]}）",
                                     data=bytes(st.session_state[f'pdf_task_data_{idx}']),
                                     file_name=st.session_state.get(f'pdf_task_name_{idx}', 'print.pdf'),
@@ -1309,6 +1352,14 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                                     use_container_width=True,
                                     key=f"dl_pdf_task_{idx}_{cnt_t}",
                                     on_click=lambda i=idx, c=cnt_t: st.session_state.update({f'pdf_task_cnt_{i}': c + 1})
+                                )
+                                tl2.download_button(
+                                    label="📊 下載 CSV",
+                                    data=_gen_csv(task_q_list, t1_mode_num),
+                                    file_name=f"{title_tsk}.csv",
+                                    mime="text/csv",
+                                    use_container_width=True,
+                                    key=f"dl_csv_task_{idx}_{cnt_t}"
                                 )
     with t2:
         st.subheader("📊 數據監控")
@@ -1857,7 +1908,8 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
 
             if st.session_state.get('pdf_t4_data'):
                 cnt = st.session_state.get('pdf_t4_cnt', 0)
-                st.download_button(
+                dl1, dl2 = st.columns(2)
+                dl1.download_button(
                     label=f"⬇️ 下載 PDF（{export_mode[:1]}）",
                     data=bytes(st.session_state['pdf_t4_data']),
                     file_name=st.session_state.get('pdf_t4_name', 'print.pdf'),
@@ -1865,6 +1917,18 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     use_container_width=True,
                     key=f"dl_pdf_t4_{cnt}",
                     on_click=lambda: st.session_state.update({'pdf_t4_cnt': cnt + 1})
+                )
+                dl2.download_button(
+                    label="📊 下載 CSV（可貼入 Google Sheets）",
+                    data=_gen_csv(
+                        q_list, mode_num,
+                        group_logs=df_group_logs if mode_num == 3 and not df_group_logs.empty else None,
+                        target_students=target_students if mode_num == 3 else None
+                    ),
+                    file_name=f"{title_base}.csv",
+                    mime="text/csv",
+                    use_container_width=True,
+                    key=f"dl_csv_t4_{cnt}"
                 )
 
         # ── 朗讀講解 ──────────────────────────────────────────────────────
