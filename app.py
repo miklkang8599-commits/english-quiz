@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.117 - 講解篩選即時版)
+# 🧩 英文全能練習系統 (V2.9.118 - 班級名字顯示版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.117
+# 📌 版本編號 (VERSION): 2.9.118
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.117"
+VERSION = "2.9.118"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -306,6 +306,11 @@ with st.sidebar:
     st.write("")
     st.caption(f"Ver {VERSION}")
 
+# 共用：產生含學生名字的班級標籤
+def _group_label(g):
+    stus = sorted(df_s[df_s['分組'] == g]['姓名'].tolist())
+    return f"{g}（{'、'.join(stus)}）"
+
 # ------------------------------------------------------------------------------
 # 📦 【盒子 B：導師中心】
 # ------------------------------------------------------------------------------
@@ -353,8 +358,11 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
         st.subheader("📢 發布新任務")
 
         # ── 基本設定 ──────────────────────────────────────────────────────
-        all_groups    = sorted(df_s[~df_s['分組'].isin(['ADMIN','TEACHER'])]['分組'].unique().tolist())
-        target_groups = st.multiselect("目標班級/分組（可複選）", all_groups, default=[], key="t1_group")
+        all_groups     = sorted(df_s[~df_s['分組'].isin(['ADMIN','TEACHER'])]['分組'].unique().tolist())
+        group_opts_t1  = [_group_label(g) for g in all_groups]
+        group_map_t1   = {_group_label(g): g for g in all_groups}
+        sel_groups_lbl = st.multiselect("目標班級/分組（可複選）", group_opts_t1, default=[], key="t1_group")
+        target_groups  = [group_map_t1[l] for l in sel_groups_lbl if l in group_map_t1]
 
         # 指派對象：依選取班級合併學生名單
         if target_groups:
@@ -801,8 +809,11 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             else:
                 date_from, date_to = None, None
 
-            group_opts = ["不限"] + sorted(df_s[~df_s['分組'].isin(['ADMIN','TEACHER'])]['分組'].unique().tolist())
-            sel_group  = fc2.selectbox("👥 群組", group_opts, key="log_group")
+            all_groups_t2  = sorted(df_s[~df_s['分組'].isin(['ADMIN','TEACHER'])]['分組'].unique().tolist())
+            group_opts_t2  = ["不限"] + [_group_label(g) for g in all_groups_t2]
+            group_map_t2   = {"不限": "不限", **{_group_label(g): g for g in all_groups_t2}}
+            sel_group_lbl  = fc2.selectbox("👥 群組", group_opts_t2, key="log_group")
+            sel_group      = group_map_t2.get(sel_group_lbl, "不限")
 
             stu_pool = (
                 sorted(df_s[~df_s['分組'].isin(['ADMIN','TEACHER'])]['姓名'].tolist())
@@ -904,11 +915,11 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
         f1, f2, f3 = st.columns(3)
 
         # 班級
-        t3_group = f1.selectbox(
-            "👥 班級",
-            ["全部"] + sorted(df_s[~df_s['分組'].isin(['ADMIN','TEACHER'])]['分組'].unique().tolist()),
-            key="t3_rgroup"
-        )
+        all_groups_t3  = sorted(df_s[~df_s['分組'].isin(['ADMIN','TEACHER'])]['分組'].unique().tolist())
+        group_opts_t3  = ["全部"] + [_group_label(g) for g in all_groups_t3]
+        group_map_t3   = {"全部": "全部", **{_group_label(g): g for g in all_groups_t3}}
+        sel_t3_lbl     = f1.selectbox("👥 班級", group_opts_t3, key="t3_rgroup")
+        t3_group       = group_map_t3.get(sel_t3_lbl, "全部")
         if t3_group == "全部":
             t3_pool = sorted(df_s[~df_s['分組'].isin(['ADMIN','TEACHER'])]['姓名'].tolist())
         else:
@@ -1005,10 +1016,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
         # ── 重組／單選講解 ────────────────────────────────────────────────
         with rev4_tab1:
             all_groups_t4 = sorted(df_s[~df_s['分組'].isin(['ADMIN','TEACHER'])]['分組'].unique())
-            # 產生含學生名字的選項標籤
-            def _group_label(g):
-                stus = sorted(df_s[df_s['分組'] == g]['姓名'].tolist())
-                return f"{g}（{'、'.join(stus)}）"
+            # 產生含學生名字的選項標籤（用全域 _group_label）
             group_labels  = [_group_label(g) for g in all_groups_t4]
             group_map     = {_group_label(g): g for g in all_groups_t4}
             sel_label     = st.selectbox("👥 班級/分組", group_labels, key="rev_group_label")
@@ -1234,7 +1242,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     f"　　{stu_tag_str}"
                 )
 
-                with st.expander(label):
+                with st.expander(label, expanded=True):
 
                     # ── 題目放大顯示 ──────────────────────────────────────
                     st.markdown(
@@ -1383,7 +1391,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
 
                         label = f"句 {qrow.get('句編號','')}｜{read_text[:20]}{'…' if len(read_text)>20 else ''}　　{'　|　'.join(stu_tags)}"
 
-                        with st.expander(label):
+                        with st.expander(label, expanded=True):
                             st.markdown(
                                 f"<div style='font-size:1.2rem; font-weight:600; padding:8px 0;'>{read_text}</div>",
                                 unsafe_allow_html=True
