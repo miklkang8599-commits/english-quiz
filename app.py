@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.143 - PDF+CSV下載版)
+# 🧩 英文全能練習系統 (V2.9.144 - 排行榜即時版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.143
+# 📌 版本編號 (VERSION): 2.9.144
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.143"
+VERSION = "2.9.144"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -265,40 +265,62 @@ with st.sidebar:
     st.divider()
     st.markdown("🏆 **成就排行**")
     now_sb   = get_now()
-    period   = st.radio("統計區間", ["今日", "本週", "本月"], index=1, horizontal=True, key="sb_period", label_visibility="collapsed")
+    period   = st.radio("統計區間", ["今日", "昨天", "本週"], index=0, horizontal=True, key="sb_period", label_visibility="collapsed")
+
+    today     = now_sb.date()
+    yesterday = today - timedelta(days=1)
+
     if period == "今日":
-        date_filter = now_sb.strftime("%Y-%m-%d")
-    elif period == "本週":
-        date_filter = (now_sb - timedelta(days=now_sb.weekday())).strftime("%Y-%m-%d")
-    else:
-        date_filter = now_sb.strftime("%Y-%m")
+        date_from = today.strftime("%Y-%m-%d")
+        date_to   = today.strftime("%Y-%m-%d")
+    elif period == "昨天":
+        date_from = yesterday.strftime("%Y-%m-%d")
+        date_to   = yesterday.strftime("%Y-%m-%d")
+    else:  # 本週（週一到今天）
+        week_start = today - timedelta(days=today.weekday())
+        date_from  = week_start.strftime("%Y-%m-%d")
+        date_to    = today.strftime("%Y-%m-%d")
 
     try:
-        sb_lb = get_supabase()
+        sb_lb        = get_supabase()
         target_group = st.session_state.group_id if not is_admin(st.session_state.group_id) else None
 
-        # 直接查 Supabase 最新資料
-        q_lb = sb_lb.table("logs").select("name,group_id,result,score,created_at").gte("created_at", date_filter).execute()
+        # 直接查 Supabase，精確指定日期範圍確保即時
+        q_lb = sb_lb.table("logs").select("name,group_id,result,score,created_at") \
+                    .gte("created_at", date_from) \
+                    .lte("created_at", date_to + " 23:59:59") \
+                    .execute()
+
         if q_lb.data:
             df_lb = pd.DataFrame(q_lb.data)
             if target_group:
                 df_lb = df_lb[df_lb['group_id'] == target_group]
             df_lb_correct = df_lb[df_lb['result'] == '✅']
             df_lb_reading = df_lb[df_lb['result'] == '🎤 朗讀'].copy()
-            if '分數' in df_lb_reading.columns:
-                df_lb_reading = df_lb_reading[pd.to_numeric(df_lb_reading.get('score', pd.Series()), errors='coerce').fillna(0) >= 60]
+            if 'score' in df_lb_reading.columns:
+                df_lb_reading = df_lb_reading[pd.to_numeric(df_lb_reading['score'], errors='coerce').fillna(0) >= 60]
 
             if target_group:
                 members = sorted(df_s[df_s['分組'] == target_group]['姓名'].tolist())
             else:
                 members = sorted(df_s[~df_s['分組'].isin(['ADMIN','TEACHER'])]['姓名'].tolist())
 
+            # 依總題數排序
+            member_stats = []
             for m in members:
                 q_cnt = len(df_lb_correct[df_lb_correct['name'] == m])
                 r_cnt = len(df_lb_reading[df_lb_reading['name'] == m])
-                total = q_cnt + r_cnt
+                member_stats.append((m, q_cnt + r_cnt, q_cnt, r_cnt))
+            member_stats.sort(key=lambda x: x[1], reverse=True)
+
+            for rank, (m, total, q_cnt, r_cnt) in enumerate(member_stats, 1):
+                medal = "🥇" if rank == 1 else ("🥈" if rank == 2 else ("🥉" if rank == 3 else "👤"))
                 detail = f"📝{q_cnt} 🎤{r_cnt}" if r_cnt > 0 else f"{q_cnt} 題"
-                st.markdown(f'<div style="font-size:12px;">👤 {m}: {total} ({detail})</div>', unsafe_allow_html=True)
+                color  = "#c8a400" if rank == 1 else ("#9e9e9e" if rank == 2 else ("#cd7f32" if rank == 3 else "#333"))
+                st.markdown(
+                    f'<div style="font-size:12px;color:{color};">{medal} {m}: {total} ({detail})</div>',
+                    unsafe_allow_html=True
+                )
         else:
             st.caption("暫無資料")
     except Exception as e:
