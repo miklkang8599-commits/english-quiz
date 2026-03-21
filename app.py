@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.139 - PDF字體12版)
+# 🧩 英文全能練習系統 (V2.9.140 - PDF字體14版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.139
+# 📌 版本編號 (VERSION): 2.9.140
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.139"
+VERSION = "2.9.140"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -407,7 +407,7 @@ def _gen_print_pdf(questions, mode, title="題目列表", group_logs=None, targe
 
     # 內建 CJK 字體
     fn = 'Helvetica'
-    for cjk in ['STSong-Light', 'HeiseiMin-W3']:
+    for cjk in ['HeiseiKakuGo-W5', 'STSong-Light', 'HeiseiMin-W3']:
         try:
             pdfmetrics.registerFont(UnicodeCIDFont(cjk))
             fn = cjk
@@ -421,13 +421,13 @@ def _gen_print_pdf(questions, mode, title="題目列表", group_logs=None, targe
                             topMargin=20*mm, bottomMargin=20*mm)
 
     black = colors.black
-    style_title = ParagraphStyle('title', fontName=fn, fontSize=13, leading=18,
+    style_title = ParagraphStyle('title', fontName=fn, fontSize=15, leading=22,
                                  spaceAfter=6, textColor=black, fontWeight='bold')
-    style_q     = ParagraphStyle('q',    fontName=fn, fontSize=12, leading=18,
+    style_q     = ParagraphStyle('q',    fontName=fn, fontSize=14, leading=22,
                                  spaceAfter=0, textColor=black, leftIndent=0)
-    style_sub   = ParagraphStyle('sub',  fontName=fn, fontSize=12, leading=16,
+    style_sub   = ParagraphStyle('sub',  fontName=fn, fontSize=14, leading=20,
                                  spaceAfter=0, textColor=black, leftIndent=0)
-    style_blank = ParagraphStyle('blank',fontName=fn, fontSize=8,  leading=10,
+    style_blank = ParagraphStyle('blank',fontName=fn, fontSize=10, leading=14,
                                  spaceAfter=0, textColor=black)
 
     def safe(t):
