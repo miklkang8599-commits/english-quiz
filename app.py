@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.126 - Drive上傳修復版)
+# 🧩 英文全能練習系統 (V2.9.127 - Google Sheets匯出版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.126
+# 📌 版本編號 (VERSION): 2.9.127
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.126"
+VERSION = "2.9.127"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -546,6 +546,81 @@ def _upload_gdocs_to_gdrive(text_content, filename):
         supportsAllDrives=True
     ).execute()
     return doc["webViewLink"]
+
+def _create_question_sheet(questions, mode, title="題目列表", group_logs=None, target_students=None):
+    """建立 Google Sheets 題目表，回傳試算表連結"""
+    import gspread
+    from google.oauth2.service_account import Credentials
+
+    creds_dict = {
+        "type": "service_account",
+        "project_id":                  st.secrets["connections"]["gsheets"]["project_id"],
+        "private_key_id":              st.secrets["connections"]["gsheets"]["private_key_id"],
+        "private_key":                 st.secrets["connections"]["gsheets"]["private_key"],
+        "client_email":                st.secrets["connections"]["gsheets"]["client_email"],
+        "client_id":                   st.secrets["connections"]["gsheets"]["client_id"],
+        "auth_uri":                    "https://accounts.google.com/o/oauth2/auth",
+        "token_uri":                   "https://oauth2.googleapis.com/token",
+        "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+        "client_x509_cert_url":        st.secrets["connections"]["gsheets"].get("client_x509_cert_url","")
+    }
+    scopes = [
+        "https://spreadsheets.google.com/feeds",
+        "https://www.googleapis.com/auth/drive"
+    ]
+    creds  = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+    gc     = gspread.authorize(creds)
+
+    # 在指定資料夾建立試算表
+    sh = gc.create(title, folder_id=GDRIVE_FOLDER_ID)
+    ws = sh.sheet1
+
+    # 建立標題列
+    headers = ["#", "題目"]
+    if mode >= 2:
+        headers += ["答案", "解析"]
+    if mode >= 3 and target_students:
+        headers += target_students
+
+    ws.append_row(headers)
+
+    # 寫入題目
+    for i, q in enumerate(questions, 1):
+        q_unit = str(q.get('單元', ''))
+        if '單選' in q_unit:
+            q_text = str(q.get('單選題目') or q.get('中文題目') or '').strip()
+            q_ans  = str(q.get('單選答案') or '').strip()
+        elif '單字' in q_unit or q.get('_type') == 'vocab':
+            q_text = str(q.get('中文意思') or '').strip()
+            q_ans  = str(q.get('英文單字') or '').strip()
+        elif q.get('_type') == 'reading' or '朗讀' in q_unit:
+            q_text = str(q.get('朗讀句子') or '').strip()
+            q_ans  = q_text
+        else:
+            q_text = str(q.get('重組中文題目') or q.get('中文題目') or '').strip()
+            q_ans  = str(q.get('重組英文答案') or q.get('英文答案') or '').strip()
+        q_analysis = str(q.get('解析') or q.get('單選解析') or '').strip()
+        qid = str(q.get('題目ID', ''))
+
+        row = [i, q_text]
+        if mode >= 2:
+            row += [q_ans, q_analysis]
+        if mode >= 3 and group_logs is not None and target_students:
+            for stu in target_students:
+                rows = group_logs[
+                    (group_logs['姓名'] == stu) & (group_logs['題目ID'] == qid) &
+                    (~group_logs['結果'].str.contains('📖', na=False))
+                ] if not group_logs.empty else pd.DataFrame()
+                hist = "".join(rows.sort_values('時間')['結果'].tolist()) if not rows.empty else "未作答"
+                row.append(hist)
+        ws.append_row(row)
+
+    # 格式化標題列（粗體）
+    ws.format('A1:Z1', {'textFormat': {'bold': True}, 'backgroundColor': {'red': 0.9, 'green': 0.9, 'blue': 0.9}})
+    # 設定任何人可以閱覽
+    sh.share(None, perm_type='anyone', role='reader')
+
+    return sh.url
 
 def _gen_plain_text(questions, mode, title="題目列表", group_logs=None, target_students=None):
     """產生純文字（供 Google Docs 用）"""
@@ -1186,10 +1261,10 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                         except Exception as e:
                             st.error(f"刪除失敗：{e}")
 
-                    # ── 上傳到 Google Drive（功能5）──────────────────
+                    # ── 匯出到 Google Sheets（功能5）────────────────
                     if q_ids_set:
                         st.divider()
-                        st.markdown("**☁️ 上傳任務題目到 Google Drive**")
+                        st.markdown("**📊 匯出任務題目到 Google Sheets**")
 
                         def _get_task_questions(qids):
                             df_q2 = df_q.copy()
@@ -1201,41 +1276,29 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
 
                         task_q_list = _get_task_questions(q_ids_set)
                         if task_q_list:
-                            upload_mode_t1 = st.radio(
+                            export_mode_t1 = st.radio(
                                 "內容模式",
                                 ["① 只有題目", "② 題目＋答案＋解析"],
-                                horizontal=True, key=f"upload_mode_task_{idx}"
+                                horizontal=True, key=f"export_mode_task_{idx}"
                             )
-                            t1_mode_num = 1 if "①" in upload_mode_t1 else 2
+                            t1_mode_num = 1 if "①" in export_mode_t1 else 2
                             title_tsk   = f"{task_name}-共{len(task_q_list)}題"
 
-                            tu1, tu2 = st.columns(2)
-                            if tu1.button("📄 上傳 PDF", use_container_width=True, key=f"upload_pdf_task_{idx}"):
-                                with st.spinner("上傳中..."):
+                            if st.button("📊 建立 Google Sheets", type="primary",
+                                        use_container_width=True, key=f"export_sheets_task_{idx}"):
+                                with st.spinner("建立試算表中..."):
                                     try:
-                                        pdf_b = _gen_print_pdf(task_q_list, t1_mode_num, title=title_tsk)
-                                        link  = _upload_pdf_to_gdrive(pdf_b, f"{title_tsk}.pdf")
-                                        st.success("✅ 上傳成功！")
-                                        st.markdown(f"[🔗 開啟 PDF]({link})")
-                                        st.session_state[f'task_pdf_link_{idx}'] = link
+                                        link = _create_question_sheet(
+                                            task_q_list, t1_mode_num, title=title_tsk
+                                        )
+                                        st.success("✅ 建立成功！")
+                                        st.markdown(f"[🔗 開啟 Google Sheets]({link})")
+                                        st.session_state[f'task_sheet_link_{idx}'] = link
                                     except Exception as e:
                                         st.error(f"❌ 失敗：{e}")
 
-                            if tu2.button("📝 上傳 Google Docs", use_container_width=True, key=f"upload_docs_task_{idx}"):
-                                with st.spinner("上傳中..."):
-                                    try:
-                                        text = _gen_plain_text(task_q_list, t1_mode_num, title=title_tsk)
-                                        link = _upload_gdocs_to_gdrive(text, title_tsk)
-                                        st.success("✅ 上傳成功！")
-                                        st.markdown(f"[🔗 開啟 Google Docs]({link})")
-                                        st.session_state[f'task_docs_link_{idx}'] = link
-                                    except Exception as e:
-                                        st.error(f"❌ 失敗：{e}")
-
-                            if st.session_state.get(f'task_pdf_link_{idx}'):
-                                st.caption(f"📄 PDF：{st.session_state[f'task_pdf_link_{idx}']}")
-                            if st.session_state.get(f'task_docs_link_{idx}'):
-                                st.caption(f"📝 Docs：{st.session_state[f'task_docs_link_{idx}']}")
+                            if st.session_state.get(f'task_sheet_link_{idx}'):
+                                st.caption(f"上次建立：{st.session_state[f'task_sheet_link_{idx}']}")
     with t2:
         st.subheader("📊 數據監控")
 
@@ -1751,58 +1814,37 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                                 lines.append(f"{icon}{ans_disp} _{t_str}_")
                             st.markdown(f"　👤 **{stu}**：" + "　／　".join(lines))
 
-        # ── 上傳到 Google Drive（功能4）──────────────────────────────────
+        # ── 匯出到 Google Sheets（功能4）─────────────────────────────────
         if not df_rev_scope.empty:
             st.divider()
-            st.markdown("**☁️ 上傳到 Google Drive**")
+            st.markdown("**📊 匯出題目到 Google Sheets**")
             q_list     = df_rev_scope.to_dict('records')
             ts         = get_now().strftime('%m%d_%H%M')
             title_base = f"{rev_group}-題目講解-{ts}-共{len(q_list)}題"
 
-            # 選擇模式
-            upload_mode = st.radio(
+            export_mode = st.radio(
                 "內容模式",
                 ["① 只有題目", "② 題目＋答案＋解析", "③ 題目＋答案＋解析＋作答記錄"],
-                horizontal=True, key="upload_mode_t4"
+                horizontal=True, key="export_mode_t4"
             )
-            mode_num = 1 if "①" in upload_mode else (2 if "②" in upload_mode else 3)
+            mode_num = 1 if "①" in export_mode else (2 if "②" in export_mode else 3)
 
-            uc1, uc2 = st.columns(2)
-            if uc1.button("📄 上傳 PDF", use_container_width=True, key="upload_pdf_t4"):
-                with st.spinner("產生 PDF 並上傳中..."):
+            if st.button("📊 建立 Google Sheets", type="primary", use_container_width=True, key="export_sheets_t4"):
+                with st.spinner("建立試算表中..."):
                     try:
-                        pdf_bytes = _gen_print_pdf(
+                        link = _create_question_sheet(
                             q_list, mode_num, title=title_base,
                             group_logs=df_group_logs if mode_num == 3 else None,
                             target_students=target_students if mode_num == 3 else None
                         )
-                        link = _upload_pdf_to_gdrive(pdf_bytes, f"{title_base}.pdf")
-                        st.success(f"✅ 上傳成功！")
-                        st.markdown(f"[🔗 開啟 PDF]({link})", unsafe_allow_html=False)
-                        st.session_state['last_upload_link_pdf'] = link
+                        st.success("✅ 建立成功！")
+                        st.markdown(f"[🔗 開啟 Google Sheets]({link})")
+                        st.session_state['last_sheet_link_t4'] = link
                     except Exception as e:
-                        st.error(f"❌ 上傳失敗：{e}")
+                        st.error(f"❌ 失敗：{e}")
 
-            if uc2.button("📝 上傳 Google Docs", use_container_width=True, key="upload_docs_t4"):
-                with st.spinner("產生 Google Docs 並上傳中..."):
-                    try:
-                        text = _gen_plain_text(
-                            q_list, mode_num, title=title_base,
-                            group_logs=df_group_logs if mode_num == 3 else None,
-                            target_students=target_students if mode_num == 3 else None
-                        )
-                        link = _upload_gdocs_to_gdrive(text, title_base)
-                        st.success(f"✅ 上傳成功！")
-                        st.markdown(f"[🔗 開啟 Google Docs]({link})", unsafe_allow_html=False)
-                        st.session_state['last_upload_link_docs'] = link
-                    except Exception as e:
-                        st.error(f"❌ 上傳失敗：{e}")
-
-            # 顯示上次上傳的連結
-            if st.session_state.get('last_upload_link_pdf'):
-                st.caption(f"📄 上次 PDF：{st.session_state['last_upload_link_pdf']}")
-            if st.session_state.get('last_upload_link_docs'):
-                st.caption(f"📝 上次 Docs：{st.session_state['last_upload_link_docs']}")
+            if st.session_state.get('last_sheet_link_t4'):
+                st.caption(f"上次建立：{st.session_state['last_sheet_link_t4']}")
 
         # ── 朗讀講解 ──────────────────────────────────────────────────────
         with rev4_tab2:
