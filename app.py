@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.137 - PDF格式重設版)
+# 🧩 英文全能練習系統 (V2.9.138 - PDF格式微調版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.137
+# 📌 版本編號 (VERSION): 2.9.138
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.137"
+VERSION = "2.9.138"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -459,10 +459,8 @@ def _gen_print_pdf(questions, mode, title="題目列表", group_logs=None, targe
         story.append(Paragraph(f"{i}.  {safe(q_text)}", style_q))
 
         if mode == 1:
-            # 只有題目：底下留答題空間
-            story.append(Spacer(1, 8*mm))
-            story.append(HRFlowable(width="100%", thickness=0.3, color=colors.lightgrey))
-            story.append(Spacer(1, 3*mm))
+            # 只有題目：底下留 2mm 空白
+            story.append(Spacer(1, 2*mm))
         elif mode >= 2:
             # 答案
             story.append(Spacer(1, 2*mm))
@@ -481,8 +479,6 @@ def _gen_print_pdf(questions, mode, title="題目列表", group_logs=None, targe
                     recs.append(f"{stu}：{hist}")
                 story.append(Paragraph("　".join(recs), style_sub))
             story.append(Spacer(1, 4*mm))
-            story.append(HRFlowable(width="100%", thickness=0.3, color=colors.lightgrey))
-            story.append(Spacer(1, 3*mm))
 
     doc.build(story)
     buf.seek(0)
