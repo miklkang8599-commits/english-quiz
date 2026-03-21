@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.138 - PDF格式微調版)
+# 🧩 英文全能練習系統 (V2.9.139 - PDF字體12版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.138
+# 📌 版本編號 (VERSION): 2.9.139
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.138"
+VERSION = "2.9.139"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -423,9 +423,9 @@ def _gen_print_pdf(questions, mode, title="題目列表", group_logs=None, targe
     black = colors.black
     style_title = ParagraphStyle('title', fontName=fn, fontSize=13, leading=18,
                                  spaceAfter=6, textColor=black, fontWeight='bold')
-    style_q     = ParagraphStyle('q',    fontName=fn, fontSize=11, leading=18,
+    style_q     = ParagraphStyle('q',    fontName=fn, fontSize=12, leading=18,
                                  spaceAfter=0, textColor=black, leftIndent=0)
-    style_sub   = ParagraphStyle('sub',  fontName=fn, fontSize=11, leading=16,
+    style_sub   = ParagraphStyle('sub',  fontName=fn, fontSize=12, leading=16,
                                  spaceAfter=0, textColor=black, leftIndent=0)
     style_blank = ParagraphStyle('blank',fontName=fn, fontSize=8,  leading=10,
                                  spaceAfter=0, textColor=black)
