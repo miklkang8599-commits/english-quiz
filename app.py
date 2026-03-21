@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.114 - 即時統計版)
+# 🧩 英文全能練習系統 (V2.9.115 - 多功能更新版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.114
+# 📌 版本編號 (VERSION): 2.9.115
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.114"
+VERSION = "2.9.115"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1004,11 +1004,15 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
 
         # ── 重組／單選講解 ────────────────────────────────────────────────
         with rev4_tab1:
-            rev_group = st.selectbox(
-                "👥 班級/分組",
-                sorted(df_s[~df_s['分組'].isin(['ADMIN','TEACHER'])]['分組'].unique()),
-                key="rev_group"
-            )
+            all_groups_t4 = sorted(df_s[~df_s['分組'].isin(['ADMIN','TEACHER'])]['分組'].unique())
+            # 產生含學生名字的選項標籤
+            def _group_label(g):
+                stus = sorted(df_s[df_s['分組'] == g]['姓名'].tolist())
+                return f"{g}（{'、'.join(stus)}）"
+            group_labels  = [_group_label(g) for g in all_groups_t4]
+            group_map     = {_group_label(g): g for g in all_groups_t4}
+            sel_label     = st.selectbox("👥 班級/分組", group_labels, key="rev_group_label")
+            rev_group     = group_map.get(sel_label, all_groups_t4[0] if all_groups_t4 else "")
             students_in_group = sorted(df_s[df_s['分組'] == rev_group]['姓名'].tolist())
 
             # 任務篩選
@@ -1068,6 +1072,13 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 key="rev_students"
             )
             target_students = rev_students if rev_students else students_in_group
+
+            # 顯示範圍篩選（同學生復習模式）
+            rev_scope_t4 = st.radio(
+                "顯示範圍",
+                ["📚 全部題目", "✏️ 已經答題", "❌ 只看錯題", "❓ 只看未作答", "🔄 複習次數少的優先"],
+                horizontal=True, key="rev_scope_t4"
+            )
 
             def _rev_idx(opts, key):
                 val = st.session_state.get(key)
@@ -1248,12 +1259,12 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
 
         # ── 朗讀講解 ──────────────────────────────────────────────────────
         with rev4_tab2:
-            rrev_group = st.selectbox(
-                "👥 班級/分組",
-                sorted(df_s[~df_s['分組'].isin(['ADMIN','TEACHER'])]['分組'].unique()),
-                key="rrev_group"
-            )
-            rrev_stus_pool = sorted(df_s[df_s['分組'] == rrev_group]['姓名'].tolist())
+            all_groups_rrev   = sorted(df_s[~df_s['分組'].isin(['ADMIN','TEACHER'])]['分組'].unique())
+            rrev_group_labels = [_group_label(g) for g in all_groups_rrev]
+            rrev_group_map    = {_group_label(g): g for g in all_groups_rrev}
+            sel_rrev_label    = st.selectbox("👥 班級/分組", rrev_group_labels, key="rrev_group_label")
+            rrev_group        = rrev_group_map.get(sel_rrev_label, all_groups_rrev[0] if all_groups_rrev else "")
+            rrev_stus_pool    = sorted(df_s[df_s['分組'] == rrev_group]['姓名'].tolist())
 
             # 任務篩選
             rrev_task_ids    = None
@@ -1432,7 +1443,7 @@ if not st.session_state.quiz_loaded:
             my_tasks.append(arow)
 
     if my_tasks:
-        st.markdown("## 📋 我的任務")
+        st.markdown("<h2 style='margin-bottom:0'>📋 我的任務</h2>", unsafe_allow_html=True)
         for arow in my_tasks:
             task_name    = arow.get('任務名稱', '未命名')
             task_start   = arow.get('開始日期', '')
