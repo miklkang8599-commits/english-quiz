@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.125 - Google Drive上傳版)
+# 🧩 英文全能練習系統 (V2.9.126 - Drive上傳修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.125
+# 📌 版本編號 (VERSION): 2.9.126
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.125"
+VERSION = "2.9.126"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -513,8 +513,15 @@ def _upload_pdf_to_gdrive(pdf_bytes, filename):
     svc   = get_gdrive_service()
     meta  = {"name": filename, "parents": [GDRIVE_FOLDER_ID]}
     media = MediaIoBaseUpload(io.BytesIO(pdf_bytes), mimetype="application/pdf")
-    f     = svc.files().create(body=meta, media_body=media, fields="id,webViewLink").execute()
-    svc.permissions().create(fileId=f["id"], body={"type":"anyone","role":"reader"}).execute()
+    f     = svc.files().create(
+                body=meta, media_body=media, fields="id,webViewLink",
+                supportsAllDrives=True
+            ).execute()
+    svc.permissions().create(
+        fileId=f["id"],
+        body={"type":"anyone","role":"reader"},
+        supportsAllDrives=True
+    ).execute()
     return f["webViewLink"]
 
 def _upload_gdocs_to_gdrive(text_content, filename):
@@ -522,18 +529,23 @@ def _upload_gdocs_to_gdrive(text_content, filename):
     from googleapiclient.http import MediaIoBaseUpload
     import io
     svc   = get_gdrive_service()
-    # 先上傳 txt
-    meta  = {"name": filename + ".txt", "parents": [GDRIVE_FOLDER_ID]}
+    # 直接上傳為 Google Docs 格式
+    meta  = {
+        "name": filename,
+        "mimeType": "application/vnd.google-apps.document",
+        "parents": [GDRIVE_FOLDER_ID]
+    }
     media = MediaIoBaseUpload(io.BytesIO(text_content.encode('utf-8')), mimetype="text/plain")
-    txt_f = svc.files().create(body=meta, media_body=media, fields="id").execute()
-    # 複製成 Google Docs
-    doc_meta = {"name": filename, "mimeType": "application/vnd.google-apps.document",
-                "parents": [GDRIVE_FOLDER_ID]}
-    doc = svc.files().copy(fileId=txt_f["id"], body=doc_meta).execute()
-    svc.files().delete(fileId=txt_f["id"]).execute()
-    svc.permissions().create(fileId=doc["id"], body={"type":"anyone","role":"writer"}).execute()
-    info = svc.files().get(fileId=doc["id"], fields="webViewLink").execute()
-    return info["webViewLink"]
+    doc   = svc.files().create(
+                body=meta, media_body=media, fields="id,webViewLink",
+                supportsAllDrives=True
+            ).execute()
+    svc.permissions().create(
+        fileId=doc["id"],
+        body={"type":"anyone","role":"writer"},
+        supportsAllDrives=True
+    ).execute()
+    return doc["webViewLink"]
 
 def _gen_plain_text(questions, mode, title="題目列表", group_logs=None, target_students=None):
     """產生純文字（供 Google Docs 用）"""
