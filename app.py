@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.118 - 班級名字顯示版)
+# 🧩 英文全能練習系統 (V2.9.119 - 集合任務功能版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.118
+# 📌 版本編號 (VERSION): 2.9.119
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.118"
+VERSION = "2.9.119"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -663,7 +663,145 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     st.rerun()
 
         # ══════════════════════════════════════════════════════════════════
-        # 區塊二：任務列表
+        # 區塊二：集合多任務→指派新任務
+        # ══════════════════════════════════════════════════════════════════
+        st.divider()
+        st.subheader("🔗 集合多任務→指派新任務")
+        st.caption("從多個任務中篩選題目（聯集），集中讓學生練習錯題或未作答題目")
+
+        df_a_active = df_a[df_a.get('狀態', pd.Series(dtype=str)).fillna('') != '已刪除'].copy() if not df_a.empty else pd.DataFrame()
+
+        if df_a_active.empty:
+            st.info("目前尚無任務可選。")
+        else:
+            task_names_all = df_a_active['任務名稱'].tolist() if '任務名稱' in df_a_active.columns else []
+
+            # ── 步驟1：選擇來源任務 ──────────────────────────────────────
+            st.markdown("**① 選擇來源任務（可複選）**")
+            sel_src_tasks = st.multiselect(
+                "來源任務", task_names_all, default=[], key="combine_src_tasks",
+                label_visibility="collapsed"
+            )
+
+            if sel_src_tasks:
+                # ── 步驟2：篩選條件 ──────────────────────────────────────
+                st.markdown("**② 題目篩選條件**")
+                c2a, c2b = st.columns(2)
+                combine_scope = c2a.radio(
+                    "篩選範圍",
+                    ["📚 所有題目（聯集）", "❌ 只取曾錯題", "❓ 只取未作答"],
+                    key="combine_scope", horizontal=False
+                )
+                combine_ref_group_opts = ["不限"] + [_group_label(g) for g in sorted(df_s[~df_s['分組'].isin(['ADMIN','TEACHER'])]['分組'].unique())]
+                combine_ref_group_map  = {"不限": None, **{_group_label(g): g for g in sorted(df_s[~df_s['分組'].isin(['ADMIN','TEACHER'])]['分組'].unique())}}
+                combine_ref_lbl  = c2b.selectbox("參考學生來自班級", combine_ref_group_opts, key="combine_ref_group")
+                combine_ref_grp  = combine_ref_group_map.get(combine_ref_lbl)
+                if combine_ref_grp:
+                    ref_pool = sorted(df_s[df_s['分組'] == combine_ref_grp]['姓名'].tolist())
+                else:
+                    ref_pool = sorted(df_s[~df_s['分組'].isin(['ADMIN','TEACHER'])]['姓名'].tolist())
+                combine_ref_stus = st.multiselect("參考哪些學生的作答（預設全選）", ref_pool, key="combine_ref_stus")
+                ref_stus = combine_ref_stus if combine_ref_stus else ref_pool
+
+                # ── 收集所有來源任務的題目ID ──────────────────────────────
+                all_src_qids = set()
+                for tn in sel_src_tasks:
+                    row_t = df_a_active[df_a_active['任務名稱'] == tn]
+                    if not row_t.empty:
+                        ids_str = str(row_t.iloc[0].get('題目ID清單', '') or '')
+                        for qid in ids_str.split(','):
+                            qid = qid.strip()
+                            if qid and qid != 'nan':
+                                # 統一格式（去V_前綴）
+                                all_src_qids.add(qid[2:] if qid.startswith('V_') else qid)
+
+                # ── 依條件篩選 ────────────────────────────────────────────
+                if combine_scope != "📚 所有題目（聯集）" and ref_stus:
+                    try:
+                        sb_c = get_supabase()
+                        res_c = sb_c.table("logs").select("question_id,result,name").in_("name", ref_stus).execute()
+                        if res_c.data:
+                            df_c_logs = pd.DataFrame(res_c.data)
+                            df_c_logs['question_id'] = df_c_logs['question_id'].apply(
+                                lambda x: x[2:] if str(x).startswith('V_') else x
+                            )
+                            answered = set(df_c_logs[~df_c_logs['result'].str.contains('📖', na=False)]['question_id'].tolist())
+                            wrong    = set(df_c_logs[df_c_logs['result'] == '❌']['question_id'].tolist())
+                            if combine_scope == "❌ 只取曾錯題":
+                                filtered_qids = all_src_qids & wrong
+                            else:  # 只取未作答
+                                filtered_qids = all_src_qids - answered
+                        else:
+                            filtered_qids = all_src_qids
+                    except:
+                        filtered_qids = all_src_qids
+                else:
+                    filtered_qids = all_src_qids
+
+                st.info(f"📊 來源題目共 {len(all_src_qids)} 題，篩選後 **{len(filtered_qids)} 題**")
+
+                if filtered_qids:
+                    # ── 步驟3：指派設定 ───────────────────────────────────
+                    st.markdown("**③ 指派設定**")
+                    c3a, c3b = st.columns(2)
+                    comb_grp_opts = [_group_label(g) for g in sorted(df_s[~df_s['分組'].isin(['ADMIN','TEACHER'])]['分組'].unique())]
+                    comb_grp_map  = {_group_label(g): g for g in sorted(df_s[~df_s['分組'].isin(['ADMIN','TEACHER'])]['分組'].unique())}
+                    sel_comb_grp_lbls = c3a.multiselect("目標班級", comb_grp_opts, key="combine_target_groups")
+                    target_comb_groups = [comb_grp_map[l] for l in sel_comb_grp_lbls if l in comb_grp_map]
+
+                    if target_comb_groups:
+                        comb_all_stus = sorted(df_s[df_s['分組'].isin(target_comb_groups)]['姓名'].tolist())
+                    else:
+                        comb_all_stus = []
+
+                    sel_comb_stus = c3b.multiselect("指派學生（預設全班）", comb_all_stus, key="combine_target_stus")
+                    final_comb_stus = sel_comb_stus if sel_comb_stus else comb_all_stus
+
+                    comb_date_col1, comb_date_col2 = st.columns(2)
+                    comb_date_start = comb_date_col1.date_input("開始日期", value=get_now().date(), key="combine_date_start")
+                    comb_date_end   = comb_date_col2.date_input("結束日期", value=(get_now() + timedelta(days=7)).date(), key="combine_date_end")
+
+                    comb_task_name = st.text_input(
+                        "任務名稱（留空自動產生）",
+                        placeholder=f"{st.session_state.user_name}-集合任務-{get_now().strftime('%m%d')}-共{len(filtered_qids)}題",
+                        key="combine_task_name"
+                    )
+
+                    # ── 預覽 ─────────────────────────────────────────────
+                    with st.expander(f"📋 預覽題目清單（{len(filtered_qids)} 題）", expanded=False):
+                        st.write(", ".join(sorted(filtered_qids)[:30]) + ("..." if len(filtered_qids) > 30 else ""))
+
+                    # ── 發布 ─────────────────────────────────────────────
+                    if st.button("🚀 發布集合任務", type="primary", use_container_width=True, key="combine_publish"):
+                        if not target_comb_groups:
+                            st.error("❌ 請選擇目標班級")
+                        elif not final_comb_stus:
+                            st.error("❌ 沒有指派學生")
+                        else:
+                            auto_name = comb_task_name.strip() or f"{st.session_state.user_name}-{get_now().strftime('%Y-%m-%d-%H:%M')}-{','.join(target_comb_groups)}-集合任務-共{len(filtered_qids)}題"
+                            new_comb_task = pd.DataFrame([{
+                                "建立時間":   get_now().strftime("%Y-%m-%d %H:%M:%S"),
+                                "任務名稱":   auto_name,
+                                "對象班級":   ",".join(target_comb_groups),
+                                "指派學生":   ",".join(final_comb_stus),
+                                "指派人數":   len(final_comb_stus),
+                                "內容":       "",
+                                "任務說明":   f"集合自：{', '.join(sel_src_tasks[:3])}{'...' if len(sel_src_tasks)>3 else ''}",
+                                "單字設定":   "",
+                                "題目數":     len(filtered_qids),
+                                "題目ID清單": ",".join(sorted(filtered_qids)),
+                                "開始日期":   str(comb_date_start),
+                                "結束日期":   str(comb_date_end),
+                                "參考學生":   ",".join(ref_stus),
+                                "狀態":       "進行中",
+                                "類型":       "一般"
+                            }])
+                            if append_to_sheet("assignments", new_comb_task):
+                                st.success(f"✅ 集合任務已發布！共 {len(filtered_qids)} 題，指派給 {len(final_comb_stus)} 位學生")
+                                st.rerun()
+
+        # ══════════════════════════════════════════════════════════════════
+        # 區塊三：任務列表
         # ══════════════════════════════════════════════════════════════════
         st.divider()
         st.subheader("📋 任務列表")
