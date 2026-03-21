@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.113 - 動態資料即時版)
+# 🧩 英文全能練習系統 (V2.9.114 - 即時統計版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.113
+# 📌 版本編號 (VERSION): 2.9.114
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.113"
+VERSION = "2.9.114"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -264,46 +264,45 @@ with st.sidebar:
 
     st.divider()
     st.markdown("🏆 **成就排行**")
-    if not df_l.empty and '時間' in df_l.columns:
-        now_sb   = get_now()
-        period   = st.radio("統計區間", ["今日", "本週", "本月"], index=1, horizontal=True, key="sb_period", label_visibility="collapsed")
-        if period == "今日":
-            prefix = now_sb.strftime("%Y-%m-%d")
-        elif period == "本週":
-            week_start = (now_sb - timedelta(days=now_sb.weekday())).strftime("%Y-%m-%d")
-            prefix = None
-        else:
-            prefix = now_sb.strftime("%Y-%m")
+    now_sb   = get_now()
+    period   = st.radio("統計區間", ["今日", "本週", "本月"], index=1, horizontal=True, key="sb_period", label_visibility="collapsed")
+    if period == "今日":
+        date_filter = now_sb.strftime("%Y-%m-%d")
+    elif period == "本週":
+        date_filter = (now_sb - timedelta(days=now_sb.weekday())).strftime("%Y-%m-%d")
+    else:
+        date_filter = now_sb.strftime("%Y-%m")
 
-        # 判斷群組：ADMIN 看全部，學生看自己群組
+    try:
+        sb_lb = get_supabase()
         target_group = st.session_state.group_id if not is_admin(st.session_state.group_id) else None
-        df_lb = df_l.copy()
-        if target_group:
-            df_lb = df_lb[df_lb['分組'] == target_group]
 
-        if period == "本週":
-            df_lb = df_lb[df_lb['時間'] >= week_start]
+        # 直接查 Supabase 最新資料
+        q_lb = sb_lb.table("logs").select("name,group_id,result,score,created_at").gte("created_at", date_filter).execute()
+        if q_lb.data:
+            df_lb = pd.DataFrame(q_lb.data)
+            if target_group:
+                df_lb = df_lb[df_lb['group_id'] == target_group]
+            df_lb_correct = df_lb[df_lb['result'] == '✅']
+            df_lb_reading = df_lb[df_lb['result'] == '🎤 朗讀'].copy()
+            if '分數' in df_lb_reading.columns:
+                df_lb_reading = df_lb_reading[pd.to_numeric(df_lb_reading.get('score', pd.Series()), errors='coerce').fillna(0) >= 60]
+
+            if target_group:
+                members = sorted(df_s[df_s['分組'] == target_group]['姓名'].tolist())
+            else:
+                members = sorted(df_s[~df_s['分組'].isin(['ADMIN','TEACHER'])]['姓名'].tolist())
+
+            for m in members:
+                q_cnt = len(df_lb_correct[df_lb_correct['name'] == m])
+                r_cnt = len(df_lb_reading[df_lb_reading['name'] == m])
+                total = q_cnt + r_cnt
+                detail = f"📝{q_cnt} 🎤{r_cnt}" if r_cnt > 0 else f"{q_cnt} 題"
+                st.markdown(f'<div style="font-size:12px;">👤 {m}: {total} ({detail})</div>', unsafe_allow_html=True)
         else:
-            df_lb = df_lb[df_lb['時間'].str.startswith(prefix)]
-
-        df_lb_correct = df_lb[df_lb['結果'] == '✅']
-        # 朗讀題：分數欄 >= 60 算達標（若無分數欄則只要有紀錄就算）
-        df_lb_reading = df_lb[df_lb['結果'] == '🎤 朗讀'].copy()
-        if '分數' in df_lb_reading.columns:
-            df_lb_reading = df_lb_reading[pd.to_numeric(df_lb_reading['分數'], errors='coerce').fillna(0) >= 60]
-
-        # 取學生名單
-        if target_group:
-            members = sorted(df_s[df_s['分組'] == target_group]['姓名'].tolist())
-        else:
-            members = sorted(df_s[~df_s['分組'].isin(['ADMIN','TEACHER'])]['姓名'].tolist())
-
-        for m in members:
-            q_cnt = len(df_lb_correct[df_lb_correct['姓名'] == m])
-            r_cnt = len(df_lb_reading[df_lb_reading['姓名'] == m])
-            total = q_cnt + r_cnt
-            detail = f"📝{q_cnt} 🎤{r_cnt}" if r_cnt > 0 else f"{q_cnt} 題"
-            st.markdown(f'<div style="font-size:12px;">👤 {m}: {total} ({detail})</div>', unsafe_allow_html=True)
+            st.caption("暫無資料")
+    except Exception as e:
+        st.caption(f"排行榜載入失敗：{e}")
     st.write("")
     st.caption(f"Ver {VERSION}")
 
@@ -1712,7 +1711,18 @@ if not st.session_state.quiz_loaded:
         rv_scope = st.radio("顯示範圍", ["📚 全部題目", "✏️ 已經答題", "❌ 只看錯題", "❓ 只看未作答", "🔄 複習次數少的優先"], horizontal=True, key="rv_scope")
 
         if st.button("📖 開始復習", type="primary", use_container_width=True, key="rv_start"):
-            my_logs = df_l[df_l['姓名'] == user_name].copy() if not df_l.empty and '姓名' in df_l.columns else pd.DataFrame()
+            # 直接查 Supabase 取最新 logs
+            try:
+                sb_rv = get_supabase()
+                rv_res = sb_rv.table("logs").select("*").eq("name", user_name).execute()
+                if rv_res.data:
+                    my_logs = pd.DataFrame(rv_res.data)
+                    my_logs = _to_cn(my_logs, LOGS_COLS)
+                    my_logs = my_logs.drop(columns=['id'], errors='ignore')
+                else:
+                    my_logs = pd.DataFrame()
+            except:
+                my_logs = df_l[df_l['姓名'] == user_name].copy() if not df_l.empty and '姓名' in df_l.columns else pd.DataFrame()
 
             def _get_qid(r, prefix=""):
                 return f"{prefix}{r.get('版本','')}_{r.get('年度','')}_{r.get('冊編號','')}_{r.get('單元','')}_{r.get('課編號','')}_{r.get('句編號','')}"
