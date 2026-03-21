@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.123 - 列印按鈕修復版)
+# 🧩 英文全能練習系統 (V2.9.124 - PDF列印版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.123
+# 📌 版本編號 (VERSION): 2.9.124
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.123"
+VERSION = "2.9.124"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -393,6 +393,95 @@ def _gen_print_html(questions, mode, title="題目列表", group_logs=None, targ
     <script>window.onload = function(){{ window.print(); }}</script>
     </body></html>"""
     return html
+
+def _gen_print_pdf(questions, mode, title="題目列表", group_logs=None, target_students=None):
+    """產生 PDF bytes，支援中文"""
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.units import mm
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+    from reportlab.lib import colors
+    import io, os, urllib.request
+
+    # 下載思源黑體（支援繁中）
+    font_path = "/tmp/NotoSansTC.ttf"
+    if not os.path.exists(font_path):
+        try:
+            urllib.request.urlretrieve(
+                "https://github.com/googlefonts/noto-cjk/raw/main/Sans/SubsetOTF/TC/NotoSansCJKtc-Regular.otf",
+                font_path
+            )
+        except:
+            font_path = None
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4,
+                            leftMargin=15*mm, rightMargin=15*mm,
+                            topMargin=15*mm, bottomMargin=15*mm)
+
+    if font_path and os.path.exists(font_path):
+        try:
+            pdfmetrics.registerFont(TTFont('NotoSansTC', font_path))
+            fn = 'NotoSansTC'
+        except:
+            fn = 'Helvetica'
+    else:
+        fn = 'Helvetica'
+
+    style_title = ParagraphStyle('title', fontName=fn, fontSize=14, leading=20, spaceAfter=6)
+    style_q     = ParagraphStyle('q',     fontName=fn, fontSize=11, leading=16, spaceAfter=4)
+    style_ans   = ParagraphStyle('ans',   fontName=fn, fontSize=10, leading=14, textColor=colors.green, spaceAfter=2)
+    style_note  = ParagraphStyle('note',  fontName=fn, fontSize=9,  leading=12, textColor=colors.grey,  spaceAfter=2)
+    style_rec   = ParagraphStyle('rec',   fontName=fn, fontSize=9,  leading=12, textColor=colors.darkgrey, spaceAfter=4)
+
+    story = [Paragraph(title, style_title), HRFlowable(width="100%", thickness=1), Spacer(1, 4*mm)]
+
+    for i, q in enumerate(questions, 1):
+        q_unit = str(q.get('單元', ''))
+        if '單選' in q_unit:
+            q_text = str(q.get('單選題目') or q.get('中文題目') or '').strip()
+            q_ans  = str(q.get('單選答案') or '').strip()
+        elif '單字' in q_unit or q.get('_type') == 'vocab':
+            q_text = str(q.get('中文意思') or '').strip()
+            q_ans  = str(q.get('英文單字') or '').strip()
+        elif q.get('_type') == 'reading' or '朗讀' in q_unit:
+            q_text = str(q.get('朗讀句子') or '').strip()
+            q_ans  = q_text
+        else:
+            q_text = str(q.get('重組中文題目') or q.get('中文題目') or '').strip()
+            q_ans  = str(q.get('重組英文答案') or q.get('英文答案') or '').strip()
+        q_analysis = str(q.get('解析') or q.get('單選解析') or '').strip()
+        qid = str(q.get('題目ID', ''))
+
+        # 安全處理特殊字元
+        def safe(t): return t.replace('&','&amp;').replace('<','&lt;').replace('>','&gt;')
+
+        story.append(Paragraph(f"{i}. {safe(q_text)}", style_q))
+        if mode >= 2:
+            story.append(Paragraph(f"✅ {safe(q_ans)}", style_ans))
+            if q_analysis:
+                story.append(Paragraph(f"📝 {safe(q_analysis)}", style_note))
+        if mode >= 3 and group_logs is not None and target_students:
+            recs = []
+            for stu in target_students:
+                rows = group_logs[
+                    (group_logs['姓名'] == stu) &
+                    (group_logs['題目ID'] == qid) &
+                    (~group_logs['結果'].str.contains('📖', na=False))
+                ] if not group_logs.empty else pd.DataFrame()
+                if rows.empty:
+                    recs.append(f"{stu}：未作答")
+                else:
+                    hist = "".join(rows.sort_values('時間')['結果'].tolist())
+                    recs.append(f"{stu}：{hist}")
+            story.append(Paragraph("　".join(recs), style_rec))
+        story.append(Spacer(1, 3*mm))
+
+    doc.build(story)
+    buf.seek(0)
+    return buf.read()
 
 # ------------------------------------------------------------------------------
 # 📦 【盒子 B：導師中心】
@@ -1018,21 +1107,27 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                         task_q_list = _get_task_questions(q_ids_set)
                         if task_q_list:
                             pt1, pt2 = st.columns(2)
-                            pt1.download_button(
-                                "① 只印題目",
-                                data=_gen_print_html(task_q_list, 1, title=f"{task_name}　共{len(task_q_list)}題").encode('utf-8'),
-                                file_name=f"task1_{get_now().strftime('%m%d_%H%M')}.html",
-                                mime="text/html", use_container_width=True,
-                                key=f"dl_task1_{idx}"
-                            )
-                            pt2.download_button(
-                                "② 題目＋答案＋解析",
-                                data=_gen_print_html(task_q_list, 2, title=f"{task_name}　共{len(task_q_list)}題").encode('utf-8'),
-                                file_name=f"task2_{get_now().strftime('%m%d_%H%M')}.html",
-                                mime="text/html", use_container_width=True,
-                                key=f"dl_task2_{idx}"
-                            )
-                            st.caption("下載後用瀏覽器開啟，按 Ctrl+P 列印")
+                            title_tsk = f"{task_name}　共{len(task_q_list)}題"
+                            ts_tsk    = get_now().strftime('%m%d_%H%M')
+                            try:
+                                pt1.download_button(
+                                    "① 只印題目",
+                                    data=_gen_print_pdf(task_q_list, 1, title=title_tsk),
+                                    file_name=f"task1_{ts_tsk}.pdf",
+                                    mime="application/pdf",
+                                    use_container_width=True,
+                                    key=f"dl_task1_{idx}"
+                                )
+                                pt2.download_button(
+                                    "② 題目＋答案＋解析",
+                                    data=_gen_print_pdf(task_q_list, 2, title=title_tsk),
+                                    file_name=f"task2_{ts_tsk}.pdf",
+                                    mime="application/pdf",
+                                    use_container_width=True,
+                                    key=f"dl_task2_{idx}"
+                                )
+                            except Exception as e:
+                                st.error(f"❌ PDF 產生失敗：{e}")
     with t2:
         st.subheader("📊 數據監控")
 
@@ -1551,41 +1646,43 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
         # ── 列印功能（功能4）────────────────────────────────────────────
         if not df_rev_scope.empty:
             st.divider()
-            st.markdown("**🖨️ 列印題目**")
+            st.markdown("**🖨️ 下載列印 PDF**")
             q_list = df_rev_scope.to_dict('records')
             ts     = get_now().strftime('%m%d_%H%M')
+            title_base = f"題目講解-{rev_group}-共{len(q_list)}題"
 
             pc1, pc2, pc3 = st.columns(3)
-            pc1.download_button(
-                label="① 只印題目",
-                data=_gen_print_html(q_list, 1, title=f"題目講解-{rev_group}-共{len(q_list)}題").encode('utf-8'),
-                file_name=f"print1_{ts}.html",
-                mime="text/html",
-                use_container_width=True,
-                key="dl_rev_1"
-            )
-            pc2.download_button(
-                label="② 題目＋答案＋解析",
-                data=_gen_print_html(q_list, 2, title=f"題目講解-{rev_group}-共{len(q_list)}題").encode('utf-8'),
-                file_name=f"print2_{ts}.html",
-                mime="text/html",
-                use_container_width=True,
-                key="dl_rev_2"
-            )
-            pc3.download_button(
-                label="③ 含作答記錄",
-                data=_gen_print_html(
-                    q_list, 3,
-                    title=f"題目講解-{rev_group}-共{len(q_list)}題",
-                    group_logs=df_group_logs if not df_group_logs.empty else None,
-                    target_students=target_students
-                ).encode('utf-8'),
-                file_name=f"print3_{ts}.html",
-                mime="text/html",
-                use_container_width=True,
-                key="dl_rev_3"
-            )
-            st.caption("⬇️ 點按鈕即可下載，下載後用瀏覽器開啟，按 Ctrl+P 列印")
+            try:
+                pc1.download_button(
+                    label="① 只印題目",
+                    data=_gen_print_pdf(q_list, 1, title=title_base),
+                    file_name=f"print1_{ts}.pdf",
+                    mime="application/pdf",
+                    use_container_width=True,
+                    key="dl_rev_1"
+                )
+                pc2.download_button(
+                    label="② 題目＋答案＋解析",
+                    data=_gen_print_pdf(q_list, 2, title=title_base),
+                    file_name=f"print2_{ts}.pdf",
+                    mime="application/pdf",
+                    use_container_width=True,
+                    key="dl_rev_2"
+                )
+                pc3.download_button(
+                    label="③ 含作答記錄",
+                    data=_gen_print_pdf(
+                        q_list, 3, title=title_base,
+                        group_logs=df_group_logs if not df_group_logs.empty else None,
+                        target_students=target_students
+                    ),
+                    file_name=f"print3_{ts}.pdf",
+                    mime="application/pdf",
+                    use_container_width=True,
+                    key="dl_rev_3"
+                )
+            except Exception as e:
+                st.error(f"❌ PDF 產生失敗：{e}")
 
         # ── 朗讀講解 ──────────────────────────────────────────────────────
         with rev4_tab2:
