@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.122 - 直接下載列印版)
+# 🧩 英文全能練習系統 (V2.9.123 - 列印按鈕修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.122
+# 📌 版本編號 (VERSION): 2.9.123
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.122"
+VERSION = "2.9.123"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1346,6 +1346,8 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 except: return 0
 
             # 選了任務時隱藏題目範圍選單，直接用任務題目ID
+            df_rev_scope  = pd.DataFrame()  # 預設空值
+            df_group_logs = pd.DataFrame()  # 預設空值
             if rev_task_ids:
                 # 從 df_q 查（重組/單選）
                 df_rev_q = df_q.copy()
@@ -1551,32 +1553,39 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             st.divider()
             st.markdown("**🖨️ 列印題目**")
             q_list = df_rev_scope.to_dict('records')
-
-            def _make_html(mode):
-                return _gen_print_html(
-                    q_list, mode,
-                    title=f"題目講解 - {rev_group} - 共{len(q_list)}題",
-                    group_logs=df_group_logs if mode == 3 else None,
-                    target_students=target_students if mode == 3 else None
-                ).encode('utf-8')
+            ts     = get_now().strftime('%m%d_%H%M')
 
             pc1, pc2, pc3 = st.columns(3)
             pc1.download_button(
-                "① 只印題目", data=_make_html(1),
-                file_name=f"print1_{rev_group}_{get_now().strftime('%m%d_%H%M')}.html",
-                mime="text/html", use_container_width=True, key="dl_rev_1"
+                label="① 只印題目",
+                data=_gen_print_html(q_list, 1, title=f"題目講解-{rev_group}-共{len(q_list)}題").encode('utf-8'),
+                file_name=f"print1_{ts}.html",
+                mime="text/html",
+                use_container_width=True,
+                key="dl_rev_1"
             )
             pc2.download_button(
-                "② 題目＋答案＋解析", data=_make_html(2),
-                file_name=f"print2_{rev_group}_{get_now().strftime('%m%d_%H%M')}.html",
-                mime="text/html", use_container_width=True, key="dl_rev_2"
+                label="② 題目＋答案＋解析",
+                data=_gen_print_html(q_list, 2, title=f"題目講解-{rev_group}-共{len(q_list)}題").encode('utf-8'),
+                file_name=f"print2_{ts}.html",
+                mime="text/html",
+                use_container_width=True,
+                key="dl_rev_2"
             )
             pc3.download_button(
-                "③ 含作答記錄", data=_make_html(3),
-                file_name=f"print3_{rev_group}_{get_now().strftime('%m%d_%H%M')}.html",
-                mime="text/html", use_container_width=True, key="dl_rev_3"
+                label="③ 含作答記錄",
+                data=_gen_print_html(
+                    q_list, 3,
+                    title=f"題目講解-{rev_group}-共{len(q_list)}題",
+                    group_logs=df_group_logs if not df_group_logs.empty else None,
+                    target_students=target_students
+                ).encode('utf-8'),
+                file_name=f"print3_{ts}.html",
+                mime="text/html",
+                use_container_width=True,
+                key="dl_rev_3"
             )
-            st.caption("下載後用瀏覽器開啟，按 Ctrl+P 列印")
+            st.caption("⬇️ 點按鈕即可下載，下載後用瀏覽器開啟，按 Ctrl+P 列印")
 
         # ── 朗讀講解 ──────────────────────────────────────────────────────
         with rev4_tab2:
