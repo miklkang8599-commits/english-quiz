@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.144 - 排行榜即時版)
+# 🧩 英文全能練習系統 (V2.9.145 - 文法難度篩選版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.144
+# 📌 版本編號 (VERSION): 2.9.145
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.144"
+VERSION = "2.9.145"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -812,6 +812,20 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 (df_q['年度'] == t1y) & (df_q['冊編號'] == t1b) &
                 (df_q['課編號'] == t1l)
             ].copy()
+
+            # 文法／難度 額外篩選（選填）
+            extra_cols = st.columns(2)
+            if '文法' in df_t1_scope.columns:
+                grammar_opts = ["（不限）"] + sorted([v for v in df_t1_scope['文法'].unique() if v and v != ''])
+                t1_grammar = extra_cols[0].selectbox("文法（選填）", grammar_opts, key="t1_grammar")
+                if t1_grammar != "（不限）":
+                    df_t1_scope = df_t1_scope[df_t1_scope['文法'] == t1_grammar]
+            if '難度' in df_t1_scope.columns:
+                diff_opts = ["（不限）"] + sorted([v for v in df_t1_scope['難度'].unique() if v and v != ''])
+                t1_diff = extra_cols[1].selectbox("難度（選填）", diff_opts, key="t1_diff")
+                if t1_diff != "（不限）":
+                    df_t1_scope = df_t1_scope[df_t1_scope['難度'] == t1_diff]
+
             df_t1_scope['題目ID'] = df_t1_scope.apply(
                 lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1
             )
@@ -898,6 +912,20 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 rl_ = rc_[4].selectbox("課編號", sorted(rl_src['課編號'].unique()), key="rt_l")
 
                 df_r_final = rl_src[rl_src['課編號'] == rl_].copy()
+
+                # 文法／難度篩選（選填）
+                r_extra = st.columns(2)
+                if '文法' in df_r_final.columns:
+                    r_gram_opts = ["（不限）"] + sorted([v for v in df_r_final['文法'].unique() if v and v != ''])
+                    r_gram = r_extra[0].selectbox("文法（選填）", r_gram_opts, key="rt_grammar")
+                    if r_gram != "（不限）":
+                        df_r_final = df_r_final[df_r_final['文法'] == r_gram]
+                if '難度' in df_r_final.columns:
+                    r_diff_opts = ["（不限）"] + sorted([v for v in df_r_final['難度'].unique() if v and v != ''])
+                    r_diff = r_extra[1].selectbox("難度（選填）", r_diff_opts, key="rt_diff")
+                    if r_diff != "（不限）":
+                        df_r_final = df_r_final[df_r_final['難度'] == r_diff]
+
                 r_total = len(df_r_final)
                 st.caption(f"此範圍共 {r_total} 題")
 
@@ -948,6 +976,20 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 vl_ = vc_[4].selectbox("課編號", sorted(vl_src['課編號'].unique()), key="vt_l")
 
                 df_v_scope_t1 = vl_src[vl_src['課編號'] == vl_].copy()
+
+                # 文法／難度篩選（選填）
+                v_extra = st.columns(2)
+                if '文法' in df_v_scope_t1.columns:
+                    v_gram_opts = ["（不限）"] + sorted([v for v in df_v_scope_t1['文法'].unique() if v and v != ''])
+                    v_gram = v_extra[0].selectbox("文法（選填）", v_gram_opts, key="vt_grammar")
+                    if v_gram != "（不限）":
+                        df_v_scope_t1 = df_v_scope_t1[df_v_scope_t1['文法'] == v_gram]
+                if '難度' in df_v_scope_t1.columns:
+                    v_diff_opts = ["（不限）"] + sorted([v for v in df_v_scope_t1['難度'].unique() if v and v != ''])
+                    v_diff = v_extra[1].selectbox("難度（選填）", v_diff_opts, key="vt_diff")
+                    if v_diff != "（不限）":
+                        df_v_scope_t1 = df_v_scope_t1[df_v_scope_t1['難度'] == v_diff]
+
                 v_total = len(df_v_scope_t1)
                 st.caption(f"此範圍共 {v_total} 題")
 
@@ -1446,6 +1488,16 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             fs_src = fl_src[fl_src['課編號'] == fl] if fl != "全部" else fl_src
             fs = qc6.selectbox("句編號", ["全部"] + sorted(fs_src['句編號'].unique(), key=lambda x: int(x) if str(x).isdigit() else 0), key="log_fs")
 
+            # 文法／難度篩選（選填）
+            log_extra = st.columns(2)
+            log_grammar, log_diff = "（不限）", "（不限）"
+            if '文法' in df_q.columns:
+                gram_opts_log = ["（不限）"] + sorted([v for v in fs_src['文法'].unique() if v and v != '']) if not fs_src.empty else ["（不限）"]
+                log_grammar = log_extra[0].selectbox("文法（選填）", gram_opts_log, key="log_grammar")
+            if '難度' in df_q.columns:
+                diff_opts_log = ["（不限）"] + sorted([v for v in fs_src['難度'].unique() if v and v != '']) if not fs_src.empty else ["（不限）"]
+                log_diff = log_extra[1].selectbox("難度（選填）", diff_opts_log, key="log_diff")
+
             # ── 套用篩選 ──────────────────────────────────────────────────
             mask = pd.Series([True] * len(df_l2), index=df_l2.index)
             if date_from:
@@ -1471,6 +1523,18 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 mask &= df_l2['題目ID'].str.contains(f"_{fl}_", na=False)
             if fs != "全部":
                 mask &= df_l2['題目ID'].str.endswith(f"_{fs}", na=False)
+
+            # 文法／難度：透過題目ID交叉比對
+            if log_grammar != "（不限）" and '文法' in df_q.columns:
+                gram_ids = set(fs_src[fs_src['文法'] == log_grammar].apply(
+                    lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1
+                ).tolist())
+                mask &= df_l2['題目ID'].isin(gram_ids)
+            if log_diff != "（不限）" and '難度' in df_q.columns:
+                diff_ids = set(fs_src[fs_src['難度'] == log_diff].apply(
+                    lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1
+                ).tolist())
+                mask &= df_l2['題目ID'].isin(diff_ids)
 
             df_filtered = df_l2[mask].sort_values("時間", ascending=False).copy()
             df_filtered['時間'] = df_filtered['時間'].dt.strftime("%Y-%m-%d %H:%M:%S")
@@ -1742,6 +1806,20 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     (df_q['年度'] == ry) & (df_q['冊編號'] == rb) &
                     (df_q['課編號'] == rl)
                 ].copy()
+
+                # 文法／難度篩選（選填）
+                rev_extra = st.columns(2)
+                if '文法' in df_rev_scope.columns:
+                    rev_gram_opts = ["（不限）"] + sorted([v for v in df_rev_scope['文法'].unique() if v and v != ''])
+                    rev_gram = rev_extra[0].selectbox("文法（選填）", rev_gram_opts, key="rev_grammar")
+                    if rev_gram != "（不限）":
+                        df_rev_scope = df_rev_scope[df_rev_scope['文法'] == rev_gram]
+                if '難度' in df_rev_scope.columns:
+                    rev_diff_opts = ["（不限）"] + sorted([v for v in df_rev_scope['難度'].unique() if v and v != ''])
+                    rev_diff = rev_extra[1].selectbox("難度（選填）", rev_diff_opts, key="rev_diff")
+                    if rev_diff != "（不限）":
+                        df_rev_scope = df_rev_scope[df_rev_scope['難度'] == rev_diff]
+
                 df_rev_scope['題目ID'] = df_rev_scope.apply(
                     lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1
                 )
