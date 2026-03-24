@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.154 - 排行榜字串過濾版)
+# 🧩 英文全能練習系統 (V2.9.155 - 排行榜debug2版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.154
+# 📌 版本編號 (VERSION): 2.9.155
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.154"
+VERSION = "2.9.155"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -317,14 +317,18 @@ with st.sidebar:
 
         if q_lb.data:
             df_lb = pd.DataFrame(q_lb.data)
+            # debug
+            st.caption(f"🔍 總筆數：{len(df_lb)}，created_at 範例：{df_lb['created_at'].iloc[0] if len(df_lb)>0 else '無'}")
             if target_group:
                 df_lb = df_lb[df_lb["group_id"] == target_group]
+            st.caption(f"🔍 過濾班級後：{len(df_lb)} 筆，date_from={date_from}, date_to={date_to}")
 
             # 字串比對過濾日期（created_at 格式：2026-03-18 20:35:30）
             df_lb = df_lb[
                 (df_lb["created_at"].str[:10] >= date_from) &
                 (df_lb["created_at"].str[:10] <= date_to)
             ]
+            st.caption(f"🔍 過濾日期後：{len(df_lb)} 筆")
 
             # 排除講解紀錄
             df_lb_ans = df_lb[~df_lb["result"].str.contains("📖", na=False)]
