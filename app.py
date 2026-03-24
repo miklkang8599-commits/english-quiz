@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.151 - 排行榜統計修正版)
+# 🧩 英文全能練習系統 (V2.9.152 - 排行榜Python端過濾版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.151
+# 📌 版本編號 (VERSION): 2.9.152
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.151"
+VERSION = "2.9.152"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -311,15 +311,21 @@ with st.sidebar:
         sb_lb        = get_supabase()
         target_group = st.session_state.group_id if not is_admin(st.session_state.group_id) else None
 
+        # 撈全部再在 Python 端過濾，避免 Supabase 時區問題
         q_lb = sb_lb.table("logs").select("name,group_id,result,question_id,created_at") \
-                    .gte("created_at", date_from + " 00:00:00") \
-                    .lte("created_at", date_to   + " 23:59:59") \
                     .execute()
 
         if q_lb.data:
             df_lb = pd.DataFrame(q_lb.data)
             if target_group:
                 df_lb = df_lb[df_lb["group_id"] == target_group]
+
+            # Python 端過濾日期（避免 Supabase 時區問題）
+            df_lb["_date"] = pd.to_datetime(df_lb["created_at"], errors="coerce").dt.date
+            df_lb = df_lb[
+                (df_lb["_date"] >= pd.to_datetime(date_from).date()) &
+                (df_lb["_date"] <= pd.to_datetime(date_to).date())
+            ]
 
             # 排除講解紀錄
             df_lb_ans = df_lb[~df_lb["result"].str.contains("📖", na=False)]
