@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.164 - 數據監控Python篩選版)
+# 🧩 英文全能練習系統 (V2.9.165 - 數據監控說明強化版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.164
+# 📌 版本編號 (VERSION): 2.9.165
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.164"
+VERSION = "2.9.165"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1570,7 +1570,10 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 ids_str = str(task_row_t2.iloc[0].get("題目ID清單", "") or "")
                 task_qids_t2 = set(q.strip() for q in ids_str.split(",") if q.strip() and q.strip() != "nan")
 
-        st.caption(f"📅 {t2_period}：{t2_from} ～ {t2_to}　👥 {len(target_stus_t2)} 位學生")
+        stu_names_preview = "、".join(target_stus_t2[:5]) + ("…" if len(target_stus_t2) > 5 else "")
+        grp_label = sel_grp if sel_grp else "全班"
+        task_label = sel_task_t2 if sel_task_t2 != "（不限）" else "不限"
+        st.caption(f"📅 {t2_period}：{t2_from} ～ {t2_to}　👥 {grp_label}／{len(target_stus_t2)} 位學生：{stu_names_preview}　📋 任務：{task_label}")
         st.divider()
 
         # ── 篩選（直接用 df_l，已是完整資料）────────────────────────────
