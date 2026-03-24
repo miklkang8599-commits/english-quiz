@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.165 - 數據監控說明強化版)
+# 🧩 英文全能練習系統 (V2.9.166 - 效能優化版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.165
+# 📌 版本編號 (VERSION): 2.9.166
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.165"
+VERSION = "2.9.166"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -153,44 +153,48 @@ def _to_en_assign(row: dict) -> dict:
 # 動態資料讀取（Supabase）- 移除快取，每次 rerun 直接讀最新
 # ==============================================================================
 def load_dynamic_data():
+    """assignments 無快取（即時），logs 走獨立快取函式"""
     try:
-        sb = get_supabase()
-        # 讀取 assignments
+        sb    = get_supabase()
         res_a = sb.table("assignments").select("*").execute()
         if res_a.data:
             df_a = pd.DataFrame(res_a.data)
             df_a = _to_cn(df_a, ASSIGN_COLS)
-            # 移除 id 欄
-            df_a = df_a.drop(columns=['id'], errors='ignore')
+            df_a = df_a.drop(columns=["id"], errors="ignore")
         else:
             df_a = pd.DataFrame()
-
-        # 讀取 logs（分頁撈完所有資料，避免 Supabase 1000 筆限制）
-        all_logs = []
-        page = 0
-        while True:
-            res_l = sb.table("logs").select("*") \
-                      .order("created_at", desc=False) \
-                      .range(page * 1000, (page + 1) * 1000 - 1) \
-                      .execute()
-            if not res_l.data:
-                break
-            all_logs.extend(res_l.data)
-            if len(res_l.data) < 1000:
-                break
-            page += 1
-
-        if all_logs:
-            df_l = pd.DataFrame(all_logs)
-            df_l = _to_cn(df_l, LOGS_COLS)
-            df_l = df_l.drop(columns=['id'], errors='ignore')
-        else:
-            df_l = pd.DataFrame()
-
+        df_l = _load_logs_cached()
         return df_a, df_l
     except Exception as e:
         st.warning(f"⚠️ Supabase 讀取失敗：{e}")
         return pd.DataFrame(), pd.DataFrame()
+
+@st.cache_data(ttl=30)
+def _load_logs_cached():
+    """logs 資料，30秒快取，避免每次 rerun 都撈全部"""
+    try:
+        sb       = get_supabase()
+        all_logs = []
+        page     = 0
+        while True:
+            res = sb.table("logs").select("*") \
+                    .order("created_at", desc=False) \
+                    .range(page * 1000, (page + 1) * 1000 - 1) \
+                    .execute()
+            if not res.data:
+                break
+            all_logs.extend(res.data)
+            if len(res.data) < 1000:
+                break
+            page += 1
+        if all_logs:
+            df_l = pd.DataFrame(all_logs)
+            df_l = _to_cn(df_l, LOGS_COLS)
+            df_l = df_l.drop(columns=["id"], errors="ignore")
+            return df_l
+        return pd.DataFrame()
+    except:
+        return pd.DataFrame()
 
 # ==============================================================================
 # 動態資料寫入（Supabase）
@@ -322,50 +326,36 @@ with st.sidebar:
     st.caption(f"📅 {period}：{date_from} ～ {date_to}")
 
     try:
-        sb_lb        = get_supabase()
         target_group = st.session_state.group_id if not is_admin(st.session_state.group_id) else None
 
-        # Supabase 免費版每次最多 1000 筆，用分頁撈完所有資料
-        all_data = []
-        page = 0
-        page_size = 1000
-        while True:
-            res = sb_lb.table("logs") \
-                       .select("name,group_id,result,question_id,created_at") \
-                       .range(page * page_size, (page + 1) * page_size - 1) \
-                       .execute()
-            if not res.data:
-                break
-            all_data.extend(res.data)
-            if len(res.data) < page_size:
-                break
-            page += 1
+        # 用快取的 logs（30秒更新一次，不影響效能）
+        df_lb_all = _load_logs_cached()
 
-        if all_data:
-            df_lb = pd.DataFrame(all_data)
+        if not df_lb_all.empty:
+            df_lb = df_lb_all.copy()
             if target_group:
-                df_lb = df_lb[df_lb["group_id"] == target_group]
+                df_lb = df_lb[df_lb["分組"] == target_group]
 
             # 字串比對過濾日期
             df_lb = df_lb[
-                (df_lb["created_at"].str[:10] >= date_from) &
-                (df_lb["created_at"].str[:10] <= date_to)
+                (df_lb["時間"].str[:10] >= date_from) &
+                (df_lb["時間"].str[:10] <= date_to)
             ]
 
             # 排除講解紀錄
-            df_lb_ans = df_lb[~df_lb["result"].str.contains("📖", na=False)]
+            df_lb_ans = df_lb[~df_lb["結果"].str.contains("📖", na=False)]
 
             if target_group:
                 members = sorted(df_s[df_s["分組"] == target_group]["姓名"].tolist())
             else:
                 members = sorted(df_s[~df_s["分組"].isin(["ADMIN","TEACHER"])]["姓名"].tolist())
 
-            # 統計：該時間段內的答對數 / 總答題數（不去重，累積計算）
+            # 統計：該時間段內的答對數 / 總答題數
             member_stats = []
             for m in members:
-                m_logs    = df_lb_ans[df_lb_ans["name"] == m]
+                m_logs    = df_lb_ans[df_lb_ans["姓名"] == m]
                 total_ans = len(m_logs)
-                correct   = len(m_logs[m_logs["result"] == "✅"])
+                correct   = len(m_logs[m_logs["結果"] == "✅"])
                 member_stats.append((m, correct, total_ans))
             member_stats.sort(key=lambda x: x[1], reverse=True)
 
