@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.156 - 分頁撈資料修復版)
+# 🧩 英文全能練習系統 (V2.9.157 - 數據監控分頁修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.156
+# 📌 版本編號 (VERSION): 2.9.157
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.156"
+VERSION = "2.9.157"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1571,18 +1571,37 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
 
         # ── 查詢 Supabase ─────────────────────────────────────────────────
         try:
-            sb_t2  = get_supabase()
-            res_t2 = sb_t2.table("logs").select("*") \
-                         .gte("created_at", t2_from.strftime("%Y-%m-%d")) \
-                         .lte("created_at", t2_to.strftime("%Y-%m-%d") + " 23:59:59") \
-                         .in_("name", target_stus_t2) \
-                         .execute()
+            sb_t2    = get_supabase()
+            date_from_t2 = t2_from.strftime("%Y-%m-%d")
+            date_to_t2   = t2_to.strftime("%Y-%m-%d")
 
-            if not res_t2.data:
+            # 分頁撈完所有資料，避免 1000 筆限制
+            all_t2 = []
+            page   = 0
+            while True:
+                res_t2 = sb_t2.table("logs").select("*") \
+                              .in_("name", target_stus_t2) \
+                              .range(page * 1000, (page + 1) * 1000 - 1) \
+                              .execute()
+                if not res_t2.data:
+                    break
+                all_t2.extend(res_t2.data)
+                if len(res_t2.data) < 1000:
+                    break
+                page += 1
+
+            if not all_t2:
                 st.info("此條件下無作答紀錄。")
             else:
-                df_t2 = pd.DataFrame(res_t2.data)
+                df_t2 = pd.DataFrame(all_t2)
                 df_t2 = _to_cn(df_t2, LOGS_COLS).drop(columns=["id"], errors="ignore")
+
+                # Python 端日期過濾（字串比對，避免 Supabase 時區問題）
+                if "時間" in df_t2.columns:
+                    df_t2 = df_t2[
+                        (df_t2["時間"].str[:10] >= date_from_t2) &
+                        (df_t2["時間"].str[:10] <= date_to_t2)
+                    ]
 
                 # 任務篩選
                 if task_qids_t2:
