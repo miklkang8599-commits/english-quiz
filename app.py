@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.147 - 伺服器忙碌修復版)
+# 🧩 英文全能練習系統 (V2.9.148 - 縮排修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.147
+# 📌 版本編號 (VERSION): 2.9.148
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.147"
+VERSION = "2.9.148"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1308,168 +1308,168 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 with tab_container:
                     df_teacher = df_a2[df_a2['_teacher'] == teacher]
                     for idx, row in df_teacher.iterrows():
-                    task_name    = row.get('任務名稱', '未命名')
-                    task_group   = row.get('對象班級', row.get('對象', ''))
-                    task_start   = row.get('開始日期', '')
-                    task_end     = row.get('結束日期', '')
-                    task_stu_str = str(row.get('指派學生', ''))
-                    task_q_ids   = str(row.get('題目ID清單', ''))
-                    task_status  = str(row.get('狀態', '進行中'))
-    
-                    assigned_stus = [s.strip() for s in task_stu_str.split(',') if s.strip()] if task_stu_str else []
-                    q_ids_set     = set([q.strip() for q in task_q_ids.split(',') if q.strip()]) if task_q_ids else set()
-                    task_q_count  = len(q_ids_set) if q_ids_set else max(int(float(str(row.get('題目數', 0)) or 0)), 0)
-                    assign_count  = len(assigned_stus)
-    
-                    # 計算完成人數：每位指派學生都答過所有題目ID（有任一作答紀錄即算）
-                    completed = 0
-                    if assigned_stus and q_ids_set and not df_l.empty and '題目ID' in df_l.columns:
-                        for stu in assigned_stus:
-                            stu_done = set(df_l[(df_l['姓名'] == stu) & (~df_l['結果'].str.contains('📖', na=False))]['題目ID'].tolist())
-                            if q_ids_set.issubset(stu_done):
-                                completed += 1
-    
-                    all_done  = (completed == assign_count and assign_count > 0)
-                    done_icon = "🟢" if all_done else "🔴"
-                    date_info = f"{task_start} ～ {task_end}" if task_start else ""
-    
-                    with st.expander(f"{done_icon} {task_name}　{task_group}　{date_info}　✅{completed}/{assign_count}人"):
-                        # 任務說明
-                        admin_desc = str(row.get('任務說明', '')).strip()
-                        if admin_desc and admin_desc != 'nan':
-                            st.info(f"📋 {admin_desc}")
-    
-                        ic1, ic2, ic3, ic4 = st.columns(4)
-                        ic1.metric("指派人數", assign_count)
-                        ic2.metric("已完成", completed)
-                        ic3.metric("題目數", task_q_count)
-                        ic4.metric("狀態", "🟢 全部完成" if all_done else ("🔴 進行中" if task_status != '已結束' else "⚫ 已結束"))
-    
-                        # 各學生完成狀況
+                        task_name    = row.get('任務名稱', '未命名')
+                        task_group   = row.get('對象班級', row.get('對象', ''))
+                        task_start   = row.get('開始日期', '')
+                        task_end     = row.get('結束日期', '')
+                        task_stu_str = str(row.get('指派學生', ''))
+                        task_q_ids   = str(row.get('題目ID清單', ''))
+                        task_status  = str(row.get('狀態', '進行中'))
+        
+                        assigned_stus = [s.strip() for s in task_stu_str.split(',') if s.strip()] if task_stu_str else []
+                        q_ids_set     = set([q.strip() for q in task_q_ids.split(',') if q.strip()]) if task_q_ids else set()
+                        task_q_count  = len(q_ids_set) if q_ids_set else max(int(float(str(row.get('題目數', 0)) or 0)), 0)
+                        assign_count  = len(assigned_stus)
+        
+                        # 計算完成人數：每位指派學生都答過所有題目ID（有任一作答紀錄即算）
+                        completed = 0
                         if assigned_stus and q_ids_set and not df_l.empty and '題目ID' in df_l.columns:
-                            st.markdown("**學生完成狀況：**")
-                            sc = st.columns(min(len(assigned_stus), 5))
-                            for i, stu in enumerate(assigned_stus):
+                            for stu in assigned_stus:
                                 stu_done = set(df_l[(df_l['姓名'] == stu) & (~df_l['結果'].str.contains('📖', na=False))]['題目ID'].tolist())
-                                done_q   = len(q_ids_set & stu_done)
-                                sc[i % 5].markdown(f"{'✅' if q_ids_set.issubset(stu_done) else '🔄'} **{stu}**  \n{done_q}/{task_q_count} 題")
-    
-                        st.divider()
-                        st.markdown("**✏️ 修改任務內容**")
-    
-                        # 任務名稱
-                        new_name = st.text_input("任務名稱", value=task_name, key=f"edit_name_{idx}")
-    
-                        # 日期
-                        ed1, ed2 = st.columns(2)
-                        try:
-                            cur_start = datetime.strptime(task_start, "%Y-%m-%d").date() if task_start else get_now().date()
-                            cur_end   = datetime.strptime(task_end,   "%Y-%m-%d").date() if task_end   else get_now().date() + timedelta(days=7)
-                        except:
-                            cur_start = get_now().date()
-                            cur_end   = get_now().date() + timedelta(days=7)
-                        new_start = ed1.date_input("開始日期", value=cur_start, key=f"edit_start_{idx}")
-                        new_end   = ed2.date_input("結束日期", value=cur_end,   key=f"edit_end_{idx}")
-    
-                        # 學生（可刪除）
-                        st.markdown("**👥 指派學生（取消勾選即移除）**")
-                        all_stu_pool = sorted(df_s[~df_s['分組'].isin(['ADMIN','TEACHER'])]['姓名'].tolist())
-                        new_stus = st.multiselect(
-                            "學生名單", all_stu_pool,
-                            default=[s for s in assigned_stus if s in all_stu_pool],
-                            key=f"edit_stus_{idx}"
-                        )
-    
-                        if st.button("💾 儲存修改", key=f"save_task_{idx}", type="primary", use_container_width=True):
-                            if new_end < new_start:
-                                st.error("❌ 結束日期不能早於開始日期")
-                            elif not new_stus:
-                                st.error("❌ 請至少保留一位學生")
-                            else:
+                                if q_ids_set.issubset(stu_done):
+                                    completed += 1
+        
+                        all_done  = (completed == assign_count and assign_count > 0)
+                        done_icon = "🟢" if all_done else "🔴"
+                        date_info = f"{task_start} ～ {task_end}" if task_start else ""
+        
+                        with st.expander(f"{done_icon} {task_name}　{task_group}　{date_info}　✅{completed}/{assign_count}人"):
+                            # 任務說明
+                            admin_desc = str(row.get('任務說明', '')).strip()
+                            if admin_desc and admin_desc != 'nan':
+                                st.info(f"📋 {admin_desc}")
+        
+                            ic1, ic2, ic3, ic4 = st.columns(4)
+                            ic1.metric("指派人數", assign_count)
+                            ic2.metric("已完成", completed)
+                            ic3.metric("題目數", task_q_count)
+                            ic4.metric("狀態", "🟢 全部完成" if all_done else ("🔴 進行中" if task_status != '已結束' else "⚫ 已結束"))
+        
+                            # 各學生完成狀況
+                            if assigned_stus and q_ids_set and not df_l.empty and '題目ID' in df_l.columns:
+                                st.markdown("**學生完成狀況：**")
+                                sc = st.columns(min(len(assigned_stus), 5))
+                                for i, stu in enumerate(assigned_stus):
+                                    stu_done = set(df_l[(df_l['姓名'] == stu) & (~df_l['結果'].str.contains('📖', na=False))]['題目ID'].tolist())
+                                    done_q   = len(q_ids_set & stu_done)
+                                    sc[i % 5].markdown(f"{'✅' if q_ids_set.issubset(stu_done) else '🔄'} **{stu}**  \n{done_q}/{task_q_count} 題")
+        
+                            st.divider()
+                            st.markdown("**✏️ 修改任務內容**")
+        
+                            # 任務名稱
+                            new_name = st.text_input("任務名稱", value=task_name, key=f"edit_name_{idx}")
+        
+                            # 日期
+                            ed1, ed2 = st.columns(2)
+                            try:
+                                cur_start = datetime.strptime(task_start, "%Y-%m-%d").date() if task_start else get_now().date()
+                                cur_end   = datetime.strptime(task_end,   "%Y-%m-%d").date() if task_end   else get_now().date() + timedelta(days=7)
+                            except:
+                                cur_start = get_now().date()
+                                cur_end   = get_now().date() + timedelta(days=7)
+                            new_start = ed1.date_input("開始日期", value=cur_start, key=f"edit_start_{idx}")
+                            new_end   = ed2.date_input("結束日期", value=cur_end,   key=f"edit_end_{idx}")
+        
+                            # 學生（可刪除）
+                            st.markdown("**👥 指派學生（取消勾選即移除）**")
+                            all_stu_pool = sorted(df_s[~df_s['分組'].isin(['ADMIN','TEACHER'])]['姓名'].tolist())
+                            new_stus = st.multiselect(
+                                "學生名單", all_stu_pool,
+                                default=[s for s in assigned_stus if s in all_stu_pool],
+                                key=f"edit_stus_{idx}"
+                            )
+        
+                            if st.button("💾 儲存修改", key=f"save_task_{idx}", type="primary", use_container_width=True):
+                                if new_end < new_start:
+                                    st.error("❌ 結束日期不能早於開始日期")
+                                elif not new_stus:
+                                    st.error("❌ 請至少保留一位學生")
+                                else:
+                                    try:
+                                        sb = get_supabase()
+                                        task_created = str(row.get('建立時間', ''))
+                                        sb.table("assignments").update({
+                                            "task_name":         new_name.strip(),
+                                            "start_date":        str(new_start),
+                                            "end_date":          str(new_end),
+                                            "assigned_students": ",".join(new_stus),
+                                            "student_count":     str(len(new_stus))
+                                        }).eq("created_at", task_created).execute()
+                                        st.success("✅ 任務已更新")
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"儲存失敗：{e}")
+        
+                            st.divider()
+                            del_key = f"del_task_{idx}"
+                            if st.button("🗑️ 刪除此任務", key=del_key):
                                 try:
                                     sb = get_supabase()
                                     task_created = str(row.get('建立時間', ''))
                                     sb.table("assignments").update({
-                                        "task_name":         new_name.strip(),
-                                        "start_date":        str(new_start),
-                                        "end_date":          str(new_end),
-                                        "assigned_students": ",".join(new_stus),
-                                        "student_count":     str(len(new_stus))
+                                        "status": "已刪除"
                                     }).eq("created_at", task_created).execute()
-                                    st.success("✅ 任務已更新")
+                                    st.success("✅ 任務已標記刪除")
                                     st.rerun()
                                 except Exception as e:
-                                    st.error(f"儲存失敗：{e}")
-    
-                        st.divider()
-                        del_key = f"del_task_{idx}"
-                        if st.button("🗑️ 刪除此任務", key=del_key):
-                            try:
-                                sb = get_supabase()
-                                task_created = str(row.get('建立時間', ''))
-                                sb.table("assignments").update({
-                                    "status": "已刪除"
-                                }).eq("created_at", task_created).execute()
-                                st.success("✅ 任務已標記刪除")
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"刪除失敗：{e}")
-    
-                        # ── 下載 PDF（功能5）─────────────────────────────
-                        if q_ids_set:
-                            st.divider()
-                            st.markdown("**🖨️ 下載 PDF**")
-    
-                            def _get_task_questions(qids):
-                                df_q2 = df_q.copy()
-                                df_q2['題目ID'] = df_q2.apply(
-                                    lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1
-                                )
-                                norm_ids = set(qid[2:] if qid.startswith('V_') else qid for qid in qids)
-                                return df_q2[df_q2['題目ID'].isin(norm_ids)].to_dict('records')
-    
-                            task_q_list = _get_task_questions(q_ids_set)
-                            if task_q_list:
-                                export_mode_t1 = st.radio(
-                                    "列印內容",
-                                    ["① 只有題目", "② 題目＋答案＋解析"],
-                                    horizontal=True, key=f"export_mode_task_{idx}"
-                                )
-                                t1_mode_num = 1 if "①" in export_mode_t1 else 2
-                                title_tsk   = f"{task_name}-共{len(task_q_list)}題"
-    
-                                # 當選項改變時重新產生
-                                pdf_cache_key_t = f"pdf_task_{idx}_{t1_mode_num}"
-                                if st.session_state.get(f'pdf_task_cache_{idx}') != pdf_cache_key_t:
-                                    try:
-                                        pdf_task = _gen_print_pdf(task_q_list, t1_mode_num, title=title_tsk)
-                                        st.session_state[f'pdf_task_data_{idx}']  = pdf_task
-                                        st.session_state[f'pdf_task_name_{idx}']  = f"{title_tsk}.pdf"
-                                        st.session_state[f'pdf_task_cache_{idx}'] = pdf_cache_key_t
-                                        st.session_state[f'pdf_task_cnt_{idx}']   = 0
-                                    except Exception as e:
-                                        st.error(f"❌ PDF 產生失敗：{e}")
-    
-                                if st.session_state.get(f'pdf_task_data_{idx}'):
-                                    cnt_t = st.session_state.get(f'pdf_task_cnt_{idx}', 0)
-                                    tl1, tl2 = st.columns(2)
-                                    tl1.download_button(
-                                        label=f"⬇️ 下載 PDF（{export_mode_t1[:1]}）",
-                                        data=bytes(st.session_state[f'pdf_task_data_{idx}']),
-                                        file_name=st.session_state.get(f'pdf_task_name_{idx}', 'print.pdf'),
-                                        mime="application/pdf",
-                                        use_container_width=True,
-                                        key=f"dl_pdf_task_{idx}_{cnt_t}",
-                                        on_click=lambda i=idx, c=cnt_t: st.session_state.update({f'pdf_task_cnt_{i}': c + 1})
+                                    st.error(f"刪除失敗：{e}")
+        
+                            # ── 下載 PDF（功能5）─────────────────────────────
+                            if q_ids_set:
+                                st.divider()
+                                st.markdown("**🖨️ 下載 PDF**")
+        
+                                def _get_task_questions(qids):
+                                    df_q2 = df_q.copy()
+                                    df_q2['題目ID'] = df_q2.apply(
+                                        lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1
                                     )
-                                    tl2.download_button(
-                                        label="📊 下載 CSV",
-                                        data=_gen_csv(task_q_list, t1_mode_num),
-                                        file_name=f"{title_tsk}.csv",
-                                        mime="text/csv",
-                                        use_container_width=True,
-                                        key=f"dl_csv_task_{idx}_{cnt_t}"
+                                    norm_ids = set(qid[2:] if qid.startswith('V_') else qid for qid in qids)
+                                    return df_q2[df_q2['題目ID'].isin(norm_ids)].to_dict('records')
+        
+                                task_q_list = _get_task_questions(q_ids_set)
+                                if task_q_list:
+                                    export_mode_t1 = st.radio(
+                                        "列印內容",
+                                        ["① 只有題目", "② 題目＋答案＋解析"],
+                                        horizontal=True, key=f"export_mode_task_{idx}"
                                     )
+                                    t1_mode_num = 1 if "①" in export_mode_t1 else 2
+                                    title_tsk   = f"{task_name}-共{len(task_q_list)}題"
+        
+                                    # 當選項改變時重新產生
+                                    pdf_cache_key_t = f"pdf_task_{idx}_{t1_mode_num}"
+                                    if st.session_state.get(f'pdf_task_cache_{idx}') != pdf_cache_key_t:
+                                        try:
+                                            pdf_task = _gen_print_pdf(task_q_list, t1_mode_num, title=title_tsk)
+                                            st.session_state[f'pdf_task_data_{idx}']  = pdf_task
+                                            st.session_state[f'pdf_task_name_{idx}']  = f"{title_tsk}.pdf"
+                                            st.session_state[f'pdf_task_cache_{idx}'] = pdf_cache_key_t
+                                            st.session_state[f'pdf_task_cnt_{idx}']   = 0
+                                        except Exception as e:
+                                            st.error(f"❌ PDF 產生失敗：{e}")
+        
+                                    if st.session_state.get(f'pdf_task_data_{idx}'):
+                                        cnt_t = st.session_state.get(f'pdf_task_cnt_{idx}', 0)
+                                        tl1, tl2 = st.columns(2)
+                                        tl1.download_button(
+                                            label=f"⬇️ 下載 PDF（{export_mode_t1[:1]}）",
+                                            data=bytes(st.session_state[f'pdf_task_data_{idx}']),
+                                            file_name=st.session_state.get(f'pdf_task_name_{idx}', 'print.pdf'),
+                                            mime="application/pdf",
+                                            use_container_width=True,
+                                            key=f"dl_pdf_task_{idx}_{cnt_t}",
+                                            on_click=lambda i=idx, c=cnt_t: st.session_state.update({f'pdf_task_cnt_{i}': c + 1})
+                                        )
+                                        tl2.download_button(
+                                            label="📊 下載 CSV",
+                                            data=_gen_csv(task_q_list, t1_mode_num),
+                                            file_name=f"{title_tsk}.csv",
+                                            mime="text/csv",
+                                            use_container_width=True,
+                                            key=f"dl_csv_task_{idx}_{cnt_t}"
+                                        )
     with t2:
         st.subheader("📊 數據監控")
         now_tw = get_now()
