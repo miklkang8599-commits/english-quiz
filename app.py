@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.162 - 數據監控班級修復版)
+# 🧩 英文全能練習系統 (V2.9.163 - 數據監控全面修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.162
+# 📌 版本編號 (VERSION): 2.9.163
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.162"
+VERSION = "2.9.163"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1528,34 +1528,35 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
         }
         t2_from, t2_to = _t2_d[t2_period]
 
-        # 自訂時間
-        with st.expander("📅 自訂時間範圍"):
+        # 自訂時間（只在展開時才覆蓋）
+        with st.expander("📅 自訂時間範圍（展開可調整）"):
             dc1, dc2 = st.columns(2)
-            t2_from = dc1.date_input("起始日", value=t2_from, key="t2_date_from")
-            t2_to   = dc2.date_input("結束日", value=t2_to,   key="t2_date_to")
+            t2_from_custom = dc1.date_input("起始日", value=t2_from, key="t2_date_from")
+            t2_to_custom   = dc2.date_input("結束日", value=t2_to,   key="t2_date_to")
+            if st.button("✅ 套用自訂時間", key="t2_apply_custom"):
+                st.session_state["t2_custom_from"] = t2_from_custom
+                st.session_state["t2_custom_to"]   = t2_to_custom
+                st.session_state["t2_period"]      = "自訂"
+                st.rerun()
+
+        # 如果是自訂模式，用 session_state 的自訂日期
+        if t2_period == "自訂":
+            t2_from = st.session_state.get("t2_custom_from", today_t2)
+            t2_to   = st.session_state.get("t2_custom_to",   today_t2)
 
         st.divider()
 
         # ── 班級 / 學生 / 任務篩選 ────────────────────────────────────────
         f1, f2, f3 = st.columns(3)
         all_groups_t2 = sorted(df_s[~df_s["分組"].isin(["ADMIN","TEACHER"])]["分組"].unique().tolist())
-        group_labels_t2 = [_group_label(g) for g in all_groups_t2]
-        group_opts_t2   = ["全班"] + group_labels_t2
-        group_map_t2    = {"全班": None, **{_group_label(g): g for g in all_groups_t2}}
 
-        sel_grp_lbl = f1.selectbox("👥 班級", group_opts_t2, key="t2_group")
-        sel_grp     = group_map_t2.get(sel_grp_lbl, None)
-
-        # 若 map 找不到，直接用原始分組名稱比對
-        if sel_grp is None and sel_grp_lbl != "全班":
-            for g in all_groups_t2:
-                if sel_grp_lbl.startswith(g):
-                    sel_grp = g
-                    break
+        # 直接用分組原始名稱做選單，不用 _group_label 避免 key 不符
+        sel_grp = f1.selectbox("👥 班級", ["全班"] + all_groups_t2, key="t2_group")
+        sel_grp = None if sel_grp == "全班" else sel_grp
 
         stu_pool_t2    = sorted(df_s[df_s["分組"] == sel_grp]["姓名"].tolist()) if sel_grp else \
                          sorted(df_s[~df_s["分組"].isin(["ADMIN","TEACHER"])]["姓名"].tolist())
-        sel_stus_t2    = f2.multiselect("👤 學生（可多選，空白=全選）", stu_pool_t2, default=[], key="t2_stus")
+        sel_stus_t2    = f2.multiselect("👤 學生（空白=全選）", stu_pool_t2, default=[], key="t2_stus")
         target_stus_t2 = sel_stus_t2 if sel_stus_t2 else stu_pool_t2
 
         df_a_t2     = df_a[df_a.get("狀態", pd.Series(dtype=str)).fillna("") != "已刪除"].copy() if not df_a.empty else pd.DataFrame()
@@ -1569,10 +1570,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 ids_str = str(task_row_t2.iloc[0].get("題目ID清單", "") or "")
                 task_qids_t2 = set(q.strip() for q in ids_str.split(",") if q.strip() and q.strip() != "nan")
 
-        st.caption(f"📅 統計範圍：{t2_from} ～ {t2_to}　👥 {len(target_stus_t2)} 位學生　🎯 任務：{sel_task_t2}")
-        st.caption(f"🔍 sel_grp={sel_grp!r}　stu_pool={stu_pool_t2[:3]}　sel_stus={sel_stus_t2}")
-        if len(target_stus_t2) <= 5:
-            st.caption(f"學生：{', '.join(target_stus_t2)}")
+        st.caption(f"📅 {t2_period}：{t2_from} ～ {t2_to}　👥 {len(target_stus_t2)} 位學生")
         st.divider()
 
         # ── 查詢 Supabase ─────────────────────────────────────────────────
