@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.158 - 數據監控6選項版)
+# 🧩 英文全能練習系統 (V2.9.160 - 數據監控debug版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.158
+# 📌 版本編號 (VERSION): 2.9.160
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.158"
+VERSION = "2.9.160"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1536,7 +1536,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
 
         st.divider()
 
-        # ── 班級 / 學生篩選 ───────────────────────────────────────────────
+        # ── 班級 / 學生 / 任務篩選 ────────────────────────────────────────
         f1, f2, f3 = st.columns(3)
         all_groups_t2 = sorted(df_s[~df_s["分組"].isin(["ADMIN","TEACHER"])]["分組"].unique().tolist())
         group_opts_t2 = ["全班"] + [_group_label(g) for g in all_groups_t2]
@@ -1544,15 +1544,14 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
         sel_grp_lbl   = f1.selectbox("👥 班級", group_opts_t2, key="t2_group")
         sel_grp       = group_map_t2.get(sel_grp_lbl)
 
-        stu_pool_t2 = sorted(df_s[df_s["分組"] == sel_grp]["姓名"].tolist()) if sel_grp else \
-                      sorted(df_s[~df_s["分組"].isin(["ADMIN","TEACHER"])]["姓名"].tolist())
-        sel_stus_t2 = f2.multiselect("👤 學生（可多選）", stu_pool_t2, default=[], key="t2_stus")
+        stu_pool_t2    = sorted(df_s[df_s["分組"] == sel_grp]["姓名"].tolist()) if sel_grp else \
+                         sorted(df_s[~df_s["分組"].isin(["ADMIN","TEACHER"])]["姓名"].tolist())
+        sel_stus_t2    = f2.multiselect("👤 學生（可多選，空白=全選）", stu_pool_t2, default=[], key="t2_stus")
         target_stus_t2 = sel_stus_t2 if sel_stus_t2 else stu_pool_t2
 
-        # ── 任務篩選（選填）──────────────────────────────────────────────
-        df_a_t2    = df_a[df_a.get("狀態", pd.Series(dtype=str)).fillna("") != "已刪除"].copy() if not df_a.empty else pd.DataFrame()
-        task_opts  = ["（不限）"] + (df_a_t2["任務名稱"].tolist() if not df_a_t2.empty and "任務名稱" in df_a_t2.columns else [])
-        sel_task_t2 = f3.selectbox("📋 任務篩選（選填）", task_opts, key="t2_task")
+        df_a_t2     = df_a[df_a.get("狀態", pd.Series(dtype=str)).fillna("") != "已刪除"].copy() if not df_a.empty else pd.DataFrame()
+        task_opts   = ["（不限）"] + (df_a_t2["任務名稱"].tolist() if not df_a_t2.empty and "任務名稱" in df_a_t2.columns else [])
+        sel_task_t2 = f3.selectbox("📋 任務（選填）", task_opts, key="t2_task")
 
         task_qids_t2 = None
         if sel_task_t2 != "（不限）" and not df_a_t2.empty:
@@ -1561,6 +1560,9 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 ids_str = str(task_row_t2.iloc[0].get("題目ID清單", "") or "")
                 task_qids_t2 = set(q.strip() for q in ids_str.split(",") if q.strip() and q.strip() != "nan")
 
+        st.caption(f"📅 統計範圍：{t2_from} ～ {t2_to}　👥 {len(target_stus_t2)} 位學生　🎯 任務：{sel_task_t2}")
+        if len(target_stus_t2) <= 5:
+            st.caption(f"學生：{', '.join(target_stus_t2)}")
         st.divider()
 
         # ── 查詢 Supabase ─────────────────────────────────────────────────
