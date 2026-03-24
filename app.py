@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.160 - 數據監控debug版)
+# 🧩 英文全能練習系統 (V2.9.161 - 數據監控debug2版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.160
+# 📌 版本編號 (VERSION): 2.9.161
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.160"
+VERSION = "2.9.161"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1561,6 +1561,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 task_qids_t2 = set(q.strip() for q in ids_str.split(",") if q.strip() and q.strip() != "nan")
 
         st.caption(f"📅 統計範圍：{t2_from} ～ {t2_to}　👥 {len(target_stus_t2)} 位學生　🎯 任務：{sel_task_t2}")
+        st.caption(f"🔍 sel_grp={sel_grp!r}　stu_pool={stu_pool_t2[:3]}　sel_stus={sel_stus_t2}")
         if len(target_stus_t2) <= 5:
             st.caption(f"學生：{', '.join(target_stus_t2)}")
         st.divider()
