@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.155 - 排行榜debug2版)
+# 🧩 英文全能練習系統 (V2.9.156 - 分頁撈資料修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.155
+# 📌 版本編號 (VERSION): 2.9.156
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.155"
+VERSION = "2.9.156"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -165,10 +165,23 @@ def load_dynamic_data():
         else:
             df_a = pd.DataFrame()
 
-        # 讀取 logs
-        res_l = sb.table("logs").select("*").order("created_at", desc=False).execute()
-        if res_l.data:
-            df_l = pd.DataFrame(res_l.data)
+        # 讀取 logs（分頁撈完所有資料，避免 Supabase 1000 筆限制）
+        all_logs = []
+        page = 0
+        while True:
+            res_l = sb.table("logs").select("*") \
+                      .order("created_at", desc=False) \
+                      .range(page * 1000, (page + 1) * 1000 - 1) \
+                      .execute()
+            if not res_l.data:
+                break
+            all_logs.extend(res_l.data)
+            if len(res_l.data) < 1000:
+                break
+            page += 1
+
+        if all_logs:
+            df_l = pd.DataFrame(all_logs)
             df_l = _to_cn(df_l, LOGS_COLS)
             df_l = df_l.drop(columns=['id'], errors='ignore')
         else:
@@ -312,23 +325,32 @@ with st.sidebar:
         sb_lb        = get_supabase()
         target_group = st.session_state.group_id if not is_admin(st.session_state.group_id) else None
 
-        q_lb = sb_lb.table("logs").select("name,group_id,result,question_id,created_at") \
-                    .execute()
+        # Supabase 免費版每次最多 1000 筆，用分頁撈完所有資料
+        all_data = []
+        page = 0
+        page_size = 1000
+        while True:
+            res = sb_lb.table("logs") \
+                       .select("name,group_id,result,question_id,created_at") \
+                       .range(page * page_size, (page + 1) * page_size - 1) \
+                       .execute()
+            if not res.data:
+                break
+            all_data.extend(res.data)
+            if len(res.data) < page_size:
+                break
+            page += 1
 
-        if q_lb.data:
-            df_lb = pd.DataFrame(q_lb.data)
-            # debug
-            st.caption(f"🔍 總筆數：{len(df_lb)}，created_at 範例：{df_lb['created_at'].iloc[0] if len(df_lb)>0 else '無'}")
+        if all_data:
+            df_lb = pd.DataFrame(all_data)
             if target_group:
                 df_lb = df_lb[df_lb["group_id"] == target_group]
-            st.caption(f"🔍 過濾班級後：{len(df_lb)} 筆，date_from={date_from}, date_to={date_to}")
 
-            # 字串比對過濾日期（created_at 格式：2026-03-18 20:35:30）
+            # 字串比對過濾日期
             df_lb = df_lb[
                 (df_lb["created_at"].str[:10] >= date_from) &
                 (df_lb["created_at"].str[:10] <= date_to)
             ]
-            st.caption(f"🔍 過濾日期後：{len(df_lb)} 筆")
 
             # 排除講解紀錄
             df_lb_ans = df_lb[~df_lb["result"].str.contains("📖", na=False)]
