@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.161 - 數據監控debug2版)
+# 🧩 英文全能練習系統 (V2.9.162 - 數據監控班級修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.161
+# 📌 版本編號 (VERSION): 2.9.162
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.161"
+VERSION = "2.9.162"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1539,10 +1539,19 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
         # ── 班級 / 學生 / 任務篩選 ────────────────────────────────────────
         f1, f2, f3 = st.columns(3)
         all_groups_t2 = sorted(df_s[~df_s["分組"].isin(["ADMIN","TEACHER"])]["分組"].unique().tolist())
-        group_opts_t2 = ["全班"] + [_group_label(g) for g in all_groups_t2]
-        group_map_t2  = {"全班": None, **{_group_label(g): g for g in all_groups_t2}}
-        sel_grp_lbl   = f1.selectbox("👥 班級", group_opts_t2, key="t2_group")
-        sel_grp       = group_map_t2.get(sel_grp_lbl)
+        group_labels_t2 = [_group_label(g) for g in all_groups_t2]
+        group_opts_t2   = ["全班"] + group_labels_t2
+        group_map_t2    = {"全班": None, **{_group_label(g): g for g in all_groups_t2}}
+
+        sel_grp_lbl = f1.selectbox("👥 班級", group_opts_t2, key="t2_group")
+        sel_grp     = group_map_t2.get(sel_grp_lbl, None)
+
+        # 若 map 找不到，直接用原始分組名稱比對
+        if sel_grp is None and sel_grp_lbl != "全班":
+            for g in all_groups_t2:
+                if sel_grp_lbl.startswith(g):
+                    sel_grp = g
+                    break
 
         stu_pool_t2    = sorted(df_s[df_s["分組"] == sel_grp]["姓名"].tolist()) if sel_grp else \
                          sorted(df_s[~df_s["分組"].isin(["ADMIN","TEACHER"])]["姓名"].tolist())
