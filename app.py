@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.148 - 縮排修復版)
+# 🧩 英文全能練習系統 (V2.9.149 - 登入頁忙碌修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.148
+# 📌 版本編號 (VERSION): 2.9.149
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.148"
+VERSION = "2.9.149"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -208,14 +208,18 @@ def append_to_sheet(worksheet_name: str, new_row: pd.DataFrame):
 # ------------------------------------------------------------------------------
 if not st.session_state.get('logged_in', False):
     df_q, df_s, df_r, df_v = load_static_data()
+    # 失敗立即重試一次
+    if df_s is None:
+        load_static_data.clear()
+        df_q, df_s, df_r, df_v = load_static_data()
     _, c, _ = st.columns([1, 1.2, 1])
     with c:
         if df_s is None:
-            st.warning("⚠️ 伺服器忙碌中，60 秒後自動重試...")
-            import time
-            time.sleep(60)
-            load_static_data.clear()
-            st.rerun()
+            st.error("⚠️ 題庫讀取失敗，請按下方按鈕重試。")
+            if st.button("🔄 重新載入", type="primary", use_container_width=True, key="login_reload"):
+                load_static_data.clear()
+                st.rerun()
+            st.stop()
         st.markdown("### 🔵 系統登入")
         i_id = st.text_input("帳號 (學號/員工編號)", key="l_id")
         i_pw = st.text_input("密碼", type="password", key="l_pw")
