@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.150 - 排行榜6選項版)
+# 🧩 英文全能練習系統 (V2.9.151 - 排行榜統計修正版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.150
+# 📌 版本編號 (VERSION): 2.9.151
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.150"
+VERSION = "2.9.151"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -312,8 +312,8 @@ with st.sidebar:
         target_group = st.session_state.group_id if not is_admin(st.session_state.group_id) else None
 
         q_lb = sb_lb.table("logs").select("name,group_id,result,question_id,created_at") \
-                    .gte("created_at", date_from) \
-                    .lte("created_at", date_to + " 23:59:59") \
+                    .gte("created_at", date_from + " 00:00:00") \
+                    .lte("created_at", date_to   + " 23:59:59") \
                     .execute()
 
         if q_lb.data:
@@ -329,16 +329,12 @@ with st.sidebar:
             else:
                 members = sorted(df_s[~df_s["分組"].isin(["ADMIN","TEACHER"])]["姓名"].tolist())
 
-            # 統計：每題取最後一次作答，答對數 / 總答題數
+            # 統計：該時間段內的答對數 / 總答題數（不去重，累積計算）
             member_stats = []
             for m in members:
-                m_logs = df_lb_ans[df_lb_ans["name"] == m]
-                if not m_logs.empty:
-                    last_ans  = m_logs.sort_values("created_at").groupby("question_id").last().reset_index()
-                    total_ans = len(last_ans)
-                    correct   = len(last_ans[last_ans["result"] == "✅"])
-                else:
-                    total_ans, correct = 0, 0
+                m_logs    = df_lb_ans[df_lb_ans["name"] == m]
+                total_ans = len(m_logs)
+                correct   = len(m_logs[m_logs["result"] == "✅"])
                 member_stats.append((m, correct, total_ans))
             member_stats.sort(key=lambda x: x[1], reverse=True)
 
