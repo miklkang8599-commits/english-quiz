@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.166 - 效能優化版)
+# 🧩 英文全能練習系統 (V2.9.167 - 講解複習記錄版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.166
+# 📌 版本編號 (VERSION): 2.9.167
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.166"
+VERSION = "2.9.167"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1589,56 +1589,79 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 norm_task = set(q[2:] if q.startswith("V_") else q for q in task_qids_t2) | task_qids_t2
                 df_t2 = df_t2[df_t2["題目ID"].isin(norm_task)]
 
-            # 排除講解紀錄
+            # 分開答題、講解、複習紀錄
             df_t2_ans = df_t2[~df_t2["結果"].str.contains("📖", na=False)].copy()
+            df_t2_rev = df_t2[df_t2["結果"].str.contains("📖", na=False)].copy()
 
-            if df_t2_ans.empty:
-                st.info("此條件下無作答紀錄。")
+            if df_t2_ans.empty and df_t2_rev.empty:
+                st.info("此條件下無紀錄。")
             else:
-                    st.markdown(f"**📊 共 {len(target_stus_t2)} 位學生，{len(df_t2_ans)} 筆作答記錄**")
+                ans_count = len(df_t2_ans)
+                rev_count = len(df_t2_rev)
+                st.markdown(f"**📊 共 {len(target_stus_t2)} 位學生　✏️ 作答 {ans_count} 筆　📖 講解/複習 {rev_count} 筆**")
 
-                    # ── 學生總覽表 ────────────────────────────────────────
-                    overview_rows = []
-                    for stu in target_stus_t2:
-                        stu_logs = df_t2_ans[df_t2_ans["姓名"] == stu]
-                        if stu_logs.empty:
-                            continue
-                        stu_grp   = df_s[df_s["姓名"] == stu]["分組"].iloc[0] if not df_s[df_s["姓名"] == stu].empty else ""
-                        total_ans = stu_logs["題目ID"].nunique()
-                        last_ans  = stu_logs.sort_values("時間").groupby("題目ID").last().reset_index()
-                        correct   = len(last_ans[last_ans["結果"] == "✅"])
-                        wrong     = len(last_ans[last_ans["結果"] == "❌"])
-                        acc_rate  = f"{int(correct/total_ans*100)}%" if total_ans > 0 else "—"
-                        overview_rows.append({
-                            "姓名": stu, "組別": stu_grp,
-                            "答題數": total_ans, "答對": correct, "答錯": wrong, "正確率": acc_rate
-                        })
+                # ── 學生總覽表 ────────────────────────────────────────────
+                overview_rows = []
+                for stu in target_stus_t2:
+                    stu_ans = df_t2_ans[df_t2_ans["姓名"] == stu]
+                    stu_rev = df_t2_rev[df_t2_rev["姓名"] == stu]
+                    if stu_ans.empty and stu_rev.empty:
+                        continue
+                    stu_grp  = df_s[df_s["姓名"] == stu]["分組"].iloc[0] if not df_s[df_s["姓名"] == stu].empty else ""
+                    total_q  = stu_ans["題目ID"].nunique()
+                    last_ans = stu_ans.sort_values("時間").groupby("題目ID").last().reset_index() if not stu_ans.empty else pd.DataFrame()
+                    correct  = len(last_ans[last_ans["結果"] == "✅"]) if not last_ans.empty else 0
+                    wrong    = len(last_ans[last_ans["結果"] == "❌"]) if not last_ans.empty else 0
+                    acc_rate = f"{int(correct/total_q*100)}%" if total_q > 0 else "—"
+                    rev_q    = stu_rev["題目ID"].nunique()
+                    lec_cnt  = len(stu_rev[stu_rev["結果"] == "📖 講解"])
+                    stu_rev_cnt = len(stu_rev[stu_rev["結果"] == "📖 複習"])
+                    overview_rows.append({
+                        "姓名": stu, "組別": stu_grp,
+                        "答題數": total_q, "答對": correct, "答錯": wrong, "正確率": acc_rate,
+                        "講解題數": lec_cnt, "複習題數": stu_rev_cnt
+                    })
 
-                    if overview_rows:
-                        df_overview = pd.DataFrame(overview_rows)
-                        st.dataframe(df_overview, use_container_width=True, hide_index=True)
-                        st.divider()
+                if overview_rows:
+                    df_overview = pd.DataFrame(overview_rows)
+                    st.dataframe(df_overview, use_container_width=True, hide_index=True)
+                    st.divider()
 
-                    # ── 各學生詳細作答歷史 ────────────────────────────────
-                    for stu in target_stus_t2:
-                        stu_logs = df_t2_ans[df_t2_ans["姓名"] == stu].sort_values("時間")
-                        if stu_logs.empty:
-                            continue
+                # ── 各學生詳細作答歷史 ────────────────────────────────────
+                for stu in target_stus_t2:
+                    stu_ans = df_t2_ans[df_t2_ans["姓名"] == stu].sort_values("時間")
+                    stu_rev = df_t2_rev[df_t2_rev["姓名"] == stu].sort_values("時間")
+                    if stu_ans.empty and stu_rev.empty:
+                        continue
 
-                        with st.expander(f"👤 {stu}　共 {stu_logs['題目ID'].nunique()} 題", expanded=False):
-                            # 每題的作答歷史
-                            stu_detail = []
-                            for qid, grp in stu_logs.groupby("題目ID"):
-                                hist = "".join(grp.sort_values("時間")["結果"].tolist())
-                                last = grp.sort_values("時間").iloc[-1]["結果"]
-                                stu_detail.append({
-                                    "題目ID": qid,
-                                    "作答歷史": hist,
-                                    "最後結果": last,
-                                    "作答次數": len(grp)
-                                })
-                            df_detail = pd.DataFrame(stu_detail)
-                            st.dataframe(df_detail, use_container_width=True, hide_index=True)
+                    ans_q   = stu_ans["題目ID"].nunique() if not stu_ans.empty else 0
+                    rev_q   = stu_rev["題目ID"].nunique() if not stu_rev.empty else 0
+                    with st.expander(f"👤 {stu}　✏️ {ans_q} 題　📖 講解/複習 {rev_q} 題", expanded=False):
+
+                        # 合併所有題目
+                        all_qids = set()
+                        if not stu_ans.empty:
+                            all_qids |= set(stu_ans["題目ID"].tolist())
+                        if not stu_rev.empty:
+                            all_qids |= set(stu_rev["題目ID"].tolist())
+
+                        stu_detail = []
+                        for qid in sorted(all_qids):
+                            # 作答歷史
+                            ans_rows = stu_ans[stu_ans["題目ID"] == qid].sort_values("時間")
+                            ans_hist = "".join(ans_rows["結果"].tolist()) if not ans_rows.empty else ""
+                            last_res = ans_rows.iloc[-1]["結果"] if not ans_rows.empty else "—"
+                            # 講解/複習歷史
+                            rev_rows = stu_rev[stu_rev["題目ID"] == qid].sort_values("時間")
+                            rev_hist = "".join(rev_rows["結果"].tolist()) if not rev_rows.empty else ""
+                            stu_detail.append({
+                                "題目ID":   qid,
+                                "作答歷史": ans_hist,
+                                "最後結果": last_res,
+                                "講解/複習": rev_hist,
+                            })
+                        df_detail = pd.DataFrame(stu_detail)
+                        st.dataframe(df_detail, use_container_width=True, hide_index=True)
 
     with t3:
         st.subheader("👥 學生帳號清單")
