@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.149 - 登入頁忙碌修復版)
+# 🧩 英文全能練習系統 (V2.9.150 - 排行榜6選項版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.149
+# 📌 版本編號 (VERSION): 2.9.150
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.149"
+VERSION = "2.9.150"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -280,30 +280,27 @@ with st.sidebar:
     now_sb = get_now()
     today  = now_sb.date()
 
-    row1 = st.radio("", ["今日", "昨天", "前天"], index=0, horizontal=True,
-                    key="sb_period_r1", label_visibility="collapsed")
-    row2 = st.radio("", ["三天", "七天", "30天"], index=0, horizontal=True,
-                    key="sb_period_r2", label_visibility="collapsed")
-
-    # 追蹤最後選的是哪一列
-    _cur = row1 + "|" + row2
-    if st.session_state.get("_sb_last") != _cur:
-        _prev = st.session_state.get("_sb_prev", ("今日", "三天"))
-        if row1 != _prev[0]:
-            st.session_state["_sb_active"] = row1
-        else:
-            st.session_state["_sb_active"] = row2
-        st.session_state["_sb_prev"] = (row1, row2)
-        st.session_state["_sb_last"] = _cur
-
-    period = st.session_state.get("_sb_active", "今日")
+    # 6個選項用按鈕排成兩列，單選
+    _periods = ["今日", "昨天", "前天", "三天", "七天", "30天"]
+    if 'sb_period' not in st.session_state:
+        st.session_state['sb_period'] = "今日"
+    _pb = st.columns(3)
+    for _i, _p in enumerate(_periods):
+        _col = _pb[_i % 3]
+        _active = st.session_state['sb_period'] == _p
+        if _col.button(_p, key=f"sb_btn_{_p}",
+                       type="primary" if _active else "secondary",
+                       use_container_width=True):
+            st.session_state['sb_period'] = _p
+            st.rerun()
+    period = st.session_state['sb_period']
 
     _d = {
-        "今日":  (today, today),
-        "昨天":  (today - timedelta(days=1), today - timedelta(days=1)),
-        "前天":  (today - timedelta(days=2), today - timedelta(days=2)),
-        "三天":  (today - timedelta(days=2), today),
-        "七天":  (today - timedelta(days=6), today),
+        "今日": (today, today),
+        "昨天": (today - timedelta(days=1), today - timedelta(days=1)),
+        "前天": (today - timedelta(days=2), today - timedelta(days=2)),
+        "三天": (today - timedelta(days=2), today),
+        "七天": (today - timedelta(days=6), today),
         "30天": (today - timedelta(days=29), today),
     }
     date_from, date_to = _d.get(period, (today, today))
