@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.153 - 排行榜debug版)
+# 🧩 英文全能練習系統 (V2.9.154 - 排行榜字串過濾版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.153
+# 📌 版本編號 (VERSION): 2.9.154
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.153"
+VERSION = "2.9.154"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -313,14 +313,18 @@ with st.sidebar:
         target_group = st.session_state.group_id if not is_admin(st.session_state.group_id) else None
 
         q_lb = sb_lb.table("logs").select("name,group_id,result,question_id,created_at") \
-                    .gte("created_at", date_from + " 00:00:00") \
-                    .lte("created_at", date_to   + " 23:59:59") \
                     .execute()
 
         if q_lb.data:
             df_lb = pd.DataFrame(q_lb.data)
             if target_group:
                 df_lb = df_lb[df_lb["group_id"] == target_group]
+
+            # 字串比對過濾日期（created_at 格式：2026-03-18 20:35:30）
+            df_lb = df_lb[
+                (df_lb["created_at"].str[:10] >= date_from) &
+                (df_lb["created_at"].str[:10] <= date_to)
+            ]
 
             # 排除講解紀錄
             df_lb_ans = df_lb[~df_lb["result"].str.contains("📖", na=False)]
