@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.157 - 數據監控分頁修復版)
+# 🧩 英文全能練習系統 (V2.9.158 - 數據監控6選項版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.157
+# 📌 版本編號 (VERSION): 2.9.158
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.157"
+VERSION = "2.9.158"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1500,45 +1500,39 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                                         )
     with t2:
         st.subheader("📊 數據監控")
-        now_tw = get_now()
-
-        # ── 篩選區 ────────────────────────────────────────────────────────
-        st.markdown("**⏱ 時間範圍**")
-        time_row1 = st.radio("", ["今日", "昨天", "前天", "自訂"], horizontal=True,
-                             key="t2_time_r1", label_visibility="collapsed")
-        time_row2 = st.radio("", ["三天", "七天", "30天"], horizontal=True,
-                             key="t2_time_r2", label_visibility="collapsed")
-
-        # 追蹤最後選的時間
-        _t2cur = time_row1 + "|" + time_row2
-        if st.session_state.get("_t2_last") != _t2cur:
-            _t2prev = st.session_state.get("_t2_prev", ("今日", "三天"))
-            if time_row1 != _t2prev[0]:
-                st.session_state["_t2_active"] = time_row1
-            else:
-                st.session_state["_t2_active"] = time_row2
-            st.session_state["_t2_prev"] = (time_row1, time_row2)
-            st.session_state["_t2_last"] = _t2cur
-
-        t2_period = st.session_state.get("_t2_active", "今日")
-
+        now_tw   = get_now()
         today_t2 = now_tw.date()
-        if t2_period == "今日":
-            t2_from, t2_to = today_t2, today_t2
-        elif t2_period == "昨天":
-            t2_from = t2_to = today_t2 - timedelta(days=1)
-        elif t2_period == "前天":
-            t2_from = t2_to = today_t2 - timedelta(days=2)
-        elif t2_period == "三天":
-            t2_from, t2_to = today_t2 - timedelta(days=2), today_t2
-        elif t2_period == "七天":
-            t2_from, t2_to = today_t2 - timedelta(days=6), today_t2
-        elif t2_period == "30天":
-            t2_from, t2_to = today_t2 - timedelta(days=29), today_t2
-        else:  # 自訂
+
+        # ── 時間選項：6個按鈕＋自訂 ──────────────────────────────────────
+        st.markdown("**⏱ 時間範圍**")
+        _t2_periods = ["今日", "昨天", "前天", "三天", "七天", "30天"]
+        if "t2_period" not in st.session_state:
+            st.session_state["t2_period"] = "今日"
+        _t2_cols = st.columns(6)
+        for _i, _p in enumerate(_t2_periods):
+            _active = st.session_state["t2_period"] == _p
+            if _t2_cols[_i].button(_p, key=f"t2_btn_{_p}",
+                                   type="primary" if _active else "secondary",
+                                   use_container_width=True):
+                st.session_state["t2_period"] = _p
+                st.rerun()
+
+        t2_period = st.session_state["t2_period"]
+        _t2_d = {
+            "今日": (today_t2, today_t2),
+            "昨天": (today_t2 - timedelta(days=1), today_t2 - timedelta(days=1)),
+            "前天": (today_t2 - timedelta(days=2), today_t2 - timedelta(days=2)),
+            "三天": (today_t2 - timedelta(days=2), today_t2),
+            "七天": (today_t2 - timedelta(days=6), today_t2),
+            "30天": (today_t2 - timedelta(days=29), today_t2),
+        }
+        t2_from, t2_to = _t2_d[t2_period]
+
+        # 自訂時間
+        with st.expander("📅 自訂時間範圍"):
             dc1, dc2 = st.columns(2)
-            t2_from = dc1.date_input("起始日", value=today_t2 - timedelta(days=7), key="t2_date_from")
-            t2_to   = dc2.date_input("結束日", value=today_t2, key="t2_date_to")
+            t2_from = dc1.date_input("起始日", value=t2_from, key="t2_date_from")
+            t2_to   = dc2.date_input("結束日", value=t2_to,   key="t2_date_to")
 
         st.divider()
 
