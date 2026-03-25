@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.169 - 講解複習歷史版)
+# 🧩 英文全能練習系統 (V2.9.170 - 單選答題鎖定版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.169
+# 📌 版本編號 (VERSION): 2.9.170
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.169"
+VERSION = "2.9.170"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3171,10 +3171,7 @@ if st.session_state.quiz_loaded:
         ans_key = str(q.get("單選答案") or "").strip()
 
         # 答對後鎖定按鈕，只顯示下一題
-        already_correct = (
-            st.session_state.get('show_analysis') and
-            st.session_state.get('current_res', '').startswith('✅')
-        )
+        already_answered = st.session_state.get('show_analysis', False)
 
         # 從題目文字自動解析選項（格式：...  (A) xxx  (B) xxx  (C) xxx  (D) xxx）
         mcq_full = str(q.get('單選題目') or q.get('中文題目') or '')
@@ -3200,7 +3197,7 @@ if st.session_state.quiz_loaded:
             btn_label = f"({opt}) {opt_text}" if opt_text else opt
             if cols[i].button(btn_label, key=f"mcq_{opt}",
                               use_container_width=True,
-                              disabled=already_correct):
+                              disabled=already_answered):
                 is_ok = (opt.upper() == ans_key.upper())
                 st.session_state.update({
                     "current_res": "✅ 正確！" if is_ok else f"❌ 錯誤！正確答案：{ans_key}",
