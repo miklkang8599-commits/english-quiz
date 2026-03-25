@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.167 - 講解複習記錄版)
+# 🧩 英文全能練習系統 (V2.9.168 - 題目排序修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.167
+# 📌 版本編號 (VERSION): 2.9.168
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.167"
+VERSION = "2.9.168"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1638,15 +1638,29 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     rev_q   = stu_rev["題目ID"].nunique() if not stu_rev.empty else 0
                     with st.expander(f"👤 {stu}　✏️ {ans_q} 題　📖 講解/複習 {rev_q} 題", expanded=False):
 
-                        # 合併所有題目
+                        # 合併所有題目，依題庫順序排序
                         all_qids = set()
                         if not stu_ans.empty:
                             all_qids |= set(stu_ans["題目ID"].tolist())
                         if not stu_rev.empty:
                             all_qids |= set(stu_rev["題目ID"].tolist())
 
+                        # 建立題目ID → 排序key的對應（從df_q取得真實順序）
+                        def _qid_sort_key(qid):
+                            # 題目ID格式：版本_年度_冊編號_單元_課編號_句編號
+                            parts = qid.lstrip("V_").split("_")
+                            try:
+                                # 用 版本_年度_冊_課_句 排序
+                                return (parts[0], parts[1], int(parts[2]) if parts[2].isdigit() else 0,
+                                        parts[3], int(parts[4]) if len(parts)>4 and parts[4].isdigit() else 0,
+                                        int(parts[5]) if len(parts)>5 and parts[5].isdigit() else 0)
+                            except:
+                                return (qid,)
+
+                        sorted_qids = sorted(all_qids, key=_qid_sort_key)
+
                         stu_detail = []
-                        for qid in sorted(all_qids):
+                        for qid in sorted_qids:
                             # 作答歷史
                             ans_rows = stu_ans[stu_ans["題目ID"] == qid].sort_values("時間")
                             ans_hist = "".join(ans_rows["結果"].tolist()) if not ans_rows.empty else ""
