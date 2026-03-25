@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.168 - 題目排序修復版)
+# 🧩 英文全能練習系統 (V2.9.169 - 講解複習歷史版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.168
+# 📌 版本編號 (VERSION): 2.9.169
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.168"
+VERSION = "2.9.169"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -2096,20 +2096,37 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                                 (q_logs_all['姓名'] == stu) &
                                 (~q_logs_all['結果'].str.contains('📖', na=False))
                             ]
+                            stu_rev_rows = q_logs_all[
+                                (q_logs_all['姓名'] == stu) &
+                                (q_logs_all['結果'].str.contains('📖', na=False))
+                            ]
                         else:
-                            stu_rows = pd.DataFrame()
+                            stu_rows     = pd.DataFrame()
+                            stu_rev_rows = pd.DataFrame()
 
-                        if stu_rows.empty:
+                        if stu_rows.empty and stu_rev_rows.empty:
                             st.markdown(f"　👤 **{stu}**：尚未作答")
                         else:
-                            lines = []
-                            for _, r in stu_rows.iterrows():
-                                icon    = r.get('結果', '—')
-                                ans_val = r.get('學生答案', '')
-                                t_str   = str(r.get('時間', ''))[:16]
-                                ans_disp = f" `{ans_val}`" if ans_val and ans_val not in ('—', '') else ''
-                                lines.append(f"{icon}{ans_disp} _{t_str}_")
-                            st.markdown(f"　👤 **{stu}**：" + "　／　".join(lines))
+                            # 作答歷史
+                            if not stu_rows.empty:
+                                lines = []
+                                for _, r in stu_rows.iterrows():
+                                    icon     = r.get('結果', '—')
+                                    ans_val  = r.get('學生答案', '')
+                                    t_str    = str(r.get('時間', ''))[:16]
+                                    ans_disp = f" `{ans_val}`" if ans_val and ans_val not in ('—', '') else ''
+                                    lines.append(f"{icon}{ans_disp} _{t_str}_")
+                                st.markdown(f"　👤 **{stu}**：" + "　／　".join(lines))
+                            else:
+                                st.markdown(f"　👤 **{stu}**：尚未作答")
+                            # 講解/複習歷史
+                            if not stu_rev_rows.empty:
+                                rev_lines = []
+                                for _, r in stu_rev_rows.iterrows():
+                                    icon  = r.get('結果', '')
+                                    t_str = str(r.get('時間', ''))[:16]
+                                    rev_lines.append(f"{icon} _{t_str}_")
+                                st.markdown(f"　　　　　" + "　／　".join(rev_lines))
 
         # ── 下載 PDF（功能4）─────────────────────────────────────────────
         if not df_rev_scope.empty:
