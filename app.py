@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.170 - 單選答題鎖定版)
+# 🧩 英文全能練習系統 (V2.9.171 - 介面整合強化版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.170
+# 📌 版本編號 (VERSION): 2.9.171
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.170"
+VERSION = "2.9.171"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1537,21 +1537,23 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
         st.divider()
 
         # ── 班級 / 學生 / 任務篩選 ────────────────────────────────────────
-        f1, f2, f3 = st.columns(3)
+        f1, f2 = st.columns(2)
         all_groups_t2 = sorted(df_s[~df_s["分組"].isin(["ADMIN","TEACHER"])]["分組"].unique().tolist())
-
-        # 直接用分組原始名稱做選單，不用 _group_label 避免 key 不符
-        sel_grp = f1.selectbox("👥 班級", ["全班"] + all_groups_t2, key="t2_group")
-        sel_grp = None if sel_grp == "全班" else sel_grp
+        # 班級選單顯示學生名字，比照題目講解
+        grp_opts_t2 = ["全班"] + [_group_label(g) for g in all_groups_t2]
+        grp_map_t2  = {"全班": None, **{_group_label(g): g for g in all_groups_t2}}
+        sel_grp_lbl = f1.selectbox("👥 班級", grp_opts_t2, key="t2_group")
+        sel_grp     = grp_map_t2.get(sel_grp_lbl)
 
         stu_pool_t2    = sorted(df_s[df_s["分組"] == sel_grp]["姓名"].tolist()) if sel_grp else \
                          sorted(df_s[~df_s["分組"].isin(["ADMIN","TEACHER"])]["姓名"].tolist())
         sel_stus_t2    = f2.multiselect("👤 學生（空白=全選）", stu_pool_t2, default=[], key="t2_stus")
         target_stus_t2 = sel_stus_t2 if sel_stus_t2 else stu_pool_t2
 
+        # 任務篩選獨立一列（避免截斷）
         df_a_t2     = df_a[df_a.get("狀態", pd.Series(dtype=str)).fillna("") != "已刪除"].copy() if not df_a.empty else pd.DataFrame()
         task_opts   = ["（不限）"] + (df_a_t2["任務名稱"].tolist() if not df_a_t2.empty and "任務名稱" in df_a_t2.columns else [])
-        sel_task_t2 = f3.selectbox("📋 任務（選填）", task_opts, key="t2_task")
+        sel_task_t2 = st.selectbox("📋 任務篩選（選填）", task_opts, key="t2_task")
 
         task_qids_t2 = None
         if sel_task_t2 != "（不限）" and not df_a_t2.empty:
@@ -1561,9 +1563,9 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 task_qids_t2 = set(q.strip() for q in ids_str.split(",") if q.strip() and q.strip() != "nan")
 
         stu_names_preview = "、".join(target_stus_t2[:5]) + ("…" if len(target_stus_t2) > 5 else "")
-        grp_label = sel_grp if sel_grp else "全班"
+        grp_label  = sel_grp_lbl if sel_grp_lbl != "全班" else "全班"
         task_label = sel_task_t2 if sel_task_t2 != "（不限）" else "不限"
-        st.caption(f"📅 {t2_period}：{t2_from} ～ {t2_to}　👥 {grp_label}／{len(target_stus_t2)} 位學生：{stu_names_preview}　📋 任務：{task_label}")
+        st.info(f"📅 {t2_period}：{t2_from} ～ {t2_to}　｜　👥 {grp_label}／{len(target_stus_t2)} 位：{stu_names_preview}　｜　📋 任務：{task_label}")
         st.divider()
 
         # ── 篩選（直接用 df_l，已是完整資料）────────────────────────────
@@ -2000,6 +2002,21 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     df_rev_scope = df_rev_scope.sort_values('_rv_cnt').drop(columns=['_rv_cnt'])
 
             st.markdown(f"**📋 共 {len(df_rev_scope)} 題，點選一題開始講解：**")
+
+            # 篩選條件摘要
+            stu_preview = "、".join(target_students[:5]) + ("…" if len(target_students) > 5 else "")
+            task_label_t4 = st.session_state.get('rev_task', '（不限）')
+            scope_label = st.session_state.get('rev_scope_t4', '📚 全部題目')
+            rev_gram = st.session_state.get('rev_grammar', '（不限）')
+            rev_diff = st.session_state.get('rev_diff', '（不限）')
+            summary_parts = [
+                f"👥 {sel_label}／{len(target_students)} 位：{stu_preview}",
+                f"📋 任務：{task_label_t4}",
+                f"🔍 範圍：{scope_label}",
+            ]
+            if rev_gram != "（不限）": summary_parts.append(f"文法：{rev_gram}")
+            if rev_diff != "（不限）": summary_parts.append(f"難度：{rev_diff}")
+            st.info("　｜　".join(summary_parts))
 
             is_mcq_scope = "單選" in str(st.session_state.get('rev_u', ''))
 
@@ -3240,13 +3257,14 @@ if st.session_state.quiz_loaded:
         # 重組題介面
         st.info(" ".join(st.session_state.ans) if st.session_state.ans else "請依序點選單字按鈕...")
 
+        _reorder_done = st.session_state.get("show_analysis", False)
         c_ctrl = st.columns(2)
-        if c_ctrl[0].button("⬅️ 🟠 退回一步", use_container_width=True):
+        if c_ctrl[0].button("⬅️ 🟠 退回一步", use_container_width=True, disabled=_reorder_done):
             if st.session_state.ans:
                 st.session_state.ans.pop()
                 st.session_state.used_history.pop()
                 st.rerun()
-        if c_ctrl[1].button("🗑️ 🟠 全部清除", use_container_width=True):
+        if c_ctrl[1].button("🗑️ 🟠 全部清除", use_container_width=True, disabled=_reorder_done):
             st.session_state.update({"ans": [], "used_history": []})
             st.rerun()
 
@@ -3259,7 +3277,7 @@ if st.session_state.quiz_loaded:
         bs = st.columns(3)
         for i, t in enumerate(st.session_state.shuf):
             if i not in st.session_state.get('used_history', []):
-                if bs[i % 3].button(t, key=f"qb_{i}", use_container_width=True):
+                if bs[i % 3].button(t, key=f"qb_{i}", use_container_width=True, disabled=_reorder_done):
                     st.session_state.ans.append(t)
                     st.session_state.used_history.append(i)
                     st.rerun()
