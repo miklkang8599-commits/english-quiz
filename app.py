@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.171 - 介面整合強化版)
+# 🧩 英文全能練習系統 (V2.9.172 - 篩選摘要強化版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.171
+# 📌 版本編號 (VERSION): 2.9.172
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.171"
+VERSION = "2.9.172"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -2004,19 +2004,19 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             st.markdown(f"**📋 共 {len(df_rev_scope)} 題，點選一題開始講解：**")
 
             # 篩選條件摘要
-            stu_preview = "、".join(target_students[:5]) + ("…" if len(target_students) > 5 else "")
+            stu_preview   = "、".join(target_students[:8]) + ("…" if len(target_students) > 8 else "")
             task_label_t4 = st.session_state.get('rev_task', '（不限）')
-            scope_label = st.session_state.get('rev_scope_t4', '📚 全部題目')
-            rev_gram = st.session_state.get('rev_grammar', '（不限）')
-            rev_diff = st.session_state.get('rev_diff', '（不限）')
-            summary_parts = [
-                f"👥 {sel_label}／{len(target_students)} 位：{stu_preview}",
-                f"📋 任務：{task_label_t4}",
-                f"🔍 範圍：{scope_label}",
-            ]
-            if rev_gram != "（不限）": summary_parts.append(f"文法：{rev_gram}")
-            if rev_diff != "（不限）": summary_parts.append(f"難度：{rev_diff}")
-            st.info("　｜　".join(summary_parts))
+            scope_label   = st.session_state.get('rev_scope_t4', '📚 全部題目')
+            rev_gram      = st.session_state.get('rev_grammar', '（不限）')
+            rev_diff      = st.session_state.get('rev_diff', '（不限）')
+            extra = []
+            if rev_gram != "（不限）": extra.append(f"文法：{rev_gram}")
+            if rev_diff != "（不限）": extra.append(f"難度：{rev_diff}")
+            extra_str = "　" + "　｜　".join(extra) if extra else ""
+            st.info(
+                f"👥 **班級：** {sel_label}　共 {len(target_students)} 位學生：{stu_preview}\n\n"
+                f"📋 **任務：** {task_label_t4}　　🔍 **顯示範圍：** {scope_label}{extra_str}"
+            )
 
             is_mcq_scope = "單選" in str(st.session_state.get('rev_u', ''))
 
