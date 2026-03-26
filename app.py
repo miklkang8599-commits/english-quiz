@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.173 - 跳題不計答題版)
+# 🧩 英文全能練習系統 (V2.9.174 - 上一題禁用版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.173
+# 📌 版本編號 (VERSION): 2.9.174
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.173"
+VERSION = "2.9.174"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3330,18 +3330,9 @@ if st.session_state.quiz_loaded:
                   f"vocab_tts_{q_idx}"]:
             st.session_state.pop(k, None)
 
-    # 單選題答題後禁止回到上一題
-    is_mcq_current = '單選' in str(q.get('單元', '')) if 'q' in dir() and q else False
-    answered_current = st.session_state.get('show_analysis', False)
-    lock_prev = is_mcq_current and answered_current
-
+    # 所有題型都禁止回到上一題
     if st.session_state.q_idx > 0:
-        if c_nav[0].button("⬅️ 🔵 上一題", use_container_width=True, disabled=lock_prev):
-            st.session_state.q_idx -= 1
-            _clear_q()
-            st.rerun()
-        if lock_prev:
-            st.caption("💡 單選題作答後無法返回上一題")
+        c_nav[0].button("⬅️ 🔵 上一題", use_container_width=True, disabled=True)
 
     nxt_label = "下一題 ➡️" if st.session_state.q_idx + 1 < len(st.session_state.quiz_list) else "🏁 結束練習"
     if c_nav[1].button(nxt_label, type="primary", use_container_width=True):
