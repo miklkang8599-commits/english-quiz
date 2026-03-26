@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.172 - 篩選摘要強化版)
+# 🧩 英文全能練習系統 (V2.9.173 - 跳題不計答題版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.172
+# 📌 版本編號 (VERSION): 2.9.173
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.172"
+VERSION = "2.9.173"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -2461,7 +2461,7 @@ if not st.session_state.quiz_loaded:
                                     rec['_type'] = 'reading'
                                 st.session_state.update({
                                     "quiz_list": records,
-                                    "q_idx": 0, "quiz_loaded": True,
+                                    "q_idx": 0, "quiz_loaded": True, "answered_count": 0,
                                     "ans": [], "used_history": [], "shuf": [], "show_analysis": False
                                 })
                                 st.rerun()
@@ -2474,7 +2474,7 @@ if not st.session_state.quiz_loaded:
                             if not retry_q.empty:
                                 st.session_state.update({
                                     "quiz_list": retry_q.to_dict('records'),
-                                    "q_idx": 0, "quiz_loaded": True,
+                                    "q_idx": 0, "quiz_loaded": True, "answered_count": 0,
                                     "ans": [], "used_history": [], "shuf": [], "show_analysis": False
                                 })
                                 st.rerun()
@@ -2505,7 +2505,7 @@ if not st.session_state.quiz_loaded:
                                     r['_type'] = 'reading'
                                 st.session_state.update({
                                     "quiz_list": records,
-                                    "q_idx": 0, "quiz_loaded": True,
+                                    "q_idx": 0, "quiz_loaded": True, "answered_count": 0,
                                     "ans": [], "used_history": [], "shuf": [], "show_analysis": False
                                 })
                                 st.rerun()
@@ -2534,7 +2534,7 @@ if not st.session_state.quiz_loaded:
                                     rec['_vocab_extra'] = v_extra_t
                                 st.session_state.update({
                                     "quiz_list": records,
-                                    "q_idx": 0, "quiz_loaded": True,
+                                    "q_idx": 0, "quiz_loaded": True, "answered_count": 0,
                                     "ans": [], "used_history": [], "shuf": [], "show_analysis": False
                                 })
                                 st.rerun()
@@ -2573,7 +2573,7 @@ if not st.session_state.quiz_loaded:
                             if not pending.empty:
                                 st.session_state.update({
                                     "quiz_list": pending.to_dict('records'),
-                                    "q_idx": 0, "quiz_loaded": True,
+                                    "q_idx": 0, "quiz_loaded": True, "answered_count": 0,
                                     "ans": [], "used_history": [], "shuf": [], "show_analysis": False
                                 })
                                 st.rerun()
@@ -2588,7 +2588,7 @@ if not st.session_state.quiz_loaded:
                             if not pending_q.empty:
                                 st.session_state.update({
                                     "quiz_list": pending_q.to_dict('records'),
-                                    "q_idx": 0, "quiz_loaded": True,
+                                    "q_idx": 0, "quiz_loaded": True, "answered_count": 0,
                                     "ans": [], "used_history": [], "shuf": [], "show_analysis": False
                                 })
                                 st.rerun()
@@ -2906,7 +2906,13 @@ if not st.session_state.quiz_loaded:
 # 📦 【盒子 D：練習引擎】
 # ------------------------------------------------------------------------------
 if st.session_state.quiz_loaded:
-    st.markdown(f"### 🔴 練習中 (第 {st.session_state.q_idx + 1} / {len(st.session_state.quiz_list)} 題)")
+    # 追蹤實際作答題數（跳過的題不算）
+    if 'answered_count' not in st.session_state:
+        st.session_state['answered_count'] = 0
+
+    total_q   = len(st.session_state.quiz_list)
+    answered_c = st.session_state.get('answered_count', 0)
+    st.markdown(f"### 🔴 練習中 (第 {st.session_state.q_idx + 1} / {total_q} 題　｜　已作答 {answered_c} 題)")
     q = st.session_state.quiz_list[st.session_state.q_idx]
     is_mcq     = "單選" in q.get("單元", "")
     is_reading = q.get("_type") == "reading" or "朗讀" in q.get("單元", "")
@@ -3032,6 +3038,7 @@ if st.session_state.quiz_loaded:
                             "分數":    score
                         }])
                         append_to_sheet("logs", log_data)
+                        st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
                         st.rerun()
 
                     except Exception as e:
@@ -3061,6 +3068,7 @@ if st.session_state.quiz_loaded:
             if remain == 0 and not st.session_state.get("show_analysis"):
                 st.session_state.update({"current_res": f"⏰ 時間到！答案是：{word}", "show_analysis": True})
                 append_to_sheet("logs", pd.DataFrame([{"時間": get_now().strftime("%Y-%m-%d %H:%M:%S"), "姓名": st.session_state.user_name, "分組": st.session_state.group_id, "題目ID": q.get("題目ID","N/A"), "結果": "❌"}]))
+                st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
                 st.rerun()
 
         # 模式切換
@@ -3129,6 +3137,7 @@ if st.session_state.quiz_loaded:
                     is_ok = "".join(current_ans).upper() == word.upper()
                     st.session_state.update({"current_res": "✅ 正確！" if is_ok else f"❌ 錯誤！正確答案：{word}", "show_analysis": True})
                     append_to_sheet("logs", pd.DataFrame([{"時間": get_now().strftime("%Y-%m-%d %H:%M:%S"), "姓名": st.session_state.user_name, "分組": st.session_state.group_id, "題目ID": q.get("題目ID","N/A"), "結果": "✅" if is_ok else "❌", "學生答案": "".join(current_ans)}]))
+                    st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
                     st.rerun()
 
         # ── 鍵盤模式 ──────────────────────────────────────────────────────
@@ -3152,6 +3161,7 @@ if st.session_state.quiz_loaded:
                         is_ok = kb_current.upper() == word.upper()
                         st.session_state.update({"current_res": "✅ 正確！" if is_ok else f"❌ 錯誤！正確答案：{word}", "show_analysis": True})
                         append_to_sheet("logs", pd.DataFrame([{"時間": get_now().strftime("%Y-%m-%d %H:%M:%S"), "姓名": st.session_state.user_name, "分組": st.session_state.group_id, "題目ID": q.get("題目ID","N/A"), "結果": "✅" if is_ok else "❌", "學生答案": kb_current}]))
+                        st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
                         st.rerun()
 
         # 答對後播放 TTS
@@ -3238,6 +3248,7 @@ if st.session_state.quiz_loaded:
                     sb_w.table("logs").insert(en_row).execute()
                     _time.sleep(0.5)  # 等 Supabase 確認寫入
                     write_ok = True
+                    st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
                 except Exception as e:
                     write_err = str(e)
                 if not write_ok:
@@ -3298,6 +3309,7 @@ if st.session_state.quiz_loaded:
                     "結果": "✅" if is_ok else "❌"
                 }])
                 append_to_sheet("logs", log_data)
+                st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
                 st.rerun()
 
     if st.session_state.get('show_analysis') and not is_reading:
