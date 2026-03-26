@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.174 - 上一題禁用版)
+# 🧩 英文全能練習系統 (V2.9.175 - 單選顯示解析版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.174
+# 📌 版本編號 (VERSION): 2.9.175
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.174"
+VERSION = "2.9.175"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3314,7 +3314,11 @@ if st.session_state.quiz_loaded:
 
     if st.session_state.get('show_analysis') and not is_reading:
         st.warning(st.session_state.current_res)
-        # 朗讀題的分數已在麥克風上方顯示，不在此重複
+        # 單選題：答題後一律顯示解析
+        if is_mcq:
+            mcq_analysis = str(q.get('解析') or q.get('單選解析') or '').strip()
+            if mcq_analysis:
+                st.info(f"📝 解析：{mcq_analysis}")
     st.divider()
     c_nav = st.columns(2)
 
