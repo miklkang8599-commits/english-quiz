@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.178 - Line報告書修復版)
+# 🧩 英文全能練習系統 (V2.9.179 - 報告書全班修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.178
+# 📌 版本編號 (VERSION): 2.9.179
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.178"
+VERSION = "2.9.179"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1784,7 +1784,14 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             period_str = f"{t2_period}（{t2_from}～{t2_to}）"
 
             all_reports = []
-            for stu in target_stus_t2:
+            # 用有資料的學生清單，並保持 target_stus_t2 的順序
+            stus_with_data = [s for s in target_stus_t2
+                              if s in df_r_ans["姓名"].values or s in df_r_rev["姓名"].values]
+            # 如果 target_stus_t2 是空的或全班，用 df_r_ans 裡實際有資料的學生
+            if not stus_with_data:
+                stus_with_data = sorted(set(df_r_ans["姓名"].tolist()) | set(df_r_rev["姓名"].tolist()))
+
+            for stu in stus_with_data:
                 stu_ans_r = df_r_ans[df_r_ans["姓名"] == stu]
                 stu_rev_r = df_r_rev[df_r_rev["姓名"] == stu]
 
@@ -1832,9 +1839,9 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
 
             if all_reports:
                 st.session_state['line_report'] = "\n\n\n".join(all_reports)
-                st.success(f"✅ 已產生 {len(all_reports)} 位學生的報告")
+                st.success(f"✅ 已產生 {len(all_reports)} 位學生的報告（篩選學生共 {len(target_stus_t2)} 位，有資料 {len(all_reports)} 位）")
             else:
-                st.warning("此篩選條件下無作答資料，無法產生報告")
+                st.warning(f"此篩選條件下無作答資料（篩選學生：{len(target_stus_t2)} 位，資料筆數：{len(df_r_ans)}）")
 
         if st.session_state.get('line_report'):
             st.text_area(
