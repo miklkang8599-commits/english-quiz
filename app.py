@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.182 - 報告書試算表格式版)
+# 🧩 英文全能練習系統 (V2.9.185 - 報告書分題型修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.182
+# 📌 版本編號 (VERSION): 2.9.185
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.182"
+VERSION = "2.9.185"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -71,6 +71,12 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 def load_static_data():
     try:
         df_q  = conn.read(worksheet="questions", ttl=600).fillna("").astype(str).replace(r'\.0$', '', regex=True)
+        try:
+            df_mcq = conn.read(worksheet="單選", ttl=600).fillna("").astype(str).replace(r'\.0$', '', regex=True)
+            if not df_mcq.empty:
+                df_q = pd.concat([df_q, df_mcq], ignore_index=True).drop_duplicates()
+        except:
+            pass
         df_s  = conn.read(worksheet="students",  ttl=600).fillna("").astype(str).replace(r'\.0$', '', regex=True)
         try:
             df_r = conn.read(worksheet="reading", ttl=600).fillna("").astype(str).replace(r'\.0$', '', regex=True)
@@ -1798,42 +1804,73 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 if stu_ans_r.empty and stu_rev_r.empty:
                     continue
 
-                stu_grp  = df_s[df_s["姓名"] == stu]["分組"].iloc[0] if not df_s[df_s["姓名"] == stu].empty else grp_str
-                total_q  = stu_ans_r["題目ID"].nunique() if not stu_ans_r.empty else 0
-                last_ans = stu_ans_r.sort_values("時間").groupby("題目ID").last().reset_index() if not stu_ans_r.empty else pd.DataFrame()
-                correct  = len(last_ans[last_ans["結果"] == "✅"]) if not last_ans.empty else 0
-                wrong    = len(last_ans[last_ans["結果"] == "❌"]) if not last_ans.empty else 0
-                acc_rate = f"{int(correct/total_q*100)}%" if total_q > 0 else "—"
-                rev_cnt  = len(stu_rev_r)
+                stu_grp = df_s[df_s["姓名"] == stu]["分組"].iloc[0] if not df_s[df_s["姓名"] == stu].empty else grp_str
 
-                wrong_df = last_ans[last_ans["結果"] == "❌"] if not last_ans.empty else pd.DataFrame()
+                # 依題型分類
+                # 建立題目ID → 單元的對照表（用來區分單選和重組）
+                df_q_map = df_q.copy()
+                df_q_map['_qid'] = df_q_map.apply(
+                    lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1
+                )
+                qid_to_unit = dict(zip(df_q_map['_qid'], df_q_map['單元']))
+
+                def _qtype(qid):
+                    if qid.startswith("R_"):  return "朗讀"
+                    if qid.startswith("V_"):  return "單字"
+                    if qid.startswith("RM_"): return "閱讀單句"
+                    unit = qid_to_unit.get(qid, "")
+                    if "單選" in unit:        return "單選"
+                    return "重組"
+
+                # 各題型統計
+                def _type_stats(df_ans):
+                    if df_ans.empty:
+                        return {}
+                    df_ans = df_ans.copy()
+                    df_ans["_qtype"] = df_ans["題目ID"].apply(_qtype)
+                    result = {}
+                    for qt, grp in df_ans.groupby("_qtype"):
+                        last = grp.sort_values("時間").groupby("題目ID").last().reset_index()
+                        total   = len(last)
+                        correct = len(last[last["結果"] == "✅"])
+                        wrong   = len(last[last["結果"] == "❌"])
+                        wrong_ids = last[last["結果"] == "❌"]["題目ID"].tolist()
+                        result[qt] = {"total": total, "correct": correct, "wrong": wrong, "wrong_ids": wrong_ids}
+                    return result
+
+                type_stats = _type_stats(stu_ans_r)
+                rev_cnt    = len(stu_rev_r)
 
                 lines = []
                 lines.append(f"📚 {stu} 學習報告")
                 lines.append(f"班級：{stu_grp}　{period_str}")
                 if task_str:
                     lines.append(f"📋 任務：{task_str}")
-                lines.append(sep)
-                lines.append(f"✏️ 答題：{total_q} 題　✅ 答對：{correct}　❌ 答錯：{wrong}")
-                lines.append(f"📈 正確率：{acc_rate}" + (f"　📖 複習：{rev_cnt} 次" if rev_cnt > 0 else ""))
 
-                if not wrong_df.empty:
-                    lines.append(sep)
-                    lines.append("❌ 需要加強：")
-                    for _, wrow in wrong_df.head(10).iterrows():
-                        wqid = wrow["題目ID"]
-                        parts = wqid.replace("RM_","").replace("V_","").replace("R_","").split("_")
-                        q_num = parts[-1] if parts else wqid
-                        wrong_times = len(stu_ans_r[
-                            (stu_ans_r["題目ID"] == wqid) & (stu_ans_r["結果"] == "❌")
-                        ])
-                        lines.append(f"  • 第{q_num}題" + (f"（答錯{wrong_times}次）" if wrong_times > 1 else ""))
-                    if len(wrong_df) > 10:
-                        lines.append(f"  • ...共 {len(wrong_df)} 題需加強")
+                # 各題型逐一輸出
+                type_icons = {"重組": "✏️", "單選": "🔵", "朗讀": "🎤", "單字": "🔤", "閱讀單句": "📖"}
+                for qt in ["單選", "重組", "閱讀單句", "朗讀", "單字"]:
+                    if qt not in type_stats:
+                        continue
+                    s = type_stats[qt]
+                    icon = type_icons.get(qt, "📝")
+                    acc  = f"{int(s['correct']/s['total']*100)}%" if s['total'] > 0 else "—"
+                    lines.append(f"{icon} {qt}：答題 {s['total']} 題　✅ {s['correct']}　❌ {s['wrong']}　正確率 {acc}")
+                    if s['wrong_ids']:
+                        wrong_nums = []
+                        for wqid in s['wrong_ids'][:8]:
+                            parts = wqid.replace("RM_","").replace("V_","").replace("R_","").split("_")
+                            q_num = parts[-1] if parts else wqid
+                            wt = len(stu_ans_r[(stu_ans_r["題目ID"]==wqid)&(stu_ans_r["結果"]=="❌")])
+                            wrong_nums.append(f"第{q_num}題" + (f"×{wt}" if wt > 1 else ""))
+                        extra = f"...等共{len(s['wrong_ids'])}題" if len(s['wrong_ids']) > 8 else ""
+                        lines.append(f"  需加強：{'、'.join(wrong_nums)}{extra}")
+
+                if rev_cnt > 0:
+                    lines.append(f"📖 複習：{rev_cnt} 次")
 
                 if teacher_msg.strip():
-                    lines.append(sep)
-                    lines.append(f"💬 老師留言：{teacher_msg.strip()}")
+                    lines.append(f"💬 {teacher_msg.strip()}")
 
                 all_reports.append("\n".join(lines))
 
