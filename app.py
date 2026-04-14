@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.181 - 報告書code顯示版)
+# 🧩 英文全能練習系統 (V2.9.182 - 報告書試算表格式版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.181
+# 📌 版本編號 (VERSION): 2.9.182
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.181"
+VERSION = "2.9.182"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1838,19 +1838,25 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 all_reports.append("\n".join(lines))
 
             if all_reports:
-                separator = "\n\n" + "═" * 30 + "\n\n"
-                st.session_state['line_report'] = separator.join(all_reports)
+                # 產生 TSV 格式：A欄=學生名字，B欄=報告內容
+                tsv_lines = ["學生姓名\t報告內容"]
+                for stu, report in zip(stus_with_data, all_reports):
+                    # 報告內容換行改為空格，避免破壞 TSV 格式
+                    report_single = report.replace("\n", " ｜ ")
+                    tsv_lines.append(f"{stu}\t{report_single}")
+                tsv_output = "\n".join(tsv_lines)
+                st.session_state['line_report'] = tsv_output
                 st.session_state['line_report_count'] = len(all_reports)
-                st.success(f"✅ 已產生 {len(all_reports)} 位學生的報告（篩選學生共 {len(target_stus_t2)} 位，有資料 {len(all_reports)} 位）")
+                st.success(f"✅ 已產生 {len(all_reports)} 位學生的報告")
             else:
                 st.warning(f"此篩選條件下無作答資料（篩選學生：{len(target_stus_t2)} 位，資料筆數：{len(df_r_ans)}）")
 
         if st.session_state.get('line_report'):
             count = st.session_state.get('line_report_count', 1)
             report_val = st.session_state['line_report']
-            st.markdown(f"**📋 複製內容（共 {count} 位學生，每位之間有分隔線）**")
+            st.markdown(f"**📊 試算表格式（共 {count} 位學生）**")
             st.code(report_val, language=None)
-            st.caption("👆 點擊右上角複製按鈕，或全選後 Ctrl+C 複製，分別傳給各家長")
+            st.caption("👆 點右上角複製鍵 → 開啟 Google Sheets → 點儲存格 A1 → 貼上（Ctrl+V）")
 
     with t3:
         st.subheader("👥 學生帳號清單")
