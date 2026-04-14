@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.180 - 報告書分隔修復版)
+# 🧩 英文全能練習系統 (V2.9.181 - 報告書code顯示版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.180
+# 📌 版本編號 (VERSION): 2.9.181
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.180"
+VERSION = "2.9.181"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1847,12 +1847,10 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
 
         if st.session_state.get('line_report'):
             count = st.session_state.get('line_report_count', 1)
-            st.text_area(
-                f"📋 複製內容（共 {count} 位學生，每位之間有分隔線）",
-                value=st.session_state['line_report'],
-                height=600, key="report_output"
-            )
-            st.caption("👆 點擊文字框後 Ctrl+A 全選，再 Ctrl+C 複製，分別傳給各家長")
+            report_val = st.session_state['line_report']
+            st.markdown(f"**📋 複製內容（共 {count} 位學生，每位之間有分隔線）**")
+            st.code(report_val, language=None)
+            st.caption("👆 點擊右上角複製按鈕，或全選後 Ctrl+C 複製，分別傳給各家長")
 
     with t3:
         st.subheader("👥 學生帳號清單")
