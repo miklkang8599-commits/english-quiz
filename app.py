@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.175 - 單選顯示解析版)
+# 🧩 英文全能練習系統 (V2.9.176 - 閱讀單句題型版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.175
+# 📌 版本編號 (VERSION): 2.9.176
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.175"
+VERSION = "2.9.176"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -80,12 +80,16 @@ def load_static_data():
             df_v = conn.read(worksheet="vocab", ttl=600).fillna("").astype(str).replace(r'\.0$', '', regex=True)
         except:
             df_v = pd.DataFrame()
-        return df_q, df_s, df_r, df_v
+        try:
+            df_rm = conn.read(worksheet="閱讀單句", ttl=600).fillna("").astype(str).replace(r'\.0$', '', regex=True)
+            df_rm['_type'] = 'reading_mcq'
+        except:
+            df_rm = pd.DataFrame()
+        return df_q, df_s, df_r, df_v, df_rm
     except Exception as e:
-        # 記錄錯誤到 session state 方便除錯
         import streamlit as _st
         _st.session_state['_load_error'] = str(e)
-        return None, None, pd.DataFrame(), pd.DataFrame()
+        return None, None, pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
 # ==============================================================================
 # Supabase 客戶端
@@ -224,11 +228,11 @@ def append_to_sheet(worksheet_name: str, new_row: pd.DataFrame):
 # 🔐 【權限控管與登入】
 # ------------------------------------------------------------------------------
 if not st.session_state.get('logged_in', False):
-    df_q, df_s, df_r, df_v = load_static_data()
+    df_q, df_s, df_r, df_v, df_rm = load_static_data()
     # 失敗立即重試一次
     if df_s is None:
         load_static_data.clear()
-        df_q, df_s, df_r, df_v = load_static_data()
+        df_q, df_s, df_r, df_v, df_rm = load_static_data()
     _, c, _ = st.columns([1, 1.2, 1])
     with c:
         if df_s is None:
@@ -261,13 +265,13 @@ if not st.session_state.get('logged_in', False):
     st.stop()
 
 # 載入資料（登入後）
-df_q, df_s, df_r, df_v = load_static_data()
+df_q, df_s, df_r, df_v, df_rm = load_static_data()
 df_a, df_l = load_dynamic_data()
 
 if df_q is None or df_s is None:
     # 立即清快取重試一次
     load_static_data.clear()
-    df_q, df_s, df_r, df_v = load_static_data()
+    df_q, df_s, df_r, df_v, df_rm = load_static_data()
 
 if df_q is None or df_s is None:
     st.error("⚠️ 題庫讀取失敗，請按下方按鈕重試。")
@@ -1063,9 +1067,71 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
 
         st.divider()
 
+        # ── 閱讀單句範圍（選填） ──────────────────────────────────────────
+        include_rm = st.checkbox("📖 加入閱讀單句題", key="t1_inc_rm")
+        df_rm_final = pd.DataFrame()
+
+        if include_rm:
+            if df_rm.empty:
+                st.warning("閱讀單句工作表尚無資料，無法加入閱讀單句題。")
+            else:
+                df_rm2 = df_rm.copy()
+                if '題目ID' not in df_rm2.columns:
+                    df_rm2['題目ID'] = df_rm2.apply(
+                        lambda r: f"RM_{r.get('版本','')}_{r.get('年度','')}_{r.get('冊編號','')}_{r.get('單元','')}_{r.get('課編號','')}_{r.get('句編號','')}", axis=1
+                    )
+
+                st.markdown("**⚙️ 閱讀單句範圍**")
+                rmc_ = st.columns(5)
+                rmv_ = rmc_[0].selectbox("版本",  sorted(df_rm2['版本'].unique()), key="rmt_v")
+                rmu_src = df_rm2[df_rm2['版本'] == rmv_]
+                rmu_ = rmc_[1].selectbox("單元",  sorted(rmu_src['單元'].unique()) if '單元' in rmu_src.columns else ['閱讀'], key="rmt_u")
+                rmy_src = rmu_src[rmu_src['單元'] == rmu_] if '單元' in rmu_src.columns else rmu_src
+                rmy_ = rmc_[2].selectbox("年度",  sorted(rmy_src['年度'].unique()), key="rmt_y")
+                rmb_src = rmy_src[rmy_src['年度'] == rmy_]
+                rmb_ = rmc_[3].selectbox("冊編號", sorted(rmb_src['冊編號'].unique()), key="rmt_b")
+                rml_src = rmb_src[rmb_src['冊編號'] == rmb_]
+                rml_ = rmc_[4].selectbox("課編號", sorted(rml_src['課編號'].unique()), key="rmt_l")
+
+                df_rm_scope = rml_src[rml_src['課編號'] == rml_].copy()
+
+                # 文法／難度篩選
+                rm_extra = st.columns(2)
+                if '文法' in df_rm_scope.columns:
+                    rm_gram_opts = ["（不限）"] + sorted([v for v in df_rm_scope['文法'].unique() if v and v != ''])
+                    rm_gram = rm_extra[0].selectbox("文法（選填）", rm_gram_opts, key="rmt_grammar")
+                    if rm_gram != "（不限）":
+                        df_rm_scope = df_rm_scope[df_rm_scope['文法'] == rm_gram]
+                if '難度' in df_rm_scope.columns:
+                    rm_diff_opts = ["（不限）"] + sorted([v for v in df_rm_scope['難度'].unique() if v and v != ''])
+                    rm_diff = rm_extra[1].selectbox("難度（選填）", rm_diff_opts, key="rmt_diff")
+                    if rm_diff != "（不限）":
+                        df_rm_scope = df_rm_scope[df_rm_scope['難度'] == rm_diff]
+
+                rm_total = len(df_rm_scope)
+                rms1, rms2 = st.columns(2)
+                rm_sent_opts = sorted(df_rm_scope['句編號'].unique(), key=lambda x: int(x) if str(x).isdigit() else 0) if '句編號' in df_rm_scope.columns else []
+                rm_start = rms1.selectbox("🔢 起始句編號", rm_sent_opts, key="rmt_start") if rm_sent_opts else None
+                rm_count = rms2.number_input("🔢 題目數量", 0, max(rm_total,1), rm_total, key="rmt_count")
+
+                if rm_start and '句編號' in df_rm_scope.columns:
+                    df_rm_scope['_num'] = pd.to_numeric(df_rm_scope['句編號'], errors='coerce').fillna(0)
+                    df_rm_scope = df_rm_scope[df_rm_scope['_num'] >= int(rm_start)].sort_values('_num').copy()
+                if rm_count > 0:
+                    df_rm_scope = df_rm_scope.head(int(rm_count)).copy()
+
+                df_rm_final = df_rm_scope.copy()
+                st.caption(f"此範圍共 {rm_total} 題，篩選後：{len(df_rm_final)} 題")
+
+                preview_rm_cols = [c for c in ['句編號', '題目', '選項A', '選項B', '選項C', '選項D', '正確選項列出'] if c in df_rm_final.columns]
+                with st.expander(f"📋 預覽閱讀單句清單（{len(df_rm_final)} 題）", expanded=False):
+                    st.dataframe(df_rm_final[preview_rm_cols], use_container_width=True)
+
+        st.divider()
+
         # 合計
-        total_q = len(df_t1_final) + len(df_r_final) + len(df_v_final)
-        st.info(f"📊 本次任務合計：重組/單選 {len(df_t1_final)} 題 ＋ 朗讀 {len(df_r_final)} 題 ＋ 單字 {len(df_v_final)} 題 ＝ **{total_q} 題**")
+        total_q = len(df_t1_final) + len(df_r_final) + len(df_v_final) + len(df_rm_final)
+        st.info(f"📊 本次任務合計：重組/單選 {len(df_t1_final)} 題 ＋ 朗讀 {len(df_r_final)} 題 ＋ 單字 {len(df_v_final)} 題 ＋ 閱讀單句 {len(df_rm_final)} 題 ＝ **{total_q} 題**")
 
         if st.button("🚀 確認發布任務", use_container_width=True, type="primary"):
             if not target_groups:
@@ -1079,19 +1145,23 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             elif date_end < date_start:
                 st.error("❌ 結束日期不能早於開始日期")
             else:
-                q_ids = df_t1_final['題目ID'].tolist() if (not df_t1_final.empty and '題目ID' in df_t1_final.columns) else []
-                r_ids = df_r_final['題目ID'].tolist()  if (not df_r_final.empty  and '題目ID' in df_r_final.columns)  else []
-                v_ids = df_v_final['題目ID'].tolist()  if (not df_v_final.empty  and '題目ID' in df_v_final.columns)  else []
-                all_ids = q_ids + r_ids + v_ids
+                q_ids  = df_t1_final['題目ID'].tolist() if (not df_t1_final.empty and '題目ID' in df_t1_final.columns) else []
+                r_ids  = df_r_final['題目ID'].tolist()  if (not df_r_final.empty  and '題目ID' in df_r_final.columns)  else []
+                v_ids  = df_v_final['題目ID'].tolist()  if (not df_v_final.empty  and '題目ID' in df_v_final.columns)  else []
+                rm_ids = df_rm_final['題目ID'].tolist() if (not df_rm_final.empty and '題目ID' in df_rm_final.columns) else []
+                all_ids = q_ids + r_ids + v_ids + rm_ids
 
-                has_q = bool(q_ids)
-                has_r = bool(r_ids)
-                has_v = bool(v_ids)
-                if has_q and not has_r and not has_v:
+                has_q  = bool(q_ids)
+                has_r  = bool(r_ids)
+                has_v  = bool(v_ids)
+                has_rm = bool(rm_ids)
+                if has_rm and not has_q and not has_r and not has_v:
+                    task_type = "閱讀單句"
+                elif has_q and not has_r and not has_v and not has_rm:
                     task_type = "一般"
-                elif has_r and not has_q and not has_v:
+                elif has_r and not has_q and not has_v and not has_rm:
                     task_type = "朗讀"
-                elif has_v and not has_q and not has_r:
+                elif has_v and not has_q and not has_r and not has_rm:
                     task_type = "單字"
                 else:
                     task_type = "混合"
@@ -2412,6 +2482,7 @@ if not st.session_state.quiz_loaded:
             is_reading_task = task_type == '朗讀'
             is_vocab_task   = task_type == '單字'
             is_mixed_task   = task_type == '混合'
+            is_rm_task      = task_type == '閱讀單句'
 
             if q_ids_set:
                 try:
@@ -2539,6 +2610,24 @@ if not st.session_state.quiz_loaded:
                                 })
                                 st.rerun()
 
+                        elif is_rm_task:
+                            df_rm2 = df_rm.copy() if not df_rm.empty else pd.DataFrame()
+                            if not df_rm2.empty and '題目ID' not in df_rm2.columns:
+                                df_rm2['題目ID'] = df_rm2.apply(
+                                    lambda r: f"RM_{r.get('版本','')}_{r.get('年度','')}_{r.get('冊編號','')}_{r.get('單元','')}_{r.get('課編號','')}_{r.get('句編號','')}", axis=1
+                                )
+                            pending = df_rm2[df_rm2['題目ID'].isin(pending_ids)].copy() if not df_rm2.empty else pd.DataFrame()
+                            if not pending.empty:
+                                records = pending.to_dict('records')
+                                for rec in records:
+                                    rec['_type'] = 'reading_mcq'
+                                st.session_state.update({
+                                    "quiz_list": records,
+                                    "q_idx": 0, "quiz_loaded": True, "answered_count": 0,
+                                    "ans": [], "used_history": [], "shuf": [], "show_analysis": False
+                                })
+                                st.rerun()
+
                         elif is_mixed_task:
                             df_q2 = df_q.copy()
                             df_q2['題目ID'] = df_q2.apply(
@@ -2554,11 +2643,19 @@ if not st.session_state.quiz_loaded:
                                 df_v2['題目ID'] = df_v2.apply(
                                     lambda r: f"V_{r.get('版本','')}_{r.get('年度','')}_{r.get('冊編號','')}_{r.get('單元','')}_{r.get('課編號','')}_{r.get('句編號','')}", axis=1
                                 )
-                            pending_q = df_q2[df_q2['題目ID'].isin(pending_ids)].copy()
-                            pending_r = df_r2[df_r2['題目ID'].isin(pending_ids)].copy() if not df_r2.empty else pd.DataFrame()
-                            pending_v = df_v2[df_v2['題目ID'].isin(pending_ids)].copy() if not df_v2.empty else pd.DataFrame()
+                            df_rm2 = df_rm.copy() if not df_rm.empty else pd.DataFrame()
+                            if not df_rm2.empty and '題目ID' not in df_rm2.columns:
+                                df_rm2['題目ID'] = df_rm2.apply(
+                                    lambda r: f"RM_{r.get('版本','')}_{r.get('年度','')}_{r.get('冊編號','')}_{r.get('單元','')}_{r.get('課編號','')}_{r.get('句編號','')}", axis=1
+                                )
+                            pending_q  = df_q2[df_q2['題目ID'].isin(pending_ids)].copy()
+                            pending_r  = df_r2[df_r2['題目ID'].isin(pending_ids)].copy() if not df_r2.empty else pd.DataFrame()
+                            pending_v  = df_v2[df_v2['題目ID'].isin(pending_ids)].copy() if not df_v2.empty else pd.DataFrame()
+                            pending_rm = df_rm2[df_rm2['題目ID'].isin(pending_ids)].copy() if not df_rm2.empty else pd.DataFrame()
                             if not pending_r.empty:
                                 pending_r['_type'] = 'reading'
+                            if not pending_rm.empty:
+                                pending_rm['_type'] = 'reading_mcq'
                             if not pending_v.empty:
                                 vocab_cfg_str = str(arow.get('單字設定', '') or '')
                                 vcfg = vocab_cfg_str.split('|') if vocab_cfg_str else []
@@ -2569,7 +2666,7 @@ if not st.session_state.quiz_loaded:
                                 pending_v['_vocab_mode']  = v_mode_mixed
                                 pending_v['_vocab_timer'] = int(vcfg[1]) if len(vcfg) > 1 else 30
                                 pending_v['_vocab_extra'] = int(vcfg[2]) if len(vcfg) > 2 else 3
-                            pending = pd.concat([pending_q, pending_r, pending_v], ignore_index=True)
+                            pending = pd.concat([pending_q, pending_r, pending_v, pending_rm], ignore_index=True)
                             if not pending.empty:
                                 st.session_state.update({
                                     "quiz_list": pending.to_dict('records'),
@@ -2914,12 +3011,70 @@ if st.session_state.quiz_loaded:
     answered_c = st.session_state.get('answered_count', 0)
     st.markdown(f"### 🔴 練習中 (第 {st.session_state.q_idx + 1} / {total_q} 題　｜　已作答 {answered_c} 題)")
     q = st.session_state.quiz_list[st.session_state.q_idx]
-    is_mcq     = "單選" in q.get("單元", "")
-    is_reading = q.get("_type") == "reading" or "朗讀" in q.get("單元", "")
-    is_vocab   = q.get("_type") == "vocab"
+    is_mcq         = "單選" in q.get("單元", "")
+    is_reading     = q.get("_type") == "reading" or "朗讀" in q.get("單元", "")
+    is_vocab       = q.get("_type") == "vocab"
+    is_reading_mcq = q.get("_type") == "reading_mcq"
 
     # 題目標題
-    if is_reading:
+    if is_reading_mcq:
+        # ── 閱讀單句題 ──────────────────────────────────────────────────────
+        rm_passage = str(q.get("答案") or "").strip()
+        rm_question = str(q.get("題目") or "").strip()
+        rm_correct  = str(q.get("正確選項列出") or "").strip().upper()
+        rm_analysis = str(q.get("解析") or "").strip()
+
+        # 顯示閱讀文章/句子
+        if rm_passage:
+            st.markdown(
+                f"<div style='font-size:1.1rem; padding:14px 16px; "
+                f"background:var(--color-background-secondary); border-radius:8px; "
+                f"margin-bottom:12px; white-space:pre-wrap;'>{rm_passage}</div>",
+                unsafe_allow_html=True
+            )
+        # 顯示題目
+        st.markdown(f"**{rm_question}**")
+
+        # 選項按鈕 A-D
+        _rm_answered = st.session_state.get('show_analysis', False)
+        rm_cols = st.columns(2)
+        for _i, _opt in enumerate(["A", "B", "C", "D"]):
+            _opt_text = str(q.get(f"選項{_opt}") or "").strip()
+            if _opt_text:
+                _btn_label = f"({_opt}) {_opt_text}"
+                if rm_cols[_i % 2].button(_btn_label, key=f"rm_{_opt}",
+                                           use_container_width=True,
+                                           disabled=_rm_answered):
+                    _is_ok = (_opt.upper() == rm_correct.upper()) if rm_correct else False
+                    st.session_state.update({
+                        "current_res": "✅ 正確！" if _is_ok else f"❌ 錯誤！正確答案：{rm_correct}",
+                        "show_analysis": True
+                    })
+                    try:
+                        import time as _time
+                        sb_w   = get_supabase()
+                        en_row = _to_en_logs({
+                            "時間":    get_now().strftime("%Y-%m-%d %H:%M:%S"),
+                            "姓名":    st.session_state.user_name,
+                            "分組":    st.session_state.group_id,
+                            "題目ID":  q.get('題目ID', 'N/A'),
+                            "結果":    "✅" if _is_ok else "❌",
+                            "學生答案": _opt,
+                            "分數":    ""
+                        })
+                        sb_w.table("logs").insert(en_row).execute()
+                        _time.sleep(0.3)
+                        st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
+                    except Exception as e:
+                        st.error(f"❌ 寫入失敗：{e}")
+                    st.rerun()
+
+        if _rm_answered:
+            st.warning(st.session_state.get('current_res', ''))
+            if rm_analysis:
+                st.info(f"📝 解析：{rm_analysis}")
+
+    elif is_reading:
         st.markdown("#### 🎤 請朗讀以下英文句子：")
         read_text = str(q.get("朗讀句子") or q.get("英文句子") or q.get("英文答案") or "").strip()
         st.markdown(
@@ -3312,7 +3467,7 @@ if st.session_state.quiz_loaded:
                 st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
                 st.rerun()
 
-    if st.session_state.get('show_analysis') and not is_reading:
+    if st.session_state.get('show_analysis') and not is_reading and not is_reading_mcq:
         st.warning(st.session_state.current_res)
         # 單選題：答題後一律顯示解析
         if is_mcq:
