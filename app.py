@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.186 - 重組工作表版)
+# 🧩 英文全能練習系統 (V2.9.187 - 工作表中文名版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.186
+# 📌 版本編號 (VERSION): 2.9.187
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.186"
+VERSION = "2.9.187"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -79,11 +79,11 @@ def load_static_data():
             pass
         df_s  = conn.read(worksheet="students",  ttl=600).fillna("").astype(str).replace(r'\.0$', '', regex=True)
         try:
-            df_r = conn.read(worksheet="reading", ttl=600).fillna("").astype(str).replace(r'\.0$', '', regex=True)
+            df_r = conn.read(worksheet="朗讀", ttl=600).fillna("").astype(str).replace(r'\.0$', '', regex=True)
         except:
             df_r = pd.DataFrame()
         try:
-            df_v = conn.read(worksheet="vocab", ttl=600).fillna("").astype(str).replace(r'\.0$', '', regex=True)
+            df_v = conn.read(worksheet="拼單字", ttl=600).fillna("").astype(str).replace(r'\.0$', '', regex=True)
         except:
             df_v = pd.DataFrame()
         try:
