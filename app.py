@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.185 - 報告書分題型修復版)
+# 🧩 英文全能練習系統 (V2.9.186 - 重組工作表版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.185
+# 📌 版本編號 (VERSION): 2.9.186
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.185"
+VERSION = "2.9.186"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -70,7 +70,7 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 @st.cache_data(ttl=600)  # 靜態資料快取 10 分鐘（題庫/學生帳號不常變動）
 def load_static_data():
     try:
-        df_q  = conn.read(worksheet="questions", ttl=600).fillna("").astype(str).replace(r'\.0$', '', regex=True)
+        df_q  = conn.read(worksheet="重組", ttl=600).fillna("").astype(str).replace(r'\.0$', '', regex=True)
         try:
             df_mcq = conn.read(worksheet="單選", ttl=600).fillna("").astype(str).replace(r'\.0$', '', regex=True)
             if not df_mcq.empty:
