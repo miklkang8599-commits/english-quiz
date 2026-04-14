@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.176 - 閱讀單句題型版)
+# 🧩 英文全能練習系統 (V2.9.177 - Line報告書版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.176
+# 📌 版本編號 (VERSION): 2.9.177
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.176"
+VERSION = "2.9.177"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1748,6 +1748,93 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                             })
                         df_detail = pd.DataFrame(stu_detail)
                         st.dataframe(df_detail, use_container_width=True, hide_index=True)
+
+            # ── 📱 個人 Line 報告書 ────────────────────────────────────────
+            if not df_t2.empty:
+                st.divider()
+                st.markdown("**📱 個人 Line 報告書**")
+
+                # 老師留言（選填）
+                teacher_msg = st.text_area(
+                    "💬 老師留言（選填，會加在每位學生報告最後）",
+                    placeholder="例如：本週表現很好！請繼續加油！",
+                    key="t2_teacher_msg", height=80
+                )
+
+                if st.button("📋 產生全班報告書", type="primary",
+                             use_container_width=True, key="gen_report"):
+                    sep  = "─" * 22
+                    grp_str  = sel_grp if sel_grp else "全班"
+                    task_str = sel_task_t2 if sel_task_t2 != "（不限）" else ""
+                    period_str = f"{t2_period}（{t2_from}～{t2_to}）"
+
+                    df_t2_ans_r = df_t2[~df_t2["結果"].str.contains("📖", na=False)].copy()
+                    df_t2_rev_r = df_t2[df_t2["結果"].str.contains("📖", na=False)].copy()
+
+                    all_reports = []
+                    for stu in target_stus_t2:
+                        stu_ans_r = df_t2_ans_r[df_t2_ans_r["姓名"] == stu]
+                        stu_rev_r = df_t2_rev_r[df_t2_rev_r["姓名"] == stu]
+
+                        if stu_ans_r.empty and stu_rev_r.empty:
+                            continue
+
+                        stu_grp = df_s[df_s["姓名"] == stu]["分組"].iloc[0] if not df_s[df_s["姓名"] == stu].empty else grp_str
+
+                        # 計算統計
+                        total_q   = stu_ans_r["題目ID"].nunique() if not stu_ans_r.empty else 0
+                        last_ans  = stu_ans_r.sort_values("時間").groupby("題目ID").last().reset_index() if not stu_ans_r.empty else pd.DataFrame()
+                        correct   = len(last_ans[last_ans["結果"] == "✅"]) if not last_ans.empty else 0
+                        wrong     = len(last_ans[last_ans["結果"] == "❌"]) if not last_ans.empty else 0
+                        acc_rate  = f"{int(correct/total_q*100)}%" if total_q > 0 else "—"
+                        rev_cnt   = len(stu_rev_r) if not stu_rev_r.empty else 0
+
+                        # 錯題列表
+                        wrong_qids = last_ans[last_ans["結果"] == "❌"]["題目ID"].tolist() if not last_ans.empty else []
+
+                        lines = []
+                        lines.append(f"📚 {stu} 學習報告")
+                        lines.append(f"班級：{stu_grp}　{period_str}")
+                        if task_str:
+                            lines.append(f"📋 任務：{task_str}")
+                        lines.append(sep)
+                        lines.append(f"✏️ 答題：{total_q} 題　✅ 答對：{correct}　❌ 答錯：{wrong}")
+                        lines.append(f"📈 正確率：{acc_rate}" + (f"　📖 複習：{rev_cnt} 次" if rev_cnt > 0 else ""))
+
+                        if wrong_qids:
+                            lines.append(sep)
+                            lines.append("❌ 錯題紀錄：")
+                            # 顯示錯題句編號
+                            for wqid in wrong_qids[:10]:  # 最多顯示10題
+                                parts = wqid.replace("RM_","").replace("V_","").replace("R_","").split("_")
+                                q_num = parts[-1] if parts else wqid
+                                # 從歷史看錯了幾次
+                                wrong_times = len(stu_ans_r[
+                                    (stu_ans_r["題目ID"] == wqid) &
+                                    (stu_ans_r["結果"] == "❌")
+                                ])
+                                lines.append(f"  • 第{q_num}題" + (f"（答錯{wrong_times}次）" if wrong_times > 1 else ""))
+                            if len(wrong_qids) > 10:
+                                lines.append(f"  • ...等共 {len(wrong_qids)} 題")
+
+                        if teacher_msg.strip():
+                            lines.append(sep)
+                            lines.append(f"💬 老師留言：{teacher_msg.strip()}")
+
+                        all_reports.append("\n".join(lines))
+
+                    if all_reports:
+                        full_report = "\n\n\n".join(all_reports)
+                        st.session_state['line_report'] = full_report
+
+                if st.session_state.get('line_report'):
+                    st.text_area(
+                        "📋 複製以下內容傳給家長（每位學生之間有空行）",
+                        value=st.session_state['line_report'],
+                        height=400,
+                        key="report_output"
+                    )
+                    st.caption("👆 點擊文字框後 Ctrl+A 全選，再 Ctrl+C 複製")
 
     with t3:
         st.subheader("👥 學生帳號清單")
