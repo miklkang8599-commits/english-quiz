@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.205 - 任務名稱key修復版)
+# 🧩 英文全能練習系統 (V2.9.208 - 任務流水編號版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.205
+# 📌 版本編號 (VERSION): 2.9.208
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.205"
+VERSION = "2.9.208"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -109,7 +109,7 @@ def get_supabase() -> Client:
 LOGS_COLS = {
     "created_at": "時間", "name": "姓名", "group_id": "分組",
     "question_id": "題目ID", "result": "結果",
-    "student_answer": "學生答案", "score": "分數"
+    "student_answer": "學生答案", "score": "分數", "task_name": "任務名稱"
 }
 ASSIGN_COLS = {
     "created_at": "建立時間", "task_name": "任務名稱",
@@ -118,7 +118,7 @@ ASSIGN_COLS = {
     "description": "任務說明", "question_count": "題目數",
     "question_ids": "題目ID清單", "start_date": "開始日期",
     "end_date": "結束日期", "ref_students": "參考學生",
-    "status": "狀態", "task_type": "類型"
+    "status": "狀態", "task_type": "類型", "task_id": "任務編號"
 }
 
 def _to_cn(df: pd.DataFrame, col_map: dict) -> pd.DataFrame:
@@ -135,6 +135,7 @@ def _to_en_logs(row: dict) -> dict:
         "result":         str(row.get("結果", "")),
         "student_answer": str(row.get("學生答案", "") or ""),
         "score":          str(row.get("分數", "") or ""),
+        "task_name":      str(row.get("任務名稱", "") or ""),
     }
 
 def _to_en_assign(row: dict) -> dict:
@@ -1285,9 +1286,16 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 else:
                     auto_desc = f"混合任務 {groups_label} {teacher_name} {publish_time} {date_start}~{date_end}"
 
+                # 產生唯一流水編號：T + 時間戳記毫秒（確保唯一）
+                import time as _t
+                task_id = f"T{int(_t.time() * 1000) % 10000000:07d}"
+                # 任務名稱前面加編號
+                auto_desc = f"[{task_id}] {auto_desc}"
+
                 new_task  = pd.DataFrame([{
                     "建立時間":   get_now().strftime("%Y-%m-%d %H:%M:%S"),
                     "任務名稱":   auto_desc,
+                    "任務編號":   task_id,
                     "對象班級":   target_group,
                     "指派學生":   ",".join(target_students_t1),
                     "指派人數":   len(target_students_t1),
@@ -1422,10 +1430,14 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                         elif not final_comb_stus:
                             st.error("❌ 沒有指派學生")
                         else:
-                            auto_name = comb_task_name.strip() or f"{st.session_state.user_name}-{get_now().strftime('%Y-%m-%d-%H:%M')}-{','.join(target_comb_groups)}-集合任務-共{len(filtered_qids)}題"
+                            import time as _t2
+                            comb_task_id = f"T{int(_t2.time() * 1000) % 10000000:07d}"
+                            raw_name = comb_task_name.strip() or f"集合任務 {','.join(target_comb_groups)} {st.session_state.user_name} {get_now().strftime('%Y-%m-%d_%H:%M')} {comb_date_start}~{comb_date_end}"
+                            auto_name = f"[{comb_task_id}] {raw_name}"
                             new_comb_task = pd.DataFrame([{
                                 "建立時間":   get_now().strftime("%Y-%m-%d %H:%M:%S"),
                                 "任務名稱":   auto_name,
+                                "任務編號":   comb_task_id,
                                 "對象班級":   ",".join(target_comb_groups),
                                 "指派學生":   ",".join(final_comb_stus),
                                 "指派人數":   len(final_comb_stus),
@@ -2758,6 +2770,7 @@ if not st.session_state.quiz_loaded:
         st.markdown("<h2 style='margin-bottom:0'>📋 我的任務</h2>", unsafe_allow_html=True)
         for _task_idx, arow in enumerate(my_tasks):
             task_name    = arow.get('任務名稱', '未命名')
+            task_id_key  = arow.get('任務編號', '') or task_name[:10]  # 無編號則用名稱前10字
             task_start   = arow.get('開始日期', '')
             task_end     = arow.get('結束日期', '')
             task_q_ids   = str(arow.get('題目ID清單', '') or '')
@@ -2831,7 +2844,7 @@ if not st.session_state.quiz_loaded:
                                     rec['_type'] = 'reading'
                                 st.session_state.update({
                                     "quiz_list": records,
-                                    "q_idx": 0, "quiz_loaded": True, "answered_count": 0,
+                                    "q_idx": 0, "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key,
                                     "ans": [], "used_history": [], "shuf": [], "show_analysis": False
                                 })
                                 st.rerun()
@@ -2844,7 +2857,7 @@ if not st.session_state.quiz_loaded:
                             if not retry_q.empty:
                                 st.session_state.update({
                                     "quiz_list": retry_q.to_dict('records'),
-                                    "q_idx": 0, "quiz_loaded": True, "answered_count": 0,
+                                    "q_idx": 0, "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key,
                                     "ans": [], "used_history": [], "shuf": [], "show_analysis": False
                                 })
                                 st.rerun()
@@ -2875,7 +2888,7 @@ if not st.session_state.quiz_loaded:
                                     r['_type'] = 'reading'
                                 st.session_state.update({
                                     "quiz_list": records,
-                                    "q_idx": 0, "quiz_loaded": True, "answered_count": 0,
+                                    "q_idx": 0, "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key,
                                     "ans": [], "used_history": [], "shuf": [], "show_analysis": False
                                 })
                                 st.rerun()
@@ -2904,7 +2917,7 @@ if not st.session_state.quiz_loaded:
                                     rec['_vocab_extra'] = v_extra_t
                                 st.session_state.update({
                                     "quiz_list": records,
-                                    "q_idx": 0, "quiz_loaded": True, "answered_count": 0,
+                                    "q_idx": 0, "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key,
                                     "ans": [], "used_history": [], "shuf": [], "show_analysis": False
                                 })
                                 st.rerun()
@@ -2922,7 +2935,7 @@ if not st.session_state.quiz_loaded:
                                     rec['_type'] = 'reading_mcq'
                                 st.session_state.update({
                                     "quiz_list": records,
-                                    "q_idx": 0, "quiz_loaded": True, "answered_count": 0,
+                                    "q_idx": 0, "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key,
                                     "ans": [], "used_history": [], "shuf": [], "show_analysis": False
                                 })
                                 st.rerun()
@@ -2969,7 +2982,7 @@ if not st.session_state.quiz_loaded:
                             if not pending.empty:
                                 st.session_state.update({
                                     "quiz_list": pending.to_dict('records'),
-                                    "q_idx": 0, "quiz_loaded": True, "answered_count": 0,
+                                    "q_idx": 0, "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key,
                                     "ans": [], "used_history": [], "shuf": [], "show_analysis": False
                                 })
                                 st.rerun()
@@ -2984,7 +2997,7 @@ if not st.session_state.quiz_loaded:
                             if not pending_q.empty:
                                 st.session_state.update({
                                     "quiz_list": pending_q.to_dict('records'),
-                                    "q_idx": 0, "quiz_loaded": True, "answered_count": 0,
+                                    "q_idx": 0, "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key,
                                     "ans": [], "used_history": [], "shuf": [], "show_analysis": False
                                 })
                                 st.rerun()
@@ -3290,7 +3303,7 @@ if not st.session_state.quiz_loaded:
                                 "題目ID":  qid,
                                 "結果":    "📖 複習",
                                 "學生答案": "",
-                                "分數":    ""
+                                "任務名稱": st.session_state.get("current_task_name", "")
                             }])
                             if append_to_sheet("logs", log_data):
                                 rv_review_counts[qid] = rv_review_counts.get(qid, 0) + 1
@@ -3491,7 +3504,8 @@ if st.session_state.quiz_loaded:
                             "題目ID":  q.get('題目ID', 'N/A'),
                             "結果":    "🎤 朗讀",
                             "學生答案": stt_text,
-                            "分數":    score
+                            "分數":    score,
+                            "任務名稱": st.session_state.get("current_task_name", "")
                         }])
                         append_to_sheet("logs", log_data)
                         st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
@@ -3523,7 +3537,7 @@ if st.session_state.quiz_loaded:
             st.markdown(f"⏱️ 剩餘時間：**{remain} 秒**")
             if remain == 0 and not st.session_state.get("show_analysis"):
                 st.session_state.update({"current_res": f"⏰ 時間到！答案是：{word}", "show_analysis": True})
-                append_to_sheet("logs", pd.DataFrame([{"時間": get_now().strftime("%Y-%m-%d %H:%M:%S"), "姓名": st.session_state.user_name, "分組": st.session_state.group_id, "題目ID": q.get("題目ID","N/A"), "結果": "❌"}]))
+                append_to_sheet("logs", pd.DataFrame([{"時間": get_now().strftime("%Y-%m-%d %H:%M:%S"), "姓名": st.session_state.user_name, "分組": st.session_state.group_id, "題目ID": q.get("題目ID","N/A"), "結果": "❌", "分數": st.session_state.get("current_task_name","")}]))
                 st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
                 st.rerun()
 
@@ -3592,7 +3606,7 @@ if st.session_state.quiz_loaded:
                 if st.button("✅ 檢查答案", type="primary", use_container_width=True, key=f"vb_check_{st.session_state.q_idx}"):
                     is_ok = "".join(current_ans).upper() == word.upper()
                     st.session_state.update({"current_res": "✅ 正確！" if is_ok else f"❌ 錯誤！正確答案：{word}", "show_analysis": True})
-                    append_to_sheet("logs", pd.DataFrame([{"時間": get_now().strftime("%Y-%m-%d %H:%M:%S"), "姓名": st.session_state.user_name, "分組": st.session_state.group_id, "題目ID": q.get("題目ID","N/A"), "結果": "✅" if is_ok else "❌", "學生答案": "".join(current_ans)}]))
+                    append_to_sheet("logs", pd.DataFrame([{"時間": get_now().strftime("%Y-%m-%d %H:%M:%S"), "姓名": st.session_state.user_name, "分組": st.session_state.group_id, "題目ID": q.get("題目ID","N/A"), "結果": "✅" if is_ok else "❌", "學生答案": "".join(current_ans), "任務名稱": st.session_state.get("current_task_name","")}]))
                     st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
                     st.rerun()
 
@@ -3616,7 +3630,7 @@ if st.session_state.quiz_loaded:
                     if st.button("✅ 檢查答案", type="primary", use_container_width=True, key=f"kb_check_{st.session_state.q_idx}"):
                         is_ok = kb_current.upper() == word.upper()
                         st.session_state.update({"current_res": "✅ 正確！" if is_ok else f"❌ 錯誤！正確答案：{word}", "show_analysis": True})
-                        append_to_sheet("logs", pd.DataFrame([{"時間": get_now().strftime("%Y-%m-%d %H:%M:%S"), "姓名": st.session_state.user_name, "分組": st.session_state.group_id, "題目ID": q.get("題目ID","N/A"), "結果": "✅" if is_ok else "❌", "學生答案": kb_current}]))
+                        append_to_sheet("logs", pd.DataFrame([{"時間": get_now().strftime("%Y-%m-%d %H:%M:%S"), "姓名": st.session_state.user_name, "分組": st.session_state.group_id, "題目ID": q.get("題目ID","N/A"), "結果": "✅" if is_ok else "❌", "學生答案": kb_current, "任務名稱": st.session_state.get("current_task_name","")}]))
                         st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
                         st.rerun()
 
@@ -3699,7 +3713,7 @@ if st.session_state.quiz_loaded:
                         "題目ID":  q.get('題目ID', 'N/A'),
                         "結果":    "✅" if is_ok else "❌",
                         "學生答案": "",
-                        "分數":    ""
+                        "分數":    st.session_state.get("current_task_name", "")
                     })
                     sb_w.table("logs").insert(en_row).execute()
                     _time.sleep(0.5)  # 等 Supabase 確認寫入
@@ -3762,7 +3776,8 @@ if st.session_state.quiz_loaded:
                     "姓名": st.session_state.user_name,
                     "分組": st.session_state.group_id,
                     "題目ID": q.get('題目ID', 'N/A'),
-                    "結果": "✅" if is_ok else "❌"
+                    "結果": "✅" if is_ok else "❌",
+                    "任務名稱": st.session_state.get("current_task_name", "")
                 }])
                 append_to_sheet("logs", log_data)
                 st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
