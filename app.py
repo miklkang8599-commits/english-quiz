@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.203 - 舊任務過濾版)
+# 🧩 英文全能練習系統 (V2.9.205 - 任務名稱key修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.203
+# 📌 版本編號 (VERSION): 2.9.205
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.203"
+VERSION = "2.9.205"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1554,10 +1554,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
         
                             st.divider()
                             st.markdown("**✏️ 修改任務內容**")
-        
-                            # 任務名稱
-                            new_name = st.text_input("任務名稱", value=task_name, key=f"edit_name_{idx}")
-        
+
                             # 日期
                             ed1, ed2 = st.columns(2)
                             try:
@@ -1568,6 +1565,19 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                                 cur_end   = get_now().date() + timedelta(days=7)
                             new_start = ed1.date_input("開始日期", value=cur_start, key=f"edit_start_{idx}")
                             new_end   = ed2.date_input("結束日期", value=cur_end,   key=f"edit_end_{idx}")
+
+                            # 任務名稱：自動把結尾日期~日期換成新的
+                            import re as _re3
+                            def _update_name_dates(name, s, e):
+                                new = _re3.sub(r'\d{4}-\d{2}-\d{2}~\d{4}-\d{2}-\d{2}$', f"{s}~{e}", str(name).strip())
+                                return new
+                            auto_new_name = _update_name_dates(task_name, new_start, new_end)
+                            # key 用 idx + 建立時間 hash，確保每個任務獨立
+                            _name_key = f"edit_name_{idx}_{str(row.get('建立時間',''))}"
+                            # 初始化時才寫入，避免被其他任務覆蓋
+                            if _name_key not in st.session_state:
+                                st.session_state[_name_key] = auto_new_name
+                            new_name = st.text_input("任務名稱（可手動修改）", key=_name_key)
         
                             # 學生（可刪除）
                             st.markdown("**👥 指派學生（取消勾選即移除）**")
