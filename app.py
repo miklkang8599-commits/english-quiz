@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.201 - 任務新格式過濾版)
+# 🧩 英文全能練習系統 (V2.9.202 - 發布後清空修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.201
+# 📌 版本編號 (VERSION): 2.9.202
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.201"
+VERSION = "2.9.202"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -805,13 +805,28 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
     with t1:
         # 發布成功後清空表單（在 widget 渲染前執行）
         if st.session_state.pop('t1_clear_form', False):
-            for k in ['t1_group', 't1_mode', 't1_stu',
-                      't1_inc_q', 't1_inc_reading', 't1_inc_vocab',
-                      't1_ref_stu', 't1_ref_logic', 't1_ref_n',
-                      't1_v', 't1_u', 't1_y', 't1_b', 't1_l', 't1_start_sent', 't1_q_count',
-                      'rt_v', 'rt_u', 'rt_y', 'rt_b', 'rt_l', 'rt_start_sent', 'rt_q_count',
-                      'vt_v', 'vt_u', 'vt_y', 'vt_b', 'vt_l', 'vt_start_sent', 'vt_q_count',
-                      'vt_mode', 'vt_timer', 'vt_extra']:
+            for k in [
+                # 題型 checkbox
+                't1_inc_q', 't1_inc_mcq', 't1_inc_reading', 't1_inc_vocab', 't1_inc_rm',
+                # 重組題篩選
+                't1_v', 't1_u', 't1_y', 't1_b', 't1_l', 't1_start_sent', 't1_q_count',
+                't1_grammar', 't1_diff',
+                # 單選題篩選
+                'mc_v', 'mc_u', 'mc_y', 'mc_b', 'mc_l', 'mc_start_sent', 'mc_q_count',
+                'mc_grammar', 'mc_diff',
+                # 朗讀題篩選
+                'rt_v', 'rt_u', 'rt_y', 'rt_b', 'rt_l', 'rt_start_sent', 'rt_q_count',
+                # 拼單字篩選
+                'vt_v', 'vt_u', 'vt_y', 'vt_b', 'vt_l', 'vt_start_sent', 'vt_q_count',
+                'vt_mode', 'vt_timer', 'vt_extra',
+                # 閱讀單句篩選
+                'rmt_v', 'rmt_u', 'rmt_y', 'rmt_b', 'rmt_l', 'rmt_start', 'rmt_count',
+                'rmt_grammar', 'rmt_diff',
+                # 班級/學生/日期
+                't1_group', 't1_mode', 't1_stu', 't1_start', 't1_end',
+                # 參考學生
+                't1_ref_stu', 't1_ref_logic', 't1_ref_n',
+            ]:
                 st.session_state.pop(k, None)
 
         # ══════════════════════════════════════════════════════════════════
