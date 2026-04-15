@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.187 - 工作表中文名版)
+# 🧩 英文全能練習系統 (V2.9.188 - 講解按鈕key修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.187
+# 📌 版本編號 (VERSION): 2.9.188
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.187"
+VERSION = "2.9.188"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -2236,7 +2236,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
 
             is_mcq_scope = "單選" in str(st.session_state.get('rev_u', ''))
 
-            for _, qrow in df_rev_scope.iterrows():
+            for _qi, (_, qrow) in enumerate(df_rev_scope.iterrows()):
                 qid       = qrow['題目ID']
                 q_unit    = str(qrow.get('單元', ''))
                 # 依單元判斷題型
@@ -2308,7 +2308,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     st.divider()
 
                     # ── 講解完成按鈕 ──────────────────────────────────────
-                    btn_key = f"rev_done_{qid}"
+                    btn_key = f"rev_done_{_qi}_{qid}"
                     if st.button("📖 講解完成，寫入紀錄", key=btn_key, type="primary", use_container_width=True):
                         now_str = get_now().strftime("%Y-%m-%d %H:%M:%S")
                         rows = [
@@ -2496,7 +2496,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     else:
                         rrev_logs = pd.DataFrame()
 
-                    for _, qrow in df_rrev_scope.iterrows():
+                    for _rqi, (_, qrow) in enumerate(df_rrev_scope.iterrows()):
                         qid       = qrow['題目ID']
                         read_text = str(qrow.get('朗讀句子') or qrow.get('英文句子') or '').strip()
 
@@ -2521,7 +2521,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                             st.divider()
 
                             # 講解完成按鈕
-                            rrev_btn = f"rrev_done_{qid}"
+                            rrev_btn = f"rrev_done_{_rqi}_{qid}"
                             if st.button("📖 講解完成，寫入紀錄", key=rrev_btn, type="primary", use_container_width=True):
                                 now_str = get_now().strftime("%Y-%m-%d %H:%M:%S")
                                 rows_r  = [{"時間": now_str, "姓名": stu, "分組": rrev_group,
