@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.208 - 任務流水編號版)
+# 🧩 英文全能練習系統 (V2.9.209 - 任務命名橫線版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.208
+# 📌 版本編號 (VERSION): 2.9.209
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.208"
+VERSION = "2.9.209"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1249,8 +1249,8 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
 
                 # 取得主要題型的篩選資訊（只顯示一次題型）
                 def _make_task_name(ttype, v, u, y, b, l, start, count, groups, teacher, ptime, dstart, dend):
-                    start_str = f" 起始{start}" if start else ""
-                    return f"{ttype} {v} {y}年 冊{b} 課{l}{start_str} {count}題 {groups} {teacher} {ptime} {dstart}~{dend}"
+                    start_str = f"-起始{start}" if start else ""
+                    return f"{ttype}-{v}-{y}年-冊{b}-課{l}{start_str}-{count}題-{groups}-{teacher}-{ptime}-{dstart}~{dend}"
 
                 if mcq_ids:
                     mv_ = st.session_state.get('mc_v', '')
@@ -1284,7 +1284,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     rms_ = st.session_state.get('rmt_start', '')
                     auto_desc = _make_task_name("閱讀單句", rmv_, '', rmy_, rmb_, rml_, rms_, len(rm_ids), groups_label, teacher_name, publish_time, str(date_start), str(date_end))
                 else:
-                    auto_desc = f"混合任務 {groups_label} {teacher_name} {publish_time} {date_start}~{date_end}"
+                    auto_desc = f"混合任務-{groups_label}-{teacher_name}-{publish_time}-{date_start}~{date_end}"
 
                 # 產生唯一流水編號：T + 時間戳記毫秒（確保唯一）
                 import time as _t
@@ -1475,12 +1475,19 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
         else:
             # 從任務名稱提取出題老師（第一個 - 前的文字）
             def _get_teacher(name):
-                # 新格式：題型 版本 年度 冊 課 [起始] 題數 班級 老師名 2026-xx-xx_HH:MM 日期~日期
-                # 老師名固定在倒數第3個（以空格分割）
-                parts = str(name).strip().split(' ')
-                if len(parts) >= 3:
-                    return parts[-3].strip()
-                return '未知'
+                import re as _re4
+                # 移除編號前綴 [Txxxxxxx]
+                clean = _re4.sub(r'^\[T\d+\]\s*', '', str(name).strip())
+                # 找到日期時間的位置（格式：2026-04-15_10:30）
+                m = _re4.search(r'(\d{4}-\d{2}-\d{2}_\d{2}:\d{2})', clean)
+                if m:
+                    # 取日期時間之前的部分，再按 - 分割，老師名是最後一個
+                    before_dt = clean[:m.start()].rstrip('-')
+                    parts = before_dt.split('-')
+                    if parts:
+                        return parts[-1].strip()
+                # 備用：直接取第一個 - 前
+                return clean.split('-')[0].strip() or '未知'
 
             df_a2['_teacher'] = df_a2['任務名稱'].apply(_get_teacher)
             teachers = sorted(df_a2['_teacher'].unique().tolist())
