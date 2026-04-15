@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.194 - 預設單選版)
+# 🧩 英文全能練習系統 (V2.9.195 - 分頁顯示版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.194
+# 📌 版本編號 (VERSION): 2.9.195
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.194"
+VERSION = "2.9.195"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1446,7 +1446,28 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             for teacher, tab_container in teacher_map.items():
                 with tab_container:
                     df_teacher = df_a2[df_a2['_teacher'] == teacher]
-                    for idx, row in df_teacher.iterrows():
+                    # 分頁顯示任務
+                    TASK_PAGE = 10
+                    total_tasks = len(df_teacher)
+                    total_task_pages = max(1, (total_tasks + TASK_PAGE - 1) // TASK_PAGE)
+                    task_page_key = f"task_page_{teacher}"
+                    cur_task_page = st.session_state.get(task_page_key, 0)
+
+                    if total_task_pages > 1:
+                        tp1, tp2, tp3 = st.columns([1, 3, 1])
+                        if tp1.button("◀", key=f"tp_prev_{teacher}", disabled=cur_task_page==0):
+                            st.session_state[task_page_key] = cur_task_page - 1
+                            st.rerun()
+                        tp2.caption(f"第 {cur_task_page+1}/{total_task_pages} 頁（共 {total_tasks} 個任務）")
+                        if tp3.button("▶", key=f"tp_next_{teacher}", disabled=cur_task_page>=total_task_pages-1):
+                            st.session_state[task_page_key] = cur_task_page + 1
+                            st.rerun()
+                        t_start = cur_task_page * TASK_PAGE
+                        df_teacher_page = df_teacher.iloc[t_start:t_start+TASK_PAGE]
+                    else:
+                        df_teacher_page = df_teacher
+
+                    for idx, row in df_teacher_page.iterrows():
                         task_name    = row.get('任務名稱', '未命名')
                         task_group   = row.get('對象班級', row.get('對象', ''))
                         task_start   = row.get('開始日期', '')
@@ -2292,7 +2313,30 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
 
             is_mcq_scope = "單選" in str(st.session_state.get('rev_u', ''))
 
-            for _qi, (_, qrow) in enumerate(df_rev_scope.iterrows()):
+            # 分頁顯示，避免一次渲染太多 expander 造成卡頓
+            PAGE_SIZE = 20
+            total_rev = len(df_rev_scope)
+            total_pages = max(1, (total_rev + PAGE_SIZE - 1) // PAGE_SIZE)
+
+            if total_pages > 1:
+                pg_col1, pg_col2, pg_col3 = st.columns([1, 3, 1])
+                cur_page = st.session_state.get('rev_page', 0)
+                if pg_col1.button("◀ 上一頁", key="rev_prev_page", disabled=cur_page==0):
+                    st.session_state['rev_page'] = cur_page - 1
+                    st.rerun()
+                pg_col2.caption(f"第 {cur_page+1} / {total_pages} 頁　（共 {total_rev} 題，每頁 {PAGE_SIZE} 題）")
+                if pg_col3.button("下一頁 ▶", key="rev_next_page", disabled=cur_page>=total_pages-1):
+                    st.session_state['rev_page'] = cur_page + 1
+                    st.rerun()
+                page_start = cur_page * PAGE_SIZE
+                page_end   = min(page_start + PAGE_SIZE, total_rev)
+                df_rev_page = df_rev_scope.iloc[page_start:page_end]
+            else:
+                df_rev_page = df_rev_scope
+                if 'rev_page' in st.session_state:
+                    st.session_state['rev_page'] = 0
+
+            for _qi, (_, qrow) in enumerate(df_rev_page.iterrows()):
                 qid       = qrow['題目ID']
                 q_unit    = str(qrow.get('單元', ''))
                 # 依單元判斷題型
