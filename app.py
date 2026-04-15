@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.196 - 任務命名新格式版)
+# 🧩 英文全能練習系統 (V2.9.198 - 任務老師名修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.196
+# 📌 版本編號 (VERSION): 2.9.198
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.196"
+VERSION = "2.9.198"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1436,14 +1436,27 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
         st.subheader("📋 任務列表")
 
         df_a2 = df_a[df_a.get('狀態', pd.Series(dtype=str)).fillna('') != '已刪除'].copy() if not df_a.empty else pd.DataFrame()
+        # 最新任務排在最前
+        if not df_a2.empty and '建立時間' in df_a2.columns:
+            df_a2 = df_a2.sort_values('建立時間', ascending=False).reset_index(drop=True)
 
         if df_a2.empty or '任務名稱' not in df_a2.columns:
             st.info("目前尚無任務。")
         else:
             # 從任務名稱提取出題老師（第一個 - 前的文字）
             def _get_teacher(name):
-                parts = str(name).split('-')
-                return parts[0].strip() if parts else '未知'
+                name = str(name).strip()
+                # 新格式：題型 版本 年度 冊 課 [起始] 題數 班級 老師名 日期 時間 日期~日期
+                # 老師名在倒數第4個位置
+                parts = name.split(' ')
+                if len(parts) >= 4:
+                    teacher = parts[-4].strip()
+                    # 確認不是數字或日期（簡單驗證）
+                    if teacher and not teacher[0].isdigit():
+                        return teacher
+                # 舊格式相容：第一個 - 前
+                old_parts = name.split('-')
+                return old_parts[0].strip() if old_parts else '未知'
 
             df_a2['_teacher'] = df_a2['任務名稱'].apply(_get_teacher)
             teachers = df_a2['_teacher'].unique().tolist()
