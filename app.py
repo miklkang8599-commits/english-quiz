@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.200 - 任務老師列表修復版)
+# 🧩 英文全能練習系統 (V2.9.201 - 任務新格式過濾版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.200
+# 📌 版本編號 (VERSION): 2.9.201
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.200"
+VERSION = "2.9.201"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1439,37 +1439,24 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
         # 最新任務排在最前
         if not df_a2.empty and '建立時間' in df_a2.columns:
             df_a2 = df_a2.sort_values('建立時間', ascending=False).reset_index(drop=True)
+        # 只保留新格式任務（包含底線日期時間，例如 2026-04-15_10:30）
+        if not df_a2.empty and '任務名稱' in df_a2.columns:
+            df_a2 = df_a2[df_a2['任務名稱'].str.contains(r'\d{4}-\d{2}-\d{2}_\d{2}:\d{2}', regex=True, na=False)]
 
         if df_a2.empty or '任務名稱' not in df_a2.columns:
             st.info("目前尚無任務。")
         else:
             # 從任務名稱提取出題老師（第一個 - 前的文字）
             def _get_teacher(name):
-                name = str(name).strip()
-                parts = name.split(' ')
-                # 新格式：...班級 老師名 2026-xx-xx_HH:MM 日期~日期（共10-11個部分）
-                # 老師名在倒數第3個，特徵：不是數字開頭、不含~或_或-日期
-                if len(parts) >= 4:
-                    for i in range(3, 6):  # 從倒數第3到第6找老師名
-                        idx = len(parts) - i
-                        if idx < 0: break
-                        c = parts[idx].strip()
-                        if c and not c[0].isdigit() and '~' not in c and '_' not in c and len(c) >= 2:
-                            return c
-                # 舊格式：第一個 - 前（舊格式老師名在最前面）
-                old_first = name.split('-')[0].strip()
-                if old_first and not old_first[0].isdigit() and len(old_first) >= 2:
-                    return old_first
+                # 新格式：題型 版本 年度 冊 課 [起始] 題數 班級 老師名 2026-xx-xx_HH:MM 日期~日期
+                # 老師名固定在倒數第3個（以空格分割）
+                parts = str(name).strip().split(' ')
+                if len(parts) >= 3:
+                    return parts[-3].strip()
                 return '未知'
 
             df_a2['_teacher'] = df_a2['任務名稱'].apply(_get_teacher)
-            # 去除明顯不是老師名的值（純數字、日期格式、課X格式等）
-            import re as _re
-            df_a2['_teacher'] = df_a2['_teacher'].apply(
-                lambda t: t if not _re.match(r'^(課\d|冊\d|\d)', str(t)) else '其他'
-            )
-            teachers = df_a2['_teacher'].unique().tolist()
-            teachers = sorted(teachers)  # 老師名排序
+            teachers = sorted(df_a2['_teacher'].unique().tolist())
 
             # 依老師建立 Tab
             if len(teachers) == 1:
