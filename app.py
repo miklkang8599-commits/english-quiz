@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.195 - 分頁顯示版)
+# 🧩 英文全能練習系統 (V2.9.196 - 任務命名新格式版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.195
+# 📌 版本編號 (VERSION): 2.9.196
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.195"
+VERSION = "2.9.196"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1226,36 +1226,49 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     vt_extra_val = st.session_state.get('vt_extra', 3)
                     vocab_cfg = f"{vt_mode_val}|{vt_timer_val}|{vt_extra_val}"
 
-                # 自動產生任務說明摘要
-                desc_parts = []
-                if q_ids:
-                    start_sent_label = f" 起始句{st.session_state.get('t1_start_sent', '')}" if st.session_state.get('t1_start_sent') else ""
-                    desc_parts.append(f"重組/單選：{t1v} {t1u} {t1y}年 冊{t1b} 課{t1l}{start_sent_label}，共 {len(q_ids)} 題")
-                if r_ids:
-                    r_start = st.session_state.get('rt_start_sent', '')
-                    r_start_label = f" 起始句{r_start}" if r_start else ""
-                    # 取朗讀篩選範圍（若有選的話）
+                # 自動產生任務名稱（新格式）
+                publish_time = get_now().strftime("%Y-%m-%d %H:%M")
+                teacher_name = st.session_state.user_name
+                groups_label = ",".join(target_groups)
+
+                # 取得主要題型的篩選資訊（只顯示一次題型）
+                def _make_task_name(ttype, v, u, y, b, l, start, count, groups, teacher, ptime, dstart, dend):
+                    start_str = f" 起始{start}" if start else ""
+                    return f"{ttype} {v} {y}年 冊{b} 課{l}{start_str} {count}題 {groups} {teacher} {ptime} {dstart}~{dend}"
+
+                if mcq_ids:
+                    mv_ = st.session_state.get('mc_v', '')
+                    mu_ = st.session_state.get('mc_u', '')
+                    my_ = st.session_state.get('mc_y', '')
+                    mb_ = st.session_state.get('mc_b', '')
+                    ml_ = st.session_state.get('mc_l', '')
+                    ms_ = st.session_state.get('mc_start_sent', '')
+                    auto_desc = _make_task_name("單選", mv_, mu_, my_, mb_, ml_, ms_, len(mcq_ids), groups_label, teacher_name, publish_time, str(date_start), str(date_end))
+                elif q_ids:
+                    auto_desc = _make_task_name("重組", t1v, t1u, t1y, t1b, t1l, st.session_state.get('t1_start_sent',''), len(q_ids), groups_label, teacher_name, publish_time, str(date_start), str(date_end))
+                elif r_ids:
                     rv_ = st.session_state.get('rt_v', '')
-                    ru_ = st.session_state.get('rt_u', '')
                     ry_ = st.session_state.get('rt_y', '')
                     rb_ = st.session_state.get('rt_b', '')
                     rl_ = st.session_state.get('rt_l', '')
-                    r_scope = f"：{rv_} {ru_} {ry_}年 冊{rb_} 課{rl_}" if rv_ else ""
-                    desc_parts.append(f"朗讀{r_scope}{r_start_label}，共 {len(r_ids)} 題")
-                if v_ids:
-                    v_start = st.session_state.get('vt_start_sent', '')
-                    v_start_label = f" 起始句{v_start}" if v_start else ""
-                    vv_v = st.session_state.get('vt_v', '')
-                    vv_u = st.session_state.get('vt_u', '')
-                    vv_y = st.session_state.get('vt_y', '')
-                    vv_b = st.session_state.get('vt_b', '')
-                    vv_l = st.session_state.get('vt_l', '')
-                    v_scope = f"：{vv_v} {vv_u} {vv_y}年 冊{vv_b} 課{vv_l}" if vv_v else ""
-                    desc_parts.append(f"單字{v_scope}{v_start_label}，共 {len(v_ids)} 題")
-                publish_time = get_now().strftime("%Y-%m-%d-%H:%M")
-                teacher_name = st.session_state.user_name
-                groups_label = ",".join(target_groups)
-                auto_desc = f"{teacher_name}-{publish_time}-{groups_label}-{'；'.join(desc_parts)}"
+                    rs_ = st.session_state.get('rt_start_sent', '')
+                    auto_desc = _make_task_name("朗讀", rv_, '', ry_, rb_, rl_, rs_, len(r_ids), groups_label, teacher_name, publish_time, str(date_start), str(date_end))
+                elif v_ids:
+                    vv_ = st.session_state.get('vt_v', '')
+                    vy_ = st.session_state.get('vt_y', '')
+                    vb_ = st.session_state.get('vt_b', '')
+                    vl_ = st.session_state.get('vt_l', '')
+                    vs_ = st.session_state.get('vt_start_sent', '')
+                    auto_desc = _make_task_name("拼單字", vv_, '', vy_, vb_, vl_, vs_, len(v_ids), groups_label, teacher_name, publish_time, str(date_start), str(date_end))
+                elif rm_ids:
+                    rmv_ = st.session_state.get('rmt_v', '')
+                    rmy_ = st.session_state.get('rmt_y', '')
+                    rmb_ = st.session_state.get('rmt_b', '')
+                    rml_ = st.session_state.get('rmt_l', '')
+                    rms_ = st.session_state.get('rmt_start', '')
+                    auto_desc = _make_task_name("閱讀單句", rmv_, '', rmy_, rmb_, rml_, rms_, len(rm_ids), groups_label, teacher_name, publish_time, str(date_start), str(date_end))
+                else:
+                    auto_desc = f"混合任務 {groups_label} {teacher_name} {publish_time} {date_start}~{date_end}"
 
                 new_task  = pd.DataFrame([{
                     "建立時間":   get_now().strftime("%Y-%m-%d %H:%M:%S"),
