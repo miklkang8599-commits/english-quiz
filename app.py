@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.189 - 重組單選分離版)
+# 🧩 英文全能練習系統 (V2.9.190 - 效能優化版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.189
+# 📌 版本編號 (VERSION): 2.9.190
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.189"
+VERSION = "2.9.190"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -177,7 +177,7 @@ def load_dynamic_data():
         st.warning(f"⚠️ Supabase 讀取失敗：{e}")
         return pd.DataFrame(), pd.DataFrame()
 
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=60)
 def _load_logs_cached():
     """logs 資料，30秒快取，避免每次 rerun 都撈全部"""
     try:
@@ -2230,16 +2230,12 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             # 取得目標學生的所有答題紀錄（直接查 Supabase）
             try:
                 sb_rev4 = get_supabase()
-                res_rev4 = sb_rev4.table("logs").select("*").in_("name", target_students).execute()
-                if res_rev4.data:
-                    df_group_logs = pd.DataFrame(res_rev4.data)
-                    df_group_logs = _to_cn(df_group_logs, LOGS_COLS)
-                    df_group_logs = df_group_logs.drop(columns=['id'], errors='ignore')
-                    df_group_logs = df_group_logs.sort_values('時間', ascending=False)
-                else:
-                    df_group_logs = pd.DataFrame()
-            except:
+                # 直接用快取的 df_l，不另外查 Supabase
                 df_group_logs = df_l[df_l['姓名'].isin(target_students)].copy() if not df_l.empty else pd.DataFrame()
+                if not df_group_logs.empty:
+                    df_group_logs = df_group_logs.sort_values('時間', ascending=False)
+            except:
+                df_group_logs = pd.DataFrame()
 
             # 依顯示範圍篩選題目
             scope = st.session_state.get('rev_scope_t4', '📚 全部題目')
@@ -2956,8 +2952,10 @@ if not st.session_state.quiz_loaded:
         if st.button("📖 開始復習", type="primary", use_container_width=True, key="rv_start"):
             # 直接查 Supabase 取最新 logs
             try:
-                sb_rv = get_supabase()
-                rv_res = sb_rv.table("logs").select("*").eq("name", user_name).execute()
+                # 用快取的 df_l
+                rv_res_data = df_l[df_l['姓名'] == user_name].to_dict('records') if not df_l.empty else []
+                class _RvRes: pass
+                rv_res = _RvRes(); rv_res.data = rv_res_data
                 if rv_res.data:
                     my_logs = pd.DataFrame(rv_res.data)
                     my_logs = _to_cn(my_logs, LOGS_COLS)
