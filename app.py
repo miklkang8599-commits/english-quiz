@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.199 - 任務命名格式修復版)
+# 🧩 英文全能練習系統 (V2.9.200 - 任務老師列表修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.199
+# 📌 版本編號 (VERSION): 2.9.200
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.199"
+VERSION = "2.9.200"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1447,19 +1447,29 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             def _get_teacher(name):
                 name = str(name).strip()
                 parts = name.split(' ')
-                # 新格式（時間無空格）：... 班級 老師名 日期時間 日期~日期
-                # 老師名在倒數第3個
-                if len(parts) >= 3:
-                    candidate = parts[-3].strip()
-                    # 驗證：不是日期格式且不包含數字開頭
-                    if candidate and not candidate[0].isdigit() and '~' not in candidate and '_' not in candidate:
-                        return candidate
-                # 舊格式：第一個 - 前
-                old_parts = name.split('-')
-                return old_parts[0].strip() if old_parts else '未知'
+                # 新格式：...班級 老師名 2026-xx-xx_HH:MM 日期~日期（共10-11個部分）
+                # 老師名在倒數第3個，特徵：不是數字開頭、不含~或_或-日期
+                if len(parts) >= 4:
+                    for i in range(3, 6):  # 從倒數第3到第6找老師名
+                        idx = len(parts) - i
+                        if idx < 0: break
+                        c = parts[idx].strip()
+                        if c and not c[0].isdigit() and '~' not in c and '_' not in c and len(c) >= 2:
+                            return c
+                # 舊格式：第一個 - 前（舊格式老師名在最前面）
+                old_first = name.split('-')[0].strip()
+                if old_first and not old_first[0].isdigit() and len(old_first) >= 2:
+                    return old_first
+                return '未知'
 
             df_a2['_teacher'] = df_a2['任務名稱'].apply(_get_teacher)
+            # 去除明顯不是老師名的值（純數字、日期格式、課X格式等）
+            import re as _re
+            df_a2['_teacher'] = df_a2['_teacher'].apply(
+                lambda t: t if not _re.match(r'^(課\d|冊\d|\d)', str(t)) else '其他'
+            )
             teachers = df_a2['_teacher'].unique().tolist()
+            teachers = sorted(teachers)  # 老師名排序
 
             # 依老師建立 Tab
             if len(teachers) == 1:
@@ -1473,7 +1483,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 with tab_container:
                     df_teacher = df_a2[df_a2['_teacher'] == teacher]
                     # 分頁顯示任務
-                    TASK_PAGE = 10
+                    TASK_PAGE = 20
                     total_tasks = len(df_teacher)
                     total_task_pages = max(1, (total_tasks + TASK_PAGE - 1) // TASK_PAGE)
                     task_page_key = f"task_page_{teacher}"
