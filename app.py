@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.188 - 講解按鈕key修復版)
+# 🧩 英文全能練習系統 (V2.9.189 - 重組單選分離版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.188
+# 📌 版本編號 (VERSION): 2.9.189
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.188"
+VERSION = "2.9.189"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -73,10 +73,8 @@ def load_static_data():
         df_q  = conn.read(worksheet="重組", ttl=600).fillna("").astype(str).replace(r'\.0$', '', regex=True)
         try:
             df_mcq = conn.read(worksheet="單選", ttl=600).fillna("").astype(str).replace(r'\.0$', '', regex=True)
-            if not df_mcq.empty:
-                df_q = pd.concat([df_q, df_mcq], ignore_index=True).drop_duplicates()
         except:
-            pass
+            df_mcq = pd.DataFrame()
         df_s  = conn.read(worksheet="students",  ttl=600).fillna("").astype(str).replace(r'\.0$', '', regex=True)
         try:
             df_r = conn.read(worksheet="朗讀", ttl=600).fillna("").astype(str).replace(r'\.0$', '', regex=True)
@@ -91,11 +89,11 @@ def load_static_data():
             df_rm['_type'] = 'reading_mcq'
         except:
             df_rm = pd.DataFrame()
-        return df_q, df_s, df_r, df_v, df_rm
+        return df_q, df_s, df_r, df_v, df_rm, df_mcq
     except Exception as e:
         import streamlit as _st
         _st.session_state['_load_error'] = str(e)
-        return None, None, pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+        return None, None, pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
 # ==============================================================================
 # Supabase 客戶端
@@ -234,11 +232,11 @@ def append_to_sheet(worksheet_name: str, new_row: pd.DataFrame):
 # 🔐 【權限控管與登入】
 # ------------------------------------------------------------------------------
 if not st.session_state.get('logged_in', False):
-    df_q, df_s, df_r, df_v, df_rm = load_static_data()
+    df_q, df_s, df_r, df_v, df_rm, df_mcq = load_static_data()
     # 失敗立即重試一次
     if df_s is None:
         load_static_data.clear()
-        df_q, df_s, df_r, df_v, df_rm = load_static_data()
+        df_q, df_s, df_r, df_v, df_rm, df_mcq = load_static_data()
     _, c, _ = st.columns([1, 1.2, 1])
     with c:
         if df_s is None:
@@ -271,13 +269,13 @@ if not st.session_state.get('logged_in', False):
     st.stop()
 
 # 載入資料（登入後）
-df_q, df_s, df_r, df_v, df_rm = load_static_data()
+df_q, df_s, df_r, df_v, df_rm, df_mcq = load_static_data()
 df_a, df_l = load_dynamic_data()
 
 if df_q is None or df_s is None:
     # 立即清快取重試一次
     load_static_data.clear()
-    df_q, df_s, df_r, df_v, df_rm = load_static_data()
+    df_q, df_s, df_r, df_v, df_rm, df_mcq = load_static_data()
 
 if df_q is None or df_s is None:
     st.error("⚠️ 題庫讀取失敗，請按下方按鈕重試。")
@@ -849,93 +847,136 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
         date_end   = dc2.date_input("📅 結束日期", value=now_tw_t1.date() + timedelta(days=7), key="t1_end")
 
         # ── 題目範圍篩選（選填） ──────────────────────────────────────────
-        include_q = st.checkbox("📝 加入重組／單選題", value=True, key="t1_inc_q")
+        # ── 重組題範圍（選填） ────────────────────────────────────────────
+        include_q = st.checkbox("✏️ 加入重組題", value=True, key="t1_inc_q")
         df_t1_final = pd.DataFrame()
 
         if include_q:
-            st.markdown("**⚙️ 重組／單選題範圍**")
-            tc = st.columns(5)
-            t1v = tc[0].selectbox("版本",  sorted(df_q['版本'].unique()), key="t1_v")
-            t1u = tc[1].selectbox("單元",  sorted(df_q[df_q['版本'] == t1v]['單元'].unique()), key="t1_u")
-            t1y = tc[2].selectbox("年度",  sorted(df_q[(df_q['版本'] == t1v) & (df_q['單元'] == t1u)]['年度'].unique()), key="t1_y")
-            t1b = tc[3].selectbox("冊編號", sorted(df_q[(df_q['版本'] == t1v) & (df_q['單元'] == t1u) & (df_q['年度'] == t1y)]['冊編號'].unique()), key="t1_b")
-            t1l = tc[4].selectbox("課編號", sorted(df_q[(df_q['版本'] == t1v) & (df_q['單元'] == t1u) & (df_q['年度'] == t1y) & (df_q['冊編號'] == t1b)]['課編號'].unique()), key="t1_l")
+            if df_q.empty:
+                st.warning("重組工作表尚無資料。")
+            else:
+                st.markdown("**⚙️ 重組題範圍**")
+                tc = st.columns(5)
+                t1v = tc[0].selectbox("版本",  sorted(df_q["版本"].unique()), key="t1_v")
+                t1u = tc[1].selectbox("單元",  sorted(df_q[df_q["版本"] == t1v]["單元"].unique()), key="t1_u")
+                t1y = tc[2].selectbox("年度",  sorted(df_q[(df_q["版本"] == t1v) & (df_q["單元"] == t1u)]["年度"].unique()), key="t1_y")
+                t1b = tc[3].selectbox("冊編號", sorted(df_q[(df_q["版本"] == t1v) & (df_q["單元"] == t1u) & (df_q["年度"] == t1y)]["冊編號"].unique()), key="t1_b")
+                t1l = tc[4].selectbox("課編號", sorted(df_q[(df_q["版本"] == t1v) & (df_q["單元"] == t1u) & (df_q["年度"] == t1y) & (df_q["冊編號"] == t1b)]["課編號"].unique()), key="t1_l")
 
-            df_t1_scope = df_q[
-                (df_q['版本'] == t1v) & (df_q['單元'] == t1u) &
-                (df_q['年度'] == t1y) & (df_q['冊編號'] == t1b) &
-                (df_q['課編號'] == t1l)
-            ].copy()
+                df_t1_scope = df_q[
+                    (df_q["版本"] == t1v) & (df_q["單元"] == t1u) &
+                    (df_q["年度"] == t1y) & (df_q["冊編號"] == t1b) &
+                    (df_q["課編號"] == t1l)
+                ].copy()
 
-            # 文法／難度 額外篩選（選填）
-            extra_cols = st.columns(2)
-            if '文法' in df_t1_scope.columns:
-                grammar_opts = ["（不限）"] + sorted([v for v in df_t1_scope['文法'].unique() if v and v != ''])
-                t1_grammar = extra_cols[0].selectbox("文法（選填）", grammar_opts, key="t1_grammar")
-                if t1_grammar != "（不限）":
-                    df_t1_scope = df_t1_scope[df_t1_scope['文法'] == t1_grammar]
-            if '難度' in df_t1_scope.columns:
-                diff_opts = ["（不限）"] + sorted([v for v in df_t1_scope['難度'].unique() if v and v != ''])
-                t1_diff = extra_cols[1].selectbox("難度（選填）", diff_opts, key="t1_diff")
-                if t1_diff != "（不限）":
-                    df_t1_scope = df_t1_scope[df_t1_scope['難度'] == t1_diff]
+                extra_cols = st.columns(2)
+                if "文法" in df_t1_scope.columns:
+                    gram_opts = ["（不限）"] + sorted([v for v in df_t1_scope["文法"].unique() if v and v != ""])
+                    t1_gram = extra_cols[0].selectbox("文法（選填）", gram_opts, key="t1_grammar")
+                    if t1_gram != "（不限）":
+                        df_t1_scope = df_t1_scope[df_t1_scope["文法"] == t1_gram]
+                if "難度" in df_t1_scope.columns:
+                    diff_opts = ["（不限）"] + sorted([v for v in df_t1_scope["難度"].unique() if v and v != ""])
+                    t1_diff = extra_cols[1].selectbox("難度（選填）", diff_opts, key="t1_diff")
+                    if t1_diff != "（不限）":
+                        df_t1_scope = df_t1_scope[df_t1_scope["難度"] == t1_diff]
 
-            df_t1_scope['題目ID'] = df_t1_scope.apply(
-                lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1
-            )
-            total_in_scope = len(df_t1_scope)
-            st.caption(f"此範圍共 {total_in_scope} 題")
+                df_t1_scope["題目ID"] = df_t1_scope.apply(
+                    lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1
+                )
+                total_in_scope = len(df_t1_scope)
+                st.caption(f"此範圍共 {total_in_scope} 題")
 
-            sc1, sc2 = st.columns(2)
-            all_sent_nums = sorted(df_t1_scope['句編號'].unique(), key=lambda x: int(x) if str(x).isdigit() else 0)
-            t1_start_sent = sc1.selectbox("🔢 起始句編號", all_sent_nums, key="t1_start_sent") if all_sent_nums else None
-            t1_q_count    = sc2.number_input("🔢 題目數量", min_value=0, max_value=total_in_scope, value=total_in_scope, key="t1_q_count")
+                sc1, sc2 = st.columns(2)
+                all_sent_nums = sorted(df_t1_scope["句編號"].unique(), key=lambda x: int(x) if str(x).isdigit() else 0)
+                t1_start_sent = sc1.selectbox("🔢 起始句編號", all_sent_nums, key="t1_start_sent") if all_sent_nums else None
+                t1_q_count    = sc2.number_input("🔢 題目數量", min_value=0, max_value=total_in_scope, value=total_in_scope, key="t1_q_count")
 
-            if t1_start_sent:
-                df_t1_scope['_num'] = pd.to_numeric(df_t1_scope['句編號'], errors='coerce').fillna(0)
-                df_t1_scope = df_t1_scope[df_t1_scope['_num'] >= int(t1_start_sent)].sort_values('_num').copy()
-            if t1_q_count > 0:
-                df_t1_scope = df_t1_scope.head(int(t1_q_count)).copy()
-            st.caption(f"篩選後：{len(df_t1_scope)} 題")
+                if t1_start_sent:
+                    df_t1_scope["_num"] = pd.to_numeric(df_t1_scope["句編號"], errors="coerce").fillna(0)
+                    df_t1_scope = df_t1_scope[df_t1_scope["_num"] >= int(t1_start_sent)].sort_values("_num").copy()
+                if t1_q_count > 0:
+                    df_t1_scope = df_t1_scope.head(int(t1_q_count)).copy()
+                st.caption(f"篩選後：{len(df_t1_scope)} 題")
 
-            # 參考學生錯題篩選
+                df_t1_final = df_t1_scope.copy()
+                with st.expander(f"📋 預覽重組題清單（{len(df_t1_final)} 題）", expanded=False):
+                    prev = [c for c in ["句編號", "重組中文題目", "題目ID"] if c in df_t1_final.columns]
+                    st.dataframe(df_t1_final[prev], use_container_width=True)
+        else:
+            t1v = t1u = t1y = t1b = t1l = ""
+
+        st.divider()
+
+        # ── 單選題範圍（選填） ────────────────────────────────────────────
+        include_mcq = st.checkbox("🔵 加入單選題", value=False, key="t1_inc_mcq")
+        df_mcq_final = pd.DataFrame()
+
+        if include_mcq:
+            if df_mcq.empty:
+                st.warning("單選工作表尚無資料。")
+            else:
+                st.markdown("**⚙️ 單選題範圍**")
+                mc = st.columns(5)
+                mv = mc[0].selectbox("版本",  sorted(df_mcq["版本"].unique()), key="mc_v")
+                mu_src = df_mcq[df_mcq["版本"] == mv]
+                mu = mc[1].selectbox("單元",  sorted(mu_src["單元"].unique()), key="mc_u")
+                my_src = mu_src[mu_src["單元"] == mu]
+                my = mc[2].selectbox("年度",  sorted(my_src["年度"].unique()), key="mc_y")
+                mb_src = my_src[my_src["年度"] == my]
+                mb = mc[3].selectbox("冊編號", sorted(mb_src["冊編號"].unique()), key="mc_b")
+                ml_src = mb_src[mb_src["冊編號"] == mb]
+                ml = mc[4].selectbox("課編號", sorted(ml_src["課編號"].unique()), key="mc_l")
+
+                df_mcq_scope = ml_src[ml_src["課編號"] == ml].copy()
+
+                mc_extra = st.columns(2)
+                if "文法" in df_mcq_scope.columns:
+                    mc_gram_opts = ["（不限）"] + sorted([v for v in df_mcq_scope["文法"].unique() if v and v != ""])
+                    mc_gram = mc_extra[0].selectbox("文法（選填）", mc_gram_opts, key="mc_grammar")
+                    if mc_gram != "（不限）":
+                        df_mcq_scope = df_mcq_scope[df_mcq_scope["文法"] == mc_gram]
+                if "難度" in df_mcq_scope.columns:
+                    mc_diff_opts = ["（不限）"] + sorted([v for v in df_mcq_scope["難度"].unique() if v and v != ""])
+                    mc_diff = mc_extra[1].selectbox("難度（選填）", mc_diff_opts, key="mc_diff")
+                    if mc_diff != "（不限）":
+                        df_mcq_scope = df_mcq_scope[df_mcq_scope["難度"] == mc_diff]
+
+                df_mcq_scope["題目ID"] = df_mcq_scope.apply(
+                    lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1
+                )
+                mc_total = len(df_mcq_scope)
+                mcs1, mcs2 = st.columns(2)
+                mc_sent_opts = sorted(df_mcq_scope["句編號"].unique(), key=lambda x: int(x) if str(x).isdigit() else 0)
+                mc_start = mcs1.selectbox("🔢 起始句編號", mc_sent_opts, key="mc_start_sent") if mc_sent_opts else None
+                mc_count = mcs2.number_input("🔢 題目數量", 0, max(mc_total,1), mc_total, key="mc_q_count")
+
+                if mc_start:
+                    df_mcq_scope["_num"] = pd.to_numeric(df_mcq_scope["句編號"], errors="coerce").fillna(0)
+                    df_mcq_scope = df_mcq_scope[df_mcq_scope["_num"] >= int(mc_start)].sort_values("_num").copy()
+                if mc_count > 0:
+                    df_mcq_scope = df_mcq_scope.head(int(mc_count)).copy()
+
+                df_mcq_final = df_mcq_scope.copy()
+                st.caption(f"篩選後：{len(df_mcq_final)} 題")
+                with st.expander(f"📋 預覽單選題清單（{len(df_mcq_final)} 題）", expanded=False):
+                    prev = [c for c in ["句編號", "單選題目", "題目ID"] if c in df_mcq_final.columns]
+                    st.dataframe(df_mcq_final[prev], use_container_width=True)
+
+        st.divider()
+
+        # ── 參考學生錯題篩選（重組＋單選共用） ───────────────────────────
+        ref_students = []
+        if not df_t1_final.empty or not df_mcq_final.empty:
             st.markdown("**👥 參考學生錯題（選填）**")
             ref_col1, ref_col2, ref_col3 = st.columns(3)
-            all_students  = sorted(df_s[~df_s['分組'].isin(['ADMIN','TEACHER'])]['姓名'].tolist())
+            all_students  = sorted(df_s[~df_s["分組"].isin(["ADMIN","TEACHER"])]["姓名"].tolist())
             ref_students  = ref_col1.multiselect("參考學生（可複選）", all_students, key="t1_ref_stu")
             ref_logic     = ref_col2.selectbox("篩選邏輯", ["OR：任一人答錯過", "AND：所有人都答錯過"], key="t1_ref_logic")
             ref_min_err   = ref_col3.number_input("合計答錯次數 ≥", min_value=1, max_value=20, value=1, key="t1_ref_n")
 
-            if ref_students and not df_l.empty and '題目ID' in df_l.columns:
-                scope_ids  = set(df_t1_scope['題目ID'].tolist())
-                err_logs   = df_l[(df_l['姓名'].isin(ref_students)) & (df_l['結果'] == '❌') & (df_l['題目ID'].isin(scope_ids))]
-                err_counts = err_logs.groupby('題目ID').size().reset_index(name='錯誤次數')
-                err_counts = err_counts[err_counts['錯誤次數'] >= ref_min_err]
-                qualified_ids = set(err_counts['題目ID'].tolist())
-                if "AND" in ref_logic:
-                    for stu in ref_students:
-                        stu_err = set(df_l[(df_l['姓名'] == stu) & (df_l['結果'] == '❌') & (df_l['題目ID'].isin(scope_ids))]['題目ID'].tolist())
-                        qualified_ids &= stu_err
-                df_t1_final = df_t1_scope[df_t1_scope['題目ID'].isin(qualified_ids)].copy()
-                df_t1_final = df_t1_final.merge(err_counts, on='題目ID', how='left').fillna({'錯誤次數': 0})
-                df_t1_final['錯誤次數'] = df_t1_final['錯誤次數'].astype(int)
-                st.info(f"📊 符合條件：{len(df_t1_final)} 題")
-            else:
-                df_t1_final = df_t1_scope.copy()
-                ref_students = []
-
-            is_mcq_t1    = "單選" in t1u if include_q else False
-            title_col_t1 = "單選題目" if is_mcq_t1 else "重組中文題目"
-            preview_cols = ['句編號', title_col_t1, '題目ID'] + (['錯誤次數'] if '錯誤次數' in df_t1_final.columns else [])
-            df_preview   = df_t1_final[[c for c in preview_cols if c in df_t1_final.columns]].copy()
-            df_preview.columns = [c if c != title_col_t1 else '題目' for c in df_preview.columns]
-            with st.expander(f"📋 預覽題目清單（{len(df_t1_final)} 題）", expanded=False):
-                st.dataframe(df_preview, use_container_width=True)
-        else:
-            ref_students = []
-            t1v = t1u = t1y = t1b = t1l = ""
-
         st.divider()
+
 
         # ── 朗讀題目範圍（選填） ──────────────────────────────────────────
         include_reading = st.checkbox("🎤 加入朗讀題", key="t1_inc_reading")
@@ -1142,7 +1183,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
         if st.button("🚀 確認發布任務", use_container_width=True, type="primary"):
             if not target_groups:
                 st.error("❌ 請至少選擇一個目標班級")
-            elif not include_q and not include_reading and not include_vocab:
+            elif not include_q and not include_mcq and not include_reading and not include_vocab:
                 st.error("❌ 請至少勾選一種題型")
             elif df_t1_final.empty and df_r_final.empty and df_v_final.empty:
                 st.error("❌ 目前無符合條件的題目，請調整篩選條件")
@@ -1151,24 +1192,28 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             elif date_end < date_start:
                 st.error("❌ 結束日期不能早於開始日期")
             else:
-                q_ids  = df_t1_final['題目ID'].tolist() if (not df_t1_final.empty and '題目ID' in df_t1_final.columns) else []
-                r_ids  = df_r_final['題目ID'].tolist()  if (not df_r_final.empty  and '題目ID' in df_r_final.columns)  else []
-                v_ids  = df_v_final['題目ID'].tolist()  if (not df_v_final.empty  and '題目ID' in df_v_final.columns)  else []
-                rm_ids = df_rm_final['題目ID'].tolist() if (not df_rm_final.empty and '題目ID' in df_rm_final.columns) else []
-                all_ids = q_ids + r_ids + v_ids + rm_ids
+                q_ids   = df_t1_final['題目ID'].tolist()  if (not df_t1_final.empty  and '題目ID' in df_t1_final.columns)  else []
+                mcq_ids = df_mcq_final['題目ID'].tolist() if (not df_mcq_final.empty and '題目ID' in df_mcq_final.columns) else []
+                r_ids   = df_r_final['題目ID'].tolist()   if (not df_r_final.empty   and '題目ID' in df_r_final.columns)   else []
+                v_ids   = df_v_final['題目ID'].tolist()   if (not df_v_final.empty   and '題目ID' in df_v_final.columns)   else []
+                rm_ids  = df_rm_final['題目ID'].tolist()  if (not df_rm_final.empty  and '題目ID' in df_rm_final.columns)  else []
+                all_ids = q_ids + mcq_ids + r_ids + v_ids + rm_ids
 
-                has_q  = bool(q_ids)
-                has_r  = bool(r_ids)
-                has_v  = bool(v_ids)
-                has_rm = bool(rm_ids)
-                if has_rm and not has_q and not has_r and not has_v:
+                has_q   = bool(q_ids)
+                has_mcq = bool(mcq_ids)
+                has_r   = bool(r_ids)
+                has_v   = bool(v_ids)
+                has_rm  = bool(rm_ids)
+                if has_rm and not has_q and not has_mcq and not has_r and not has_v:
                     task_type = "閱讀單句"
-                elif has_q and not has_r and not has_v and not has_rm:
-                    task_type = "一般"
-                elif has_r and not has_q and not has_v and not has_rm:
+                elif has_r and not has_q and not has_mcq and not has_v and not has_rm:
                     task_type = "朗讀"
-                elif has_v and not has_q and not has_r and not has_rm:
+                elif has_v and not has_q and not has_mcq and not has_r and not has_rm:
                     task_type = "單字"
+                elif has_mcq and not has_q and not has_r and not has_v and not has_rm:
+                    task_type = "單選"
+                elif has_q and not has_mcq and not has_r and not has_v and not has_rm:
+                    task_type = "一般"
                 else:
                     task_type = "混合"
 
@@ -1515,7 +1560,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                                 st.markdown("**🖨️ 下載 PDF**")
         
                                 def _get_task_questions(qids):
-                                    df_q2 = df_q.copy()
+                                    df_q2 = pd.concat([df_q, df_mcq], ignore_index=True).drop_duplicates() if not df_mcq.empty else df_q.copy()
                                     df_q2['題目ID'] = df_q2.apply(
                                         lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1
                                     )
@@ -1808,7 +1853,8 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
 
                 # 依題型分類
                 # 建立題目ID → 單元的對照表（用來區分單選和重組）
-                df_q_map = df_q.copy()
+                df_q_all = pd.concat([df_q, df_mcq], ignore_index=True) if not df_mcq.empty else df_q.copy()
+                df_q_map = df_q_all.copy()
                 df_q_map['_qid'] = df_q_map.apply(
                     lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1
                 )
@@ -2683,7 +2729,7 @@ if not st.session_state.quiz_loaded:
                                 })
                                 st.rerun()
                         else:
-                            df_q2 = df_q.copy()
+                            df_q2 = pd.concat([df_q, df_mcq], ignore_index=True).drop_duplicates() if not df_mcq.empty else df_q.copy()
                             df_q2['題目ID'] = df_q2.apply(
                                 lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1
                             )
@@ -2775,7 +2821,7 @@ if not st.session_state.quiz_loaded:
                                 st.rerun()
 
                         elif is_mixed_task:
-                            df_q2 = df_q.copy()
+                            df_q2 = pd.concat([df_q, df_mcq], ignore_index=True).drop_duplicates() if not df_mcq.empty else df_q.copy()
                             df_q2['題目ID'] = df_q2.apply(
                                 lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1
                             )
@@ -2823,7 +2869,7 @@ if not st.session_state.quiz_loaded:
 
                         elif can_preload or q_ids_all:
                             # 直接從 df_q 取出未完成題目載入（優先用題目ID清單）
-                            df_q2 = df_q.copy()
+                            df_q2 = pd.concat([df_q, df_mcq], ignore_index=True).drop_duplicates() if not df_mcq.empty else df_q.copy()
                             df_q2['題目ID'] = df_q2.apply(
                                 lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1
                             )
