@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.193 - 單選重組分計修復版)
+# 🧩 英文全能練習系統 (V2.9.194 - 預設單選版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.193
+# 📌 版本編號 (VERSION): 2.9.194
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.193"
+VERSION = "2.9.194"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -849,7 +849,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
 
         # ── 題目範圍篩選（選填） ──────────────────────────────────────────
         # ── 重組題範圍（選填） ────────────────────────────────────────────
-        include_q = st.checkbox("✏️ 加入重組題", value=True, key="t1_inc_q")
+        include_q = st.checkbox("✏️ 加入重組題", value=False, key="t1_inc_q")
         df_t1_final = pd.DataFrame()
 
         if include_q:
@@ -910,7 +910,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
         st.divider()
 
         # ── 單選題範圍（選填） ────────────────────────────────────────────
-        include_mcq = st.checkbox("🔵 加入單選題", value=False, key="t1_inc_mcq")
+        include_mcq = st.checkbox("🔵 加入單選題", value=True, key="t1_inc_mcq")
         df_mcq_final = pd.DataFrame()
 
         if include_mcq:
