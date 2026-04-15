@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.190 - 效能優化版)
+# 🧩 英文全能練習系統 (V2.9.191 - 指派任務效能優化版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.190
+# 📌 版本編號 (VERSION): 2.9.191
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.190"
+VERSION = "2.9.191"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1334,21 +1334,20 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 # ── 依條件篩選 ────────────────────────────────────────────
                 if combine_scope != "📚 所有題目（聯集）" and ref_stus:
                     try:
-                        sb_c = get_supabase()
-                        res_c = sb_c.table("logs").select("question_id,result,name").in_("name", ref_stus).execute()
-                        if res_c.data:
-                            df_c_logs = pd.DataFrame(res_c.data)
-                            df_c_logs['question_id'] = df_c_logs['question_id'].apply(
+                        # 用快取的 df_l
+                        if not df_l.empty:
+                            df_c_logs = df_l[df_l['姓名'].isin(ref_stus)].copy()
+                            df_c_logs['question_id'] = df_c_logs['題目ID'].apply(
                                 lambda x: x[2:] if str(x).startswith('V_') else x
                             )
-                            answered = set(df_c_logs[~df_c_logs['result'].str.contains('📖', na=False)]['question_id'].tolist())
-                            wrong    = set(df_c_logs[df_c_logs['result'] == '❌']['question_id'].tolist())
-                            if combine_scope == "❌ 只取曾錯題":
-                                filtered_qids = all_src_qids & wrong
-                            else:  # 只取未作答
-                                filtered_qids = all_src_qids - answered
+                            answered = set(df_c_logs[~df_c_logs['結果'].str.contains('📖', na=False)]['question_id'].tolist())
+                            wrong    = set(df_c_logs[df_c_logs['結果'] == '❌']['question_id'].tolist())
                         else:
-                            filtered_qids = all_src_qids
+                            answered, wrong = set(), set()
+                        if combine_scope == "❌ 只取曾錯題":
+                            filtered_qids = all_src_qids & wrong
+                        else:  # 只取未作答
+                            filtered_qids = all_src_qids - answered
                     except:
                         filtered_qids = all_src_qids
                 else:
