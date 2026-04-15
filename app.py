@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.191 - 指派任務效能優化版)
+# 🧩 英文全能練習系統 (V2.9.193 - 單選重組分計修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.191
+# 📌 版本編號 (VERSION): 2.9.193
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.191"
+VERSION = "2.9.193"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -160,8 +160,9 @@ def _to_en_assign(row: dict) -> dict:
 # ==============================================================================
 # 動態資料讀取（Supabase）- 移除快取，每次 rerun 直接讀最新
 # ==============================================================================
+@st.cache_data(ttl=30)
 def load_dynamic_data():
-    """assignments 無快取（即時），logs 走獨立快取函式"""
+    """assignments 30秒快取，logs 走獨立快取函式"""
     try:
         sb    = get_supabase()
         res_a = sb.table("assignments").select("*").execute()
@@ -1177,15 +1178,15 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
         st.divider()
 
         # 合計
-        total_q = len(df_t1_final) + len(df_r_final) + len(df_v_final) + len(df_rm_final)
-        st.info(f"📊 本次任務合計：重組/單選 {len(df_t1_final)} 題 ＋ 朗讀 {len(df_r_final)} 題 ＋ 單字 {len(df_v_final)} 題 ＋ 閱讀單句 {len(df_rm_final)} 題 ＝ **{total_q} 題**")
+        total_q = len(df_t1_final) + len(df_mcq_final) + len(df_r_final) + len(df_v_final) + len(df_rm_final)
+        st.info(f"📊 本次任務合計：重組 {len(df_t1_final)} 題 ＋ 單選 {len(df_mcq_final)} 題 ＋ 朗讀 {len(df_r_final)} 題 ＋ 拼單字 {len(df_v_final)} 題 ＋ 閱讀單句 {len(df_rm_final)} 題 ＝ **{total_q} 題**")
 
         if st.button("🚀 確認發布任務", use_container_width=True, type="primary"):
             if not target_groups:
                 st.error("❌ 請至少選擇一個目標班級")
             elif not include_q and not include_mcq and not include_reading and not include_vocab:
                 st.error("❌ 請至少勾選一種題型")
-            elif df_t1_final.empty and df_r_final.empty and df_v_final.empty:
+            elif df_t1_final.empty and df_mcq_final.empty and df_r_final.empty and df_v_final.empty and df_rm_final.empty:
                 st.error("❌ 目前無符合條件的題目，請調整篩選條件")
             elif not target_students_t1:
                 st.error("❌ 請至少選擇一位學生")
@@ -1675,6 +1676,12 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
         task_opts   = ["（不限）"] + (df_a_t2["任務名稱"].tolist() if not df_a_t2.empty and "任務名稱" in df_a_t2.columns else [])
         sel_task_t2 = st.selectbox("📋 任務篩選（選填）", task_opts, key="t2_task")
 
+        # 篩選條件改變時重置查詢
+        _t2_filter_key = f"{t2_period}|{t2_from}|{t2_to}|{sel_grp_lbl}|{str(sel_stus_t2)}|{sel_task_t2}"
+        if st.session_state.get('_t2_filter_key') != _t2_filter_key:
+            st.session_state['t2_do_query'] = False
+            st.session_state['_t2_filter_key'] = _t2_filter_key
+
         task_qids_t2 = None
         if sel_task_t2 != "（不限）" and not df_a_t2.empty:
             task_row_t2 = df_a_t2[df_a_t2["任務名稱"] == sel_task_t2]
@@ -1686,260 +1693,268 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
         grp_label  = sel_grp_lbl if sel_grp_lbl != "全班" else "全班"
         task_label = sel_task_t2 if sel_task_t2 != "（不限）" else "不限"
         st.info(f"📅 {t2_period}：{t2_from} ～ {t2_to}　｜　👥 {grp_label}／{len(target_stus_t2)} 位：{stu_names_preview}　｜　📋 任務：{task_label}")
-        st.divider()
+
+        if st.button("🔍 查詢", type="primary", use_container_width=True, key="t2_query_btn"):
+            st.session_state['t2_do_query'] = True
+
+        if not st.session_state.get('t2_do_query', False):
+            st.caption("👆 選好篩選條件後，點「🔍 查詢」顯示結果")
+        else:
+            st.divider()
 
         # ── 篩選（直接用 df_l，已是完整資料）────────────────────────────
-        if df_l.empty:
-            st.info("目前尚無作答紀錄。")
-        else:
-            date_from_t2 = t2_from.strftime("%Y-%m-%d")
-            date_to_t2   = t2_to.strftime("%Y-%m-%d")
-
-            df_t2 = df_l.copy()
-
-            # 日期篩選
-            df_t2 = df_t2[
-                (df_t2["時間"].str[:10] >= date_from_t2) &
-                (df_t2["時間"].str[:10] <= date_to_t2)
-            ]
-
-            # 班級/學生篩選
-            df_t2 = df_t2[df_t2["姓名"].isin(target_stus_t2)]
-
-            # 任務篩選
-            if task_qids_t2:
-                norm_task = set(q[2:] if q.startswith("V_") else q for q in task_qids_t2) | task_qids_t2
-                df_t2 = df_t2[df_t2["題目ID"].isin(norm_task)]
-
-            # 分開答題、講解、複習紀錄
-            df_t2_ans = df_t2[~df_t2["結果"].str.contains("📖", na=False)].copy()
-            df_t2_rev = df_t2[df_t2["結果"].str.contains("📖", na=False)].copy()
-
-            if df_t2_ans.empty and df_t2_rev.empty:
-                st.info("此條件下無紀錄。")
+        if st.session_state.get('t2_do_query', False):
+            if df_l.empty:
+                st.info("目前尚無作答紀錄。")
             else:
-                ans_count = len(df_t2_ans)
-                rev_count = len(df_t2_rev)
-                st.markdown(f"**📊 共 {len(target_stus_t2)} 位學生　✏️ 作答 {ans_count} 筆　📖 講解/複習 {rev_count} 筆**")
-
-                # ── 學生總覽表 ────────────────────────────────────────────
-                overview_rows = []
-                for stu in target_stus_t2:
-                    stu_ans = df_t2_ans[df_t2_ans["姓名"] == stu]
-                    stu_rev = df_t2_rev[df_t2_rev["姓名"] == stu]
-                    if stu_ans.empty and stu_rev.empty:
+                date_from_t2 = t2_from.strftime("%Y-%m-%d")
+                date_to_t2   = t2_to.strftime("%Y-%m-%d")
+    
+                df_t2 = df_l.copy()
+    
+                # 日期篩選
+                df_t2 = df_t2[
+                    (df_t2["時間"].str[:10] >= date_from_t2) &
+                    (df_t2["時間"].str[:10] <= date_to_t2)
+                ]
+    
+                # 班級/學生篩選
+                df_t2 = df_t2[df_t2["姓名"].isin(target_stus_t2)]
+    
+                # 任務篩選
+                if task_qids_t2:
+                    norm_task = set(q[2:] if q.startswith("V_") else q for q in task_qids_t2) | task_qids_t2
+                    df_t2 = df_t2[df_t2["題目ID"].isin(norm_task)]
+    
+                # 分開答題、講解、複習紀錄
+                df_t2_ans = df_t2[~df_t2["結果"].str.contains("📖", na=False)].copy()
+                df_t2_rev = df_t2[df_t2["結果"].str.contains("📖", na=False)].copy()
+    
+                if df_t2_ans.empty and df_t2_rev.empty:
+                    st.info("此條件下無紀錄。")
+                else:
+                    ans_count = len(df_t2_ans)
+                    rev_count = len(df_t2_rev)
+                    st.markdown(f"**📊 共 {len(target_stus_t2)} 位學生　✏️ 作答 {ans_count} 筆　📖 講解/複習 {rev_count} 筆**")
+    
+                    # ── 學生總覽表 ────────────────────────────────────────────
+                    overview_rows = []
+                    for stu in target_stus_t2:
+                        stu_ans = df_t2_ans[df_t2_ans["姓名"] == stu]
+                        stu_rev = df_t2_rev[df_t2_rev["姓名"] == stu]
+                        if stu_ans.empty and stu_rev.empty:
+                            continue
+                        stu_grp  = df_s[df_s["姓名"] == stu]["分組"].iloc[0] if not df_s[df_s["姓名"] == stu].empty else ""
+                        total_q  = stu_ans["題目ID"].nunique()
+                        last_ans = stu_ans.sort_values("時間").groupby("題目ID").last().reset_index() if not stu_ans.empty else pd.DataFrame()
+                        correct  = len(last_ans[last_ans["結果"] == "✅"]) if not last_ans.empty else 0
+                        wrong    = len(last_ans[last_ans["結果"] == "❌"]) if not last_ans.empty else 0
+                        acc_rate = f"{int(correct/total_q*100)}%" if total_q > 0 else "—"
+                        rev_q    = stu_rev["題目ID"].nunique()
+                        lec_cnt  = len(stu_rev[stu_rev["結果"] == "📖 講解"])
+                        stu_rev_cnt = len(stu_rev[stu_rev["結果"] == "📖 複習"])
+                        overview_rows.append({
+                            "姓名": stu, "組別": stu_grp,
+                            "答題數": total_q, "答對": correct, "答錯": wrong, "正確率": acc_rate,
+                            "講解題數": lec_cnt, "複習題數": stu_rev_cnt
+                        })
+    
+                    if overview_rows:
+                        df_overview = pd.DataFrame(overview_rows)
+                        st.dataframe(df_overview, use_container_width=True, hide_index=True)
+                        st.divider()
+    
+                    # ── 各學生詳細作答歷史 ────────────────────────────────────
+                    for stu in target_stus_t2:
+                        stu_ans = df_t2_ans[df_t2_ans["姓名"] == stu].sort_values("時間")
+                        stu_rev = df_t2_rev[df_t2_rev["姓名"] == stu].sort_values("時間")
+                        if stu_ans.empty and stu_rev.empty:
+                            continue
+    
+                        ans_q   = stu_ans["題目ID"].nunique() if not stu_ans.empty else 0
+                        rev_q   = stu_rev["題目ID"].nunique() if not stu_rev.empty else 0
+                        with st.expander(f"👤 {stu}　✏️ {ans_q} 題　📖 講解/複習 {rev_q} 題", expanded=False):
+    
+                            # 合併所有題目，依題庫順序排序
+                            all_qids = set()
+                            if not stu_ans.empty:
+                                all_qids |= set(stu_ans["題目ID"].tolist())
+                            if not stu_rev.empty:
+                                all_qids |= set(stu_rev["題目ID"].tolist())
+    
+                            # 建立題目ID → 排序key的對應（從df_q取得真實順序）
+                            def _qid_sort_key(qid):
+                                # 題目ID格式：版本_年度_冊編號_單元_課編號_句編號
+                                parts = qid.lstrip("V_").split("_")
+                                try:
+                                    # 用 版本_年度_冊_課_句 排序
+                                    return (parts[0], parts[1], int(parts[2]) if parts[2].isdigit() else 0,
+                                            parts[3], int(parts[4]) if len(parts)>4 and parts[4].isdigit() else 0,
+                                            int(parts[5]) if len(parts)>5 and parts[5].isdigit() else 0)
+                                except:
+                                    return (qid,)
+    
+                            sorted_qids = sorted(all_qids, key=_qid_sort_key)
+    
+                            stu_detail = []
+                            for qid in sorted_qids:
+                                # 作答歷史
+                                ans_rows = stu_ans[stu_ans["題目ID"] == qid].sort_values("時間")
+                                ans_hist = "".join(ans_rows["結果"].tolist()) if not ans_rows.empty else ""
+                                last_res = ans_rows.iloc[-1]["結果"] if not ans_rows.empty else "—"
+                                # 講解/複習歷史
+                                rev_rows = stu_rev[stu_rev["題目ID"] == qid].sort_values("時間")
+                                rev_hist = "".join(rev_rows["結果"].tolist()) if not rev_rows.empty else ""
+                                stu_detail.append({
+                                    "題目ID":   qid,
+                                    "作答歷史": ans_hist,
+                                    "最後結果": last_res,
+                                    "講解/複習": rev_hist,
+                                })
+                            df_detail = pd.DataFrame(stu_detail)
+                            st.dataframe(df_detail, use_container_width=True, hide_index=True)
+    
+            # ── 📱 個人 Line 報告書 ────────────────────────────────────────────
+            st.divider()
+            st.markdown("**📱 個人 Line 報告書**")
+            st.caption("套用上方篩選條件（時間、班級、學生、任務）產生個人報告，複製後傳給家長")
+    
+            teacher_msg = st.text_area(
+                "💬 老師留言（選填）",
+                placeholder="例如：本週表現很好！請繼續加油！",
+                key="t2_teacher_msg", height=70
+            )
+    
+            if st.button("📋 產生全班報告書", type="primary",
+                         use_container_width=True, key="gen_report"):
+                # 直接用 df_l 重新篩選
+                date_from_r  = t2_from.strftime("%Y-%m-%d")
+                date_to_r    = t2_to.strftime("%Y-%m-%d")
+                df_r_base    = df_l.copy()
+                df_r_base    = df_r_base[
+                    (df_r_base["時間"].str[:10] >= date_from_r) &
+                    (df_r_base["時間"].str[:10] <= date_to_r) &
+                    (df_r_base["姓名"].isin(target_stus_t2))
+                ]
+                if task_qids_t2:
+                    norm_t = set(q[2:] if q.startswith("V_") else q for q in task_qids_t2) | task_qids_t2
+                    df_r_base = df_r_base[df_r_base["題目ID"].isin(norm_t)]
+    
+                df_r_ans = df_r_base[~df_r_base["結果"].str.contains("📖", na=False)].copy()
+                df_r_rev = df_r_base[df_r_base["結果"].str.contains("📖", na=False)].copy()
+    
+                sep        = "─" * 22
+                grp_str    = sel_grp if sel_grp else "全班"
+                task_str   = sel_task_t2 if sel_task_t2 != "（不限）" else ""
+                period_str = f"{t2_period}（{t2_from}～{t2_to}）"
+    
+                all_reports = []
+                # 用有資料的學生清單，並保持 target_stus_t2 的順序
+                stus_with_data = [s for s in target_stus_t2
+                                  if s in df_r_ans["姓名"].values or s in df_r_rev["姓名"].values]
+                # 如果 target_stus_t2 是空的或全班，用 df_r_ans 裡實際有資料的學生
+                if not stus_with_data:
+                    stus_with_data = sorted(set(df_r_ans["姓名"].tolist()) | set(df_r_rev["姓名"].tolist()))
+    
+                for stu in stus_with_data:
+                    stu_ans_r = df_r_ans[df_r_ans["姓名"] == stu]
+                    stu_rev_r = df_r_rev[df_r_rev["姓名"] == stu]
+    
+                    if stu_ans_r.empty and stu_rev_r.empty:
                         continue
-                    stu_grp  = df_s[df_s["姓名"] == stu]["分組"].iloc[0] if not df_s[df_s["姓名"] == stu].empty else ""
-                    total_q  = stu_ans["題目ID"].nunique()
-                    last_ans = stu_ans.sort_values("時間").groupby("題目ID").last().reset_index() if not stu_ans.empty else pd.DataFrame()
-                    correct  = len(last_ans[last_ans["結果"] == "✅"]) if not last_ans.empty else 0
-                    wrong    = len(last_ans[last_ans["結果"] == "❌"]) if not last_ans.empty else 0
-                    acc_rate = f"{int(correct/total_q*100)}%" if total_q > 0 else "—"
-                    rev_q    = stu_rev["題目ID"].nunique()
-                    lec_cnt  = len(stu_rev[stu_rev["結果"] == "📖 講解"])
-                    stu_rev_cnt = len(stu_rev[stu_rev["結果"] == "📖 複習"])
-                    overview_rows.append({
-                        "姓名": stu, "組別": stu_grp,
-                        "答題數": total_q, "答對": correct, "答錯": wrong, "正確率": acc_rate,
-                        "講解題數": lec_cnt, "複習題數": stu_rev_cnt
-                    })
-
-                if overview_rows:
-                    df_overview = pd.DataFrame(overview_rows)
-                    st.dataframe(df_overview, use_container_width=True, hide_index=True)
-                    st.divider()
-
-                # ── 各學生詳細作答歷史 ────────────────────────────────────
-                for stu in target_stus_t2:
-                    stu_ans = df_t2_ans[df_t2_ans["姓名"] == stu].sort_values("時間")
-                    stu_rev = df_t2_rev[df_t2_rev["姓名"] == stu].sort_values("時間")
-                    if stu_ans.empty and stu_rev.empty:
-                        continue
-
-                    ans_q   = stu_ans["題目ID"].nunique() if not stu_ans.empty else 0
-                    rev_q   = stu_rev["題目ID"].nunique() if not stu_rev.empty else 0
-                    with st.expander(f"👤 {stu}　✏️ {ans_q} 題　📖 講解/複習 {rev_q} 題", expanded=False):
-
-                        # 合併所有題目，依題庫順序排序
-                        all_qids = set()
-                        if not stu_ans.empty:
-                            all_qids |= set(stu_ans["題目ID"].tolist())
-                        if not stu_rev.empty:
-                            all_qids |= set(stu_rev["題目ID"].tolist())
-
-                        # 建立題目ID → 排序key的對應（從df_q取得真實順序）
-                        def _qid_sort_key(qid):
-                            # 題目ID格式：版本_年度_冊編號_單元_課編號_句編號
-                            parts = qid.lstrip("V_").split("_")
-                            try:
-                                # 用 版本_年度_冊_課_句 排序
-                                return (parts[0], parts[1], int(parts[2]) if parts[2].isdigit() else 0,
-                                        parts[3], int(parts[4]) if len(parts)>4 and parts[4].isdigit() else 0,
-                                        int(parts[5]) if len(parts)>5 and parts[5].isdigit() else 0)
-                            except:
-                                return (qid,)
-
-                        sorted_qids = sorted(all_qids, key=_qid_sort_key)
-
-                        stu_detail = []
-                        for qid in sorted_qids:
-                            # 作答歷史
-                            ans_rows = stu_ans[stu_ans["題目ID"] == qid].sort_values("時間")
-                            ans_hist = "".join(ans_rows["結果"].tolist()) if not ans_rows.empty else ""
-                            last_res = ans_rows.iloc[-1]["結果"] if not ans_rows.empty else "—"
-                            # 講解/複習歷史
-                            rev_rows = stu_rev[stu_rev["題目ID"] == qid].sort_values("時間")
-                            rev_hist = "".join(rev_rows["結果"].tolist()) if not rev_rows.empty else ""
-                            stu_detail.append({
-                                "題目ID":   qid,
-                                "作答歷史": ans_hist,
-                                "最後結果": last_res,
-                                "講解/複習": rev_hist,
-                            })
-                        df_detail = pd.DataFrame(stu_detail)
-                        st.dataframe(df_detail, use_container_width=True, hide_index=True)
-
-        # ── 📱 個人 Line 報告書 ────────────────────────────────────────────
-        st.divider()
-        st.markdown("**📱 個人 Line 報告書**")
-        st.caption("套用上方篩選條件（時間、班級、學生、任務）產生個人報告，複製後傳給家長")
-
-        teacher_msg = st.text_area(
-            "💬 老師留言（選填）",
-            placeholder="例如：本週表現很好！請繼續加油！",
-            key="t2_teacher_msg", height=70
-        )
-
-        if st.button("📋 產生全班報告書", type="primary",
-                     use_container_width=True, key="gen_report"):
-            # 直接用 df_l 重新篩選
-            date_from_r  = t2_from.strftime("%Y-%m-%d")
-            date_to_r    = t2_to.strftime("%Y-%m-%d")
-            df_r_base    = df_l.copy()
-            df_r_base    = df_r_base[
-                (df_r_base["時間"].str[:10] >= date_from_r) &
-                (df_r_base["時間"].str[:10] <= date_to_r) &
-                (df_r_base["姓名"].isin(target_stus_t2))
-            ]
-            if task_qids_t2:
-                norm_t = set(q[2:] if q.startswith("V_") else q for q in task_qids_t2) | task_qids_t2
-                df_r_base = df_r_base[df_r_base["題目ID"].isin(norm_t)]
-
-            df_r_ans = df_r_base[~df_r_base["結果"].str.contains("📖", na=False)].copy()
-            df_r_rev = df_r_base[df_r_base["結果"].str.contains("📖", na=False)].copy()
-
-            sep        = "─" * 22
-            grp_str    = sel_grp if sel_grp else "全班"
-            task_str   = sel_task_t2 if sel_task_t2 != "（不限）" else ""
-            period_str = f"{t2_period}（{t2_from}～{t2_to}）"
-
-            all_reports = []
-            # 用有資料的學生清單，並保持 target_stus_t2 的順序
-            stus_with_data = [s for s in target_stus_t2
-                              if s in df_r_ans["姓名"].values or s in df_r_rev["姓名"].values]
-            # 如果 target_stus_t2 是空的或全班，用 df_r_ans 裡實際有資料的學生
-            if not stus_with_data:
-                stus_with_data = sorted(set(df_r_ans["姓名"].tolist()) | set(df_r_rev["姓名"].tolist()))
-
-            for stu in stus_with_data:
-                stu_ans_r = df_r_ans[df_r_ans["姓名"] == stu]
-                stu_rev_r = df_r_rev[df_r_rev["姓名"] == stu]
-
-                if stu_ans_r.empty and stu_rev_r.empty:
-                    continue
-
-                stu_grp = df_s[df_s["姓名"] == stu]["分組"].iloc[0] if not df_s[df_s["姓名"] == stu].empty else grp_str
-
-                # 依題型分類
-                # 建立題目ID → 單元的對照表（用來區分單選和重組）
-                df_q_all = pd.concat([df_q, df_mcq], ignore_index=True) if not df_mcq.empty else df_q.copy()
-                df_q_map = df_q_all.copy()
-                df_q_map['_qid'] = df_q_map.apply(
-                    lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1
-                )
-                qid_to_unit = dict(zip(df_q_map['_qid'], df_q_map['單元']))
-
-                def _qtype(qid):
-                    if qid.startswith("R_"):  return "朗讀"
-                    if qid.startswith("V_"):  return "單字"
-                    if qid.startswith("RM_"): return "閱讀單句"
-                    unit = qid_to_unit.get(qid, "")
-                    if "單選" in unit:        return "單選"
-                    return "重組"
-
-                # 各題型統計
-                def _type_stats(df_ans):
-                    if df_ans.empty:
-                        return {}
-                    df_ans = df_ans.copy()
-                    df_ans["_qtype"] = df_ans["題目ID"].apply(_qtype)
-                    result = {}
-                    for qt, grp in df_ans.groupby("_qtype"):
-                        last = grp.sort_values("時間").groupby("題目ID").last().reset_index()
-                        total   = len(last)
-                        correct = len(last[last["結果"] == "✅"])
-                        wrong   = len(last[last["結果"] == "❌"])
-                        wrong_ids = last[last["結果"] == "❌"]["題目ID"].tolist()
-                        result[qt] = {"total": total, "correct": correct, "wrong": wrong, "wrong_ids": wrong_ids}
-                    return result
-
-                type_stats = _type_stats(stu_ans_r)
-                rev_cnt    = len(stu_rev_r)
-
-                lines = []
-                lines.append(f"📚 {stu} 學習報告")
-                lines.append(f"班級：{stu_grp}　{period_str}")
-                if task_str:
-                    lines.append(f"📋 任務：{task_str}")
-
-                # 各題型逐一輸出
-                type_icons = {"重組": "✏️", "單選": "🔵", "朗讀": "🎤", "單字": "🔤", "閱讀單句": "📖"}
-                for qt in ["單選", "重組", "閱讀單句", "朗讀", "單字"]:
-                    if qt not in type_stats:
-                        continue
-                    s = type_stats[qt]
-                    icon = type_icons.get(qt, "📝")
-                    acc  = f"{int(s['correct']/s['total']*100)}%" if s['total'] > 0 else "—"
-                    lines.append(f"{icon} {qt}：答題 {s['total']} 題　✅ {s['correct']}　❌ {s['wrong']}　正確率 {acc}")
-                    if s['wrong_ids']:
-                        wrong_nums = []
-                        for wqid in s['wrong_ids'][:8]:
-                            parts = wqid.replace("RM_","").replace("V_","").replace("R_","").split("_")
-                            q_num = parts[-1] if parts else wqid
-                            wt = len(stu_ans_r[(stu_ans_r["題目ID"]==wqid)&(stu_ans_r["結果"]=="❌")])
-                            wrong_nums.append(f"第{q_num}題" + (f"×{wt}" if wt > 1 else ""))
-                        extra = f"...等共{len(s['wrong_ids'])}題" if len(s['wrong_ids']) > 8 else ""
-                        lines.append(f"  需加強：{'、'.join(wrong_nums)}{extra}")
-
-                if rev_cnt > 0:
-                    lines.append(f"📖 複習：{rev_cnt} 次")
-
-                if teacher_msg.strip():
-                    lines.append(f"💬 {teacher_msg.strip()}")
-
-                all_reports.append("\n".join(lines))
-
-            if all_reports:
-                # 產生 TSV 格式：A欄=學生名字，B欄=報告內容
-                tsv_lines = ["學生姓名\t報告內容"]
-                for stu, report in zip(stus_with_data, all_reports):
-                    # 報告內容換行改為空格，避免破壞 TSV 格式
-                    report_single = report.replace("\n", " ｜ ")
-                    tsv_lines.append(f"{stu}\t{report_single}")
-                tsv_output = "\n".join(tsv_lines)
-                st.session_state['line_report'] = tsv_output
-                st.session_state['line_report_count'] = len(all_reports)
-                st.success(f"✅ 已產生 {len(all_reports)} 位學生的報告")
-            else:
-                st.warning(f"此篩選條件下無作答資料（篩選學生：{len(target_stus_t2)} 位，資料筆數：{len(df_r_ans)}）")
-
-        if st.session_state.get('line_report'):
-            count = st.session_state.get('line_report_count', 1)
-            report_val = st.session_state['line_report']
-            st.markdown(f"**📊 試算表格式（共 {count} 位學生）**")
-            st.code(report_val, language=None)
-            st.caption("👆 點右上角複製鍵 → 開啟 Google Sheets → 點儲存格 A1 → 貼上（Ctrl+V）")
-
+    
+                    stu_grp = df_s[df_s["姓名"] == stu]["分組"].iloc[0] if not df_s[df_s["姓名"] == stu].empty else grp_str
+    
+                    # 依題型分類
+                    # 建立題目ID → 單元的對照表（用來區分單選和重組）
+                    df_q_all = pd.concat([df_q, df_mcq], ignore_index=True) if not df_mcq.empty else df_q.copy()
+                    df_q_map = df_q_all.copy()
+                    df_q_map['_qid'] = df_q_map.apply(
+                        lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1
+                    )
+                    qid_to_unit = dict(zip(df_q_map['_qid'], df_q_map['單元']))
+    
+                    def _qtype(qid):
+                        if qid.startswith("R_"):  return "朗讀"
+                        if qid.startswith("V_"):  return "單字"
+                        if qid.startswith("RM_"): return "閱讀單句"
+                        unit = qid_to_unit.get(qid, "")
+                        if "單選" in unit:        return "單選"
+                        return "重組"
+    
+                    # 各題型統計
+                    def _type_stats(df_ans):
+                        if df_ans.empty:
+                            return {}
+                        df_ans = df_ans.copy()
+                        df_ans["_qtype"] = df_ans["題目ID"].apply(_qtype)
+                        result = {}
+                        for qt, grp in df_ans.groupby("_qtype"):
+                            last = grp.sort_values("時間").groupby("題目ID").last().reset_index()
+                            total   = len(last)
+                            correct = len(last[last["結果"] == "✅"])
+                            wrong   = len(last[last["結果"] == "❌"])
+                            wrong_ids = last[last["結果"] == "❌"]["題目ID"].tolist()
+                            result[qt] = {"total": total, "correct": correct, "wrong": wrong, "wrong_ids": wrong_ids}
+                        return result
+    
+                    type_stats = _type_stats(stu_ans_r)
+                    rev_cnt    = len(stu_rev_r)
+    
+                    lines = []
+                    lines.append(f"📚 {stu} 學習報告")
+                    lines.append(f"班級：{stu_grp}　{period_str}")
+                    if task_str:
+                        lines.append(f"📋 任務：{task_str}")
+    
+                    # 各題型逐一輸出
+                    type_icons = {"重組": "✏️", "單選": "🔵", "朗讀": "🎤", "單字": "🔤", "閱讀單句": "📖"}
+                    for qt in ["單選", "重組", "閱讀單句", "朗讀", "單字"]:
+                        if qt not in type_stats:
+                            continue
+                        s = type_stats[qt]
+                        icon = type_icons.get(qt, "📝")
+                        acc  = f"{int(s['correct']/s['total']*100)}%" if s['total'] > 0 else "—"
+                        lines.append(f"{icon} {qt}：答題 {s['total']} 題　✅ {s['correct']}　❌ {s['wrong']}　正確率 {acc}")
+                        if s['wrong_ids']:
+                            wrong_nums = []
+                            for wqid in s['wrong_ids'][:8]:
+                                parts = wqid.replace("RM_","").replace("V_","").replace("R_","").split("_")
+                                q_num = parts[-1] if parts else wqid
+                                wt = len(stu_ans_r[(stu_ans_r["題目ID"]==wqid)&(stu_ans_r["結果"]=="❌")])
+                                wrong_nums.append(f"第{q_num}題" + (f"×{wt}" if wt > 1 else ""))
+                            extra = f"...等共{len(s['wrong_ids'])}題" if len(s['wrong_ids']) > 8 else ""
+                            lines.append(f"  需加強：{'、'.join(wrong_nums)}{extra}")
+    
+                    if rev_cnt > 0:
+                        lines.append(f"📖 複習：{rev_cnt} 次")
+    
+                    if teacher_msg.strip():
+                        lines.append(f"💬 {teacher_msg.strip()}")
+    
+                    all_reports.append("\n".join(lines))
+    
+                if all_reports:
+                    # 產生 TSV 格式：A欄=學生名字，B欄=報告內容
+                    tsv_lines = ["學生姓名\t報告內容"]
+                    for stu, report in zip(stus_with_data, all_reports):
+                        # 報告內容換行改為空格，避免破壞 TSV 格式
+                        report_single = report.replace("\n", " ｜ ")
+                        tsv_lines.append(f"{stu}\t{report_single}")
+                    tsv_output = "\n".join(tsv_lines)
+                    st.session_state['line_report'] = tsv_output
+                    st.session_state['line_report_count'] = len(all_reports)
+                    st.success(f"✅ 已產生 {len(all_reports)} 位學生的報告")
+                else:
+                    st.warning(f"此篩選條件下無作答資料（篩選學生：{len(target_stus_t2)} 位，資料筆數：{len(df_r_ans)}）")
+    
+            if st.session_state.get('line_report'):
+                count = st.session_state.get('line_report_count', 1)
+                report_val = st.session_state['line_report']
+                st.markdown(f"**📊 試算表格式（共 {count} 位學生）**")
+                st.code(report_val, language=None)
+                st.caption("👆 點右上角複製鍵 → 開啟 Google Sheets → 點儲存格 A1 → 貼上（Ctrl+V）")
+    
     with t3:
         st.subheader("👥 學生帳號清單")
 
