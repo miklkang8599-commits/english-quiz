@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.198 - 任務老師名修復版)
+# 🧩 英文全能練習系統 (V2.9.199 - 任務命名格式修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.198
+# 📌 版本編號 (VERSION): 2.9.199
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.198"
+VERSION = "2.9.199"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1227,7 +1227,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     vocab_cfg = f"{vt_mode_val}|{vt_timer_val}|{vt_extra_val}"
 
                 # 自動產生任務名稱（新格式）
-                publish_time = get_now().strftime("%Y-%m-%d %H:%M")
+                publish_time = get_now().strftime("%Y-%m-%d_%H:%M")
                 teacher_name = st.session_state.user_name
                 groups_label = ",".join(target_groups)
 
@@ -1446,15 +1446,15 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             # 從任務名稱提取出題老師（第一個 - 前的文字）
             def _get_teacher(name):
                 name = str(name).strip()
-                # 新格式：題型 版本 年度 冊 課 [起始] 題數 班級 老師名 日期 時間 日期~日期
-                # 老師名在倒數第4個位置
                 parts = name.split(' ')
-                if len(parts) >= 4:
-                    teacher = parts[-4].strip()
-                    # 確認不是數字或日期（簡單驗證）
-                    if teacher and not teacher[0].isdigit():
-                        return teacher
-                # 舊格式相容：第一個 - 前
+                # 新格式（時間無空格）：... 班級 老師名 日期時間 日期~日期
+                # 老師名在倒數第3個
+                if len(parts) >= 3:
+                    candidate = parts[-3].strip()
+                    # 驗證：不是日期格式且不包含數字開頭
+                    if candidate and not candidate[0].isdigit() and '~' not in candidate and '_' not in candidate:
+                        return candidate
+                # 舊格式：第一個 - 前
                 old_parts = name.split('-')
                 return old_parts[0].strip() if old_parts else '未知'
 
