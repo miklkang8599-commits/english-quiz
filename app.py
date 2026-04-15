@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.202 - 發布後清空修復版)
+# 🧩 英文全能練習系統 (V2.9.203 - 舊任務過濾版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.202
+# 📌 版本編號 (VERSION): 2.9.203
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.202"
+VERSION = "2.9.203"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -2707,6 +2707,11 @@ if not st.session_state.quiz_loaded:
             if str(arow.get('狀態', '')).strip() == '已刪除':
                 debug_info.append(f"❌ {task_n}：已刪除")
                 continue
+            # 只顯示新格式任務（含底線時間戳記）
+            import re as _re2
+            if not _re2.search(r'\d{4}-\d{2}-\d{2}_\d{2}:\d{2}', task_n):
+                debug_info.append(f"❌ {task_n}：舊格式，略過")
+                continue
 
             # 確認學生在指派名單中（ADMIN/TEACHER 跳過此檢查）
             if not is_admin(st.session_state.group_id):
@@ -2741,7 +2746,7 @@ if not st.session_state.quiz_loaded:
 
     if my_tasks:
         st.markdown("<h2 style='margin-bottom:0'>📋 我的任務</h2>", unsafe_allow_html=True)
-        for arow in my_tasks:
+        for _task_idx, arow in enumerate(my_tasks):
             task_name    = arow.get('任務名稱', '未命名')
             task_start   = arow.get('開始日期', '')
             task_end     = arow.get('結束日期', '')
@@ -2838,7 +2843,7 @@ if not st.session_state.quiz_loaded:
                     parts        = [p.strip() for p in task_content.split('|')]
                     can_preload  = len(parts) == 5
 
-                    btn_key = f"start_task_{task_name}"
+                    btn_key = f"start_task_{_task_idx}_{task_name[:20]}"
                     label   = f"🚀 進入練習（剩餘 {task_q_count - done_cnt} 題）"
 
                     if st.button(label, key=btn_key, type="primary", use_container_width=True):
