@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.224 - 復習模式logs備援版)
+# 🧩 英文全能練習系統 (V2.9.225 - 復習篩選debug版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.224
+# 📌 版本編號 (VERSION): 2.9.225
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.224"
+VERSION = "2.9.225"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3353,6 +3353,11 @@ if not st.session_state.quiz_loaded:
                     (~my_logs['結果'].str.contains('📖', na=False))
                 ].copy()
                 answered_ids = set(logs_in_scope['題目ID'].tolist())
+
+                # debug
+                st.caption(f"🔍 df_rv ID樣本：{list(all_qids)[:2]}")
+                st.caption(f"🔍 my_logs ID樣本：{my_logs['題目ID'].tolist()[:2]}")
+                st.caption(f"🔍 answered_ids：{list(answered_ids)[:2]}")
                 wrong_ever   = set(logs_in_scope[logs_in_scope['結果'] == '❌']['題目ID'].tolist())
                 if '時間' in logs_in_scope.columns and not logs_in_scope.empty:
                     last_ans     = logs_in_scope.sort_values('時間').groupby('題目ID').last().reset_index()
