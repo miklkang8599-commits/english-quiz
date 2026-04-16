@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.230 - 干擾字數0修復版)
+# 🧩 英文全能練習系統 (V2.9.231 - 干擾字pool修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.230
+# 📌 版本編號 (VERSION): 2.9.231
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.230"
+VERSION = "2.9.231"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3775,9 +3775,13 @@ if st.session_state.quiz_loaded:
             vocab_mode = "🔤 拆字母" if task_mode == "拆字母" else "⌨️ 鍵盤"
             # 老師鎖定模式，不顯示切換
 
-        # 初始化字母池
-        pool_key = f"vocab_pool_{st.session_state.q_idx}"
+        # 初始化字母池（pool_key 含干擾字數，設定改變時自動重建）
+        pool_key = f"vocab_pool_{st.session_state.q_idx}_{extra_letters}"
         if pool_key not in st.session_state:
+            # 清除同題目舊的 pool（不同干擾字數的）
+            for _k in [k for k in st.session_state if k.startswith(f"vocab_pool_{st.session_state.q_idx}_")]:
+                if _k != pool_key:
+                    del st.session_state[_k]
             letters = list(word.upper())
             _random.shuffle(letters)
             candidates = [c for c in _string.ascii_uppercase if c not in word.upper()]
@@ -4021,10 +4025,13 @@ if st.session_state.quiz_loaded:
             "tts_student": None, "tts_standard": None, "stt_text_shown": "",
             "vocab_start_time": None, "vocab_q_idx": None
         })
-        for k in [f"vocab_pool_{q_idx}", f"vocab_ans_{q_idx}",
-                  f"vocab_used_{q_idx}", f"vocab_kb_{q_idx}",
-                  f"vocab_tts_{q_idx}"]:
-            st.session_state.pop(k, None)
+        # 清除該題目的所有 vocab pool（含新格式 vocab_pool_{q_idx}_{extra}）
+        for k in list(st.session_state.keys()):
+            if k.startswith(f"vocab_pool_{q_idx}") or k in [
+                f"vocab_ans_{q_idx}", f"vocab_used_{q_idx}",
+                f"vocab_kb_{q_idx}", f"vocab_tts_{q_idx}"
+            ]:
+                st.session_state.pop(k, None)
 
     # 所有題型都禁止回到上一題
     if st.session_state.q_idx > 0:
