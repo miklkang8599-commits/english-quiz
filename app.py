@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.221 - log寫入修復版)
+# 🧩 英文全能練習系統 (V2.9.222 - 復習模式修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.221
+# 📌 版本編號 (VERSION): 2.9.222
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.221"
+VERSION = "2.9.222"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3169,28 +3169,34 @@ if not st.session_state.quiz_loaded:
             st.info("目前沒有指派任務。")
 
     else:
-        rc1 = st.columns(5)
-        rv_v_opts = sorted(df_q['版本'].unique()) if not df_q.empty else []
+        rc1 = st.columns(4)
+        # 合併所有題庫的版本/年度/冊/課選項
+        _df_all_q = pd.concat([df for df in [df_q, df_mcq, df_r, df_v, df_rm] if not df.empty and '版本' in df.columns], ignore_index=True)
+        rv_v_opts = sorted(_df_all_q['版本'].unique().tolist()) if not _df_all_q.empty else []
         rv_v = rc1[0].selectbox("版本", rv_v_opts, key="rv_v") if rv_v_opts else None
-        rv_u_opts = sorted(df_q[df_q['版本'] == rv_v]['單元'].unique()) if rv_v else []
-        rv_u = rc1[1].selectbox("單元", rv_u_opts, key="rv_u") if rv_u_opts else None
-        rv_y_opts = sorted(df_q[(df_q['版本'] == rv_v) & (df_q['單元'] == rv_u)]['年度'].unique()) if rv_u else []
-        rv_y = rc1[2].selectbox("年度", rv_y_opts, key="rv_y") if rv_y_opts else None
-        rv_b_opts = sorted(df_q[(df_q['版本'] == rv_v) & (df_q['單元'] == rv_u) & (df_q['年度'] == rv_y)]['冊編號'].unique()) if rv_y else []
-        rv_b = rc1[3].selectbox("冊別", rv_b_opts, key="rv_b") if rv_b_opts else None
-        rv_l_opts = sorted(df_q[(df_q['版本'] == rv_v) & (df_q['單元'] == rv_u) & (df_q['年度'] == rv_y) & (df_q['冊編號'] == rv_b)]['課編號'].unique()) if rv_b else []
-        rv_l = rc1[4].selectbox("課次", rv_l_opts, key="rv_l") if rv_l_opts else None
+        _rv_v_src = _df_all_q[_df_all_q['版本'] == rv_v] if rv_v else pd.DataFrame()
+        rv_y_opts = sorted(_rv_v_src['年度'].unique().tolist()) if not _rv_v_src.empty else []
+        rv_y = rc1[1].selectbox("年度", rv_y_opts, key="rv_y") if rv_y_opts else None
+        _rv_y_src = _rv_v_src[_rv_v_src['年度'] == rv_y] if rv_y else pd.DataFrame()
+        rv_b_opts = sorted(_rv_y_src['冊編號'].unique().tolist()) if not _rv_y_src.empty else []
+        rv_b = rc1[2].selectbox("冊別", rv_b_opts, key="rv_b") if rv_b_opts else None
+        _rv_b_src = _rv_y_src[_rv_y_src['冊編號'] == rv_b] if rv_b else pd.DataFrame()
+        rv_l_opts = sorted(_rv_b_src['課編號'].unique().tolist()) if not _rv_b_src.empty else []
+        rv_l = rc1[3].selectbox("課次", rv_l_opts, key="rv_l") if rv_l_opts else None
+        rv_u = None  # 依範圍模式不用單元篩選
 
     rv_scope = st.radio("顯示範圍", ["📚 全部題目", "✏️ 已經答題", "❌ 只看錯題", "❓ 只看未作答", "🔄 複習次數少的優先"], horizontal=True, key="rv_scope")
 
     if st.button("📖 開始復習", type="primary", use_container_width=True, key="rv_start"):
-        # 用快取 df_l，依任務編號篩選
         try:
             if not df_l.empty:
                 my_logs = df_l[df_l['姓名'] == user_name].copy()
-                # 依任務篩選（只在依任務模式且有任務編號時）
+                # 依任務篩選完成數時才用 task_id，顯示範圍篩選用全部 logs
                 if rv_filter == "📋 依任務" and rv_task_id and '任務名稱' in my_logs.columns:
-                    my_logs = my_logs[my_logs['任務名稱'].fillna('') == rv_task_id]
+                    my_logs_task = my_logs[my_logs['任務名稱'].fillna('') == rv_task_id]
+                    # 若任務篩選後有資料用任務資料，否則用全部（相容舊資料）
+                    if not my_logs_task.empty:
+                        my_logs = my_logs_task
             else:
                 my_logs = pd.DataFrame()
         except:
@@ -3236,13 +3242,59 @@ if not st.session_state.quiz_loaded:
                     mr['_type'] = 'reading'
                     all_items.append(mr)
         elif rv_filter == "⚙️ 依範圍" and rv_v and rv_l:
+            # 重組題
             dq = df_q[
                 (df_q['版本'] == rv_v) & (df_q['單元'] == rv_u) &
                 (df_q['年度'] == rv_y) & (df_q['冊編號'] == rv_b) &
                 (df_q['課編號'] == rv_l)
             ].copy()
-            dq['題目ID'] = dq.apply(lambda r: _get_qid(r), axis=1)
-            all_items.append(dq)
+            if not dq.empty:
+                dq['題目ID'] = dq.apply(lambda r: _get_qid(r), axis=1)
+                all_items.append(dq)
+            # 單選題
+            if not df_mcq.empty:
+                dm = df_mcq[
+                    (df_mcq['版本'] == rv_v) &
+                    (df_mcq['年度'] == rv_y) & (df_mcq['冊編號'] == rv_b) &
+                    (df_mcq['課編號'] == rv_l)
+                ].copy()
+                if not dm.empty:
+                    dm['題目ID'] = dm.apply(lambda r: _get_qid(r), axis=1)
+                    all_items.append(dm)
+            # 朗讀題
+            if not df_r.empty:
+                drv = df_r[
+                    (df_r['版本'] == rv_v) &
+                    (df_r['年度'] == rv_y) & (df_r['冊編號'] == rv_b) &
+                    (df_r['課編號'] == rv_l)
+                ].copy()
+                if not drv.empty:
+                    drv['題目ID'] = drv.apply(lambda r: f"R_{_get_qid(r)}", axis=1)
+                    drv['_type'] = 'reading'
+                    all_items.append(drv)
+            # 拼單字
+            if not df_v.empty:
+                dvr = df_v[
+                    (df_v['版本'] == rv_v) &
+                    (df_v['年度'] == rv_y) & (df_v['冊編號'] == rv_b) &
+                    (df_v['課編號'] == rv_l)
+                ].copy()
+                if not dvr.empty:
+                    dvr['單元'] = dvr.get('單元', '拼單字')
+                    dvr['題目ID'] = dvr.apply(lambda r: f"V_{_get_qid(r)}", axis=1)
+                    dvr['_type'] = 'vocab'
+                    all_items.append(dvr)
+            # 閱讀單句
+            if not df_rm.empty:
+                drm = df_rm[
+                    (df_rm['版本'] == rv_v) &
+                    (df_rm['年度'] == rv_y) & (df_rm['冊編號'] == rv_b) &
+                    (df_rm['課編號'] == rv_l)
+                ].copy()
+                if not drm.empty:
+                    drm['題目ID'] = drm.apply(lambda r: f"RM_{_get_qid(r)}", axis=1)
+                    drm['_type'] = 'reading_mcq'
+                    all_items.append(drm)
 
         if not all_items:
             st.error("❌ 找不到題目，請重新選擇")
