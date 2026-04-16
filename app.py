@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.223 - 復習模式debug版)
+# 🧩 英文全能練習系統 (V2.9.224 - 復習模式logs備援版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.223
+# 📌 版本編號 (VERSION): 2.9.224
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.223"
+VERSION = "2.9.224"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3221,15 +3221,20 @@ if not st.session_state.quiz_loaded:
         all_items = []
 
         if rv_filter == "📋 依任務" and rv_q_ids:
+            # 先從各題庫比對
             if not df_q.empty:
                 matched = _match_ids(df_q, rv_q_ids)
                 if not matched.empty:
                     all_items.append(matched)
+            if not df_mcq.empty:
+                matched_m = _match_ids(df_mcq, rv_q_ids)
+                if not matched_m.empty:
+                    all_items.append(matched_m)
             if not df_v.empty:
                 uc = '單元' if '單元' in df_v.columns else None
                 dv = df_v.copy()
                 if uc is None:
-                    dv['單元'] = '單字重組'
+                    dv['單元'] = '拼單字'
                 mv = _match_ids(dv, rv_q_ids, extra_prefix="V_")
                 if not mv.empty:
                     mv['_type'] = 'vocab'
@@ -3241,6 +3246,25 @@ if not st.session_state.quiz_loaded:
                 if not mr.empty:
                     mr['_type'] = 'reading'
                     all_items.append(mr)
+            if not df_rm.empty:
+                drm = df_rm.copy()
+                drm['題目ID'] = drm.apply(lambda r: f"RM_{r.get('版本','')}_{r.get('年度','')}_{r.get('冊編號','')}_{r.get('單元','')}_{r.get('課編號','')}_{r.get('句編號','')}", axis=1)
+                mrm = drm[drm['題目ID'].isin(rv_q_ids)].copy()
+                if not mrm.empty:
+                    mrm['_type'] = 'reading_mcq'
+                    all_items.append(mrm)
+
+            # 若題庫找不到，改用 logs 裡的題目ID直接建立簡易題目列表
+            if not all_items and not my_logs.empty:
+                matched_logs = my_logs[
+                    my_logs['題目ID'].isin(rv_q_ids) &
+                    (~my_logs['結果'].str.contains('📖', na=False))
+                ].copy()
+                if not matched_logs.empty:
+                    # 用 logs 裡的唯一題目ID建立簡易題目列表
+                    unique_qids = matched_logs.drop_duplicates('題目ID')[['題目ID']].copy()
+                    unique_qids['題目'] = unique_qids['題目ID']  # 暫用 ID 作為題目顯示
+                    all_items.append(unique_qids)
         elif rv_filter == "⚙️ 依範圍" and rv_v and rv_l:
             # 重組題
             dq = df_q[
