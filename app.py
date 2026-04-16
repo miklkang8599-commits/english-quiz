@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.216 - 任務編號提取修復版)
+# 🧩 英文全能練習系統 (V2.9.217 - task_id寫入修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.216
+# 📌 版本編號 (VERSION): 2.9.217
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.216"
+VERSION = "2.9.217"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -143,6 +143,7 @@ def _to_en_assign(row: dict) -> dict:
     return {
         "created_at":        str(row.get("建立時間", "")),
         "task_name":         str(row.get("任務名稱", "")),
+        "task_id":           str(row.get("任務編號", "") or ""),
         "target_group":      str(row.get("對象班級", "")),
         "assigned_students": str(row.get("指派學生", "")),
         "student_count":     str(row.get("指派人數", "")),
