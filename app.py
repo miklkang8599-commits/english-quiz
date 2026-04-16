@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.235 - 拼單字固定位置版)
+# 🧩 英文全能練習系統 (V2.9.236 - 從第幾題開始版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.235
+# 📌 版本編號 (VERSION): 2.9.236
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.235"
+VERSION = "2.9.236"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -2975,9 +2975,13 @@ if not st.session_state.quiz_loaded:
 
                 if all_done:
                     st.success("🎉 此任務已全部完成！")
-                    # 再次練習按鈕（載入全部任務題目）
-                    retry_key = f"retry_task_{task_name}"
-                    if st.button("🔁 再次練習（全部題目）", key=retry_key, use_container_width=True):
+                    _rc1, _rc2 = st.columns([2, 1])
+                    retry_start = _rc2.number_input(
+                        "從第幾題", min_value=1, max_value=task_q_count, value=1,
+                        key=f"retry_start_{_task_idx}"
+                    )
+                    if _rc1.button("🔁 再次練習", key=f"retry_task_{_task_idx}", use_container_width=True, type="primary"):
+                        _start_idx = max(0, int(retry_start) - 1)
                         if is_reading_task:
                             df_r2 = df_r.copy()
                             if '題目ID' not in df_r2.columns:
@@ -2991,32 +2995,62 @@ if not st.session_state.quiz_loaded:
                                     rec['_type'] = 'reading'
                                 st.session_state.update({
                                     "quiz_list": records,
-                                    "q_idx": 0, "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key,
+                                    "q_idx": min(_start_idx, len(records)-1),
+                                    "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key,
                                     "ans": [], "used_history": [], "shuf": [], "show_analysis": False
                                 })
                                 st.rerun()
                         else:
+                            _all_dfs = []
                             df_q2 = pd.concat([df_q, df_mcq], ignore_index=True).drop_duplicates() if not df_mcq.empty else df_q.copy()
-                            df_q2['題目ID'] = df_q2.apply(
-                                lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1
-                            )
-                            retry_q = df_q2[df_q2['題目ID'].isin(q_ids_set)].copy()
-                            if not retry_q.empty:
+                            df_q2['題目ID'] = df_q2.apply(lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1)
+                            rq = df_q2[df_q2['題目ID'].isin(q_ids_set)].copy()
+                            if not rq.empty: _all_dfs.append(rq)
+                            if not df_v.empty:
+                                dv2 = df_v.copy()
+                                dv2['單元'] = dv2.get('單元', '拼單字')
+                                dv2['題目ID'] = dv2.apply(lambda r: f"V_{r.get('版本','')}_{r.get('年度','')}_{r.get('冊編號','')}_{r.get('單元','')}_{r.get('課編號','')}_{r.get('句編號','')}", axis=1)
+                                rv = dv2[dv2['題目ID'].isin(q_ids_set)].copy()
+                                if not rv.empty:
+                                    vocab_cfg_str2 = str(arow.get('單字設定', '') or '')
+                                    vcfg2 = vocab_cfg_str2.split('|') if vocab_cfg_str2 else []
+                                    rv['_type'] = 'vocab'
+                                    rv['_vocab_mode']  = (vcfg2[0] if len(vcfg2)>0 else '自選').replace('學生自選','自選')
+                                    rv['_vocab_timer'] = int(vcfg2[1]) if len(vcfg2)>1 else 30
+                                    rv['_vocab_extra'] = int(vcfg2[2]) if len(vcfg2)>2 else 3
+                                    _all_dfs.append(rv)
+                            if not df_rm.empty:
+                                drm2 = df_rm.copy()
+                                drm2['題目ID'] = drm2.apply(lambda r: f"RM_{r.get('版本','')}_{r.get('年度','')}_{r.get('冊編號','')}_{r.get('單元','')}_{r.get('課編號','')}_{r.get('句編號','')}", axis=1)
+                                rrm = drm2[drm2['題目ID'].isin(q_ids_set)].copy()
+                                if not rrm.empty:
+                                    rrm['_type'] = 'reading_mcq'
+                                    _all_dfs.append(rrm)
+                            if _all_dfs:
+                                retry_all = pd.concat(_all_dfs, ignore_index=True)
+                                records   = retry_all.to_dict('records')
                                 st.session_state.update({
-                                    "quiz_list": retry_q.to_dict('records'),
-                                    "q_idx": 0, "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key,
+                                    "quiz_list": records,
+                                    "q_idx": min(_start_idx, len(records)-1),
+                                    "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key,
                                     "ans": [], "used_history": [], "shuf": [], "show_analysis": False
                                 })
                                 st.rerun()
-                else:
                     task_content = str(arow.get('內容', ''))
                     parts        = [p.strip() for p in task_content.split('|')]
                     can_preload  = len(parts) == 5
 
+                    _sc1, _sc2 = st.columns([2, 1])
+                    _start_from = _sc2.number_input(
+                        "從第幾題", min_value=1, max_value=task_q_count, value=1,
+                        key=f"start_from_{_task_idx}"
+                    )
                     btn_key = f"start_task_{_task_idx}_{task_name[:20]}"
-                    label   = f"🚀 進入練習（剩餘 {task_q_count - done_cnt} 題）"
+                    remaining = task_q_count - done_cnt
+                    label   = f"🚀 進入練習（剩餘 {remaining} 題）"
 
-                    if st.button(label, key=btn_key, type="primary", use_container_width=True):
+                    if _sc1.button(label, key=btn_key, type="primary", use_container_width=True):
+                        _start_idx_fwd = max(0, int(_start_from) - 1)
                         pending_ids = q_ids_all - my_done
                         if not pending_ids:
                             pending_ids = q_ids_all  # 全部重做
@@ -3034,7 +3068,7 @@ if not st.session_state.quiz_loaded:
                                     r['_type'] = 'reading'
                                 st.session_state.update({
                                     "quiz_list": records,
-                                    "q_idx": 0, "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key,
+                                    "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key,
                                     "ans": [], "used_history": [], "shuf": [], "show_analysis": False
                                 })
                                 st.rerun()
@@ -3063,7 +3097,7 @@ if not st.session_state.quiz_loaded:
                                     rec['_vocab_extra'] = v_extra_t
                                 st.session_state.update({
                                     "quiz_list": records,
-                                    "q_idx": 0, "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key,
+                                    "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key,
                                     "ans": [], "used_history": [], "shuf": [], "show_analysis": False
                                 })
                                 st.rerun()
@@ -3081,7 +3115,7 @@ if not st.session_state.quiz_loaded:
                                     rec['_type'] = 'reading_mcq'
                                 st.session_state.update({
                                     "quiz_list": records,
-                                    "q_idx": 0, "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key,
+                                    "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key,
                                     "ans": [], "used_history": [], "shuf": [], "show_analysis": False
                                 })
                                 st.rerun()
@@ -3128,7 +3162,7 @@ if not st.session_state.quiz_loaded:
                             if not pending.empty:
                                 st.session_state.update({
                                     "quiz_list": pending.to_dict('records'),
-                                    "q_idx": 0, "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key,
+                                    "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key,
                                     "ans": [], "used_history": [], "shuf": [], "show_analysis": False
                                 })
                                 st.rerun()
@@ -3143,7 +3177,7 @@ if not st.session_state.quiz_loaded:
                             if not pending_q.empty:
                                 st.session_state.update({
                                     "quiz_list": pending_q.to_dict('records'),
-                                    "q_idx": 0, "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key,
+                                    "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key,
                                     "ans": [], "used_history": [], "shuf": [], "show_analysis": False
                                 })
                                 st.rerun()
