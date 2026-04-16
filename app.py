@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.236 - 從第幾題開始版)
+# 🧩 英文全能練習系統 (V2.9.237 - 從第幾題縮排修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.236
+# 📌 版本編號 (VERSION): 2.9.237
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.236"
+VERSION = "2.9.237"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3036,6 +3036,7 @@ if not st.session_state.quiz_loaded:
                                     "ans": [], "used_history": [], "shuf": [], "show_analysis": False
                                 })
                                 st.rerun()
+                else:
                     task_content = str(arow.get('內容', ''))
                     parts        = [p.strip() for p in task_content.split('|')]
                     can_preload  = len(parts) == 5
