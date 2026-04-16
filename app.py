@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.225 - 復習篩選debug版)
+# 🧩 英文全能練習系統 (V2.9.226 - 復習debug持久版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.225
+# 📌 版本編號 (VERSION): 2.9.226
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.225"
+VERSION = "2.9.226"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3132,6 +3132,14 @@ if not st.session_state.quiz_loaded:
     # ══════════════════════════════════════════════════════════════════════
 
     st.subheader("📖 復習模式")
+    # 顯示持久化的 debug 資訊
+    if st.session_state.get('_rv_debug'):
+        d = st.session_state['_rv_debug']
+        with st.expander("🔍 Debug（點開查看）", expanded=True):
+            st.caption(f"df_rv ID：{d['df_rv_sample']}")
+            st.caption(f"logs ID：{d['logs_sample']}")
+            st.caption(f"answered：{d['answered']}")
+            st.caption(f"logs筆數：{d['logs_count']}　比對到：{d['match_count']}")
     user_name = st.session_state.user_name
 
     rv_filter = st.radio("篩選方式", ["📋 依任務", "⚙️ 依範圍"], horizontal=True, key="rv_filter")
@@ -3354,10 +3362,14 @@ if not st.session_state.quiz_loaded:
                 ].copy()
                 answered_ids = set(logs_in_scope['題目ID'].tolist())
 
-                # debug
-                st.caption(f"🔍 df_rv ID樣本：{list(all_qids)[:2]}")
-                st.caption(f"🔍 my_logs ID樣本：{my_logs['題目ID'].tolist()[:2]}")
-                st.caption(f"🔍 answered_ids：{list(answered_ids)[:2]}")
+                # debug - 存入 session_state 避免 rerun 後消失
+                st.session_state['_rv_debug'] = {
+                    'df_rv_sample': list(all_qids)[:3],
+                    'logs_sample':  my_logs['題目ID'].tolist()[:3],
+                    'answered':     list(answered_ids)[:3],
+                    'logs_count':   len(my_logs),
+                    'match_count':  len(logs_in_scope),
+                }
                 wrong_ever   = set(logs_in_scope[logs_in_scope['結果'] == '❌']['題目ID'].tolist())
                 if '時間' in logs_in_scope.columns and not logs_in_scope.empty:
                     last_ans     = logs_in_scope.sort_values('時間').groupby('題目ID').last().reset_index()
