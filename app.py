@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.222 - 復習模式修復版)
+# 🧩 英文全能練習系統 (V2.9.223 - 復習模式debug版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.222
+# 📌 版本編號 (VERSION): 2.9.223
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.222"
+VERSION = "2.9.223"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3298,6 +3298,16 @@ if not st.session_state.quiz_loaded:
 
         if not all_items:
             st.error("❌ 找不到題目，請重新選擇")
+            # debug
+            if rv_filter == "📋 依任務" and rv_q_ids:
+                sample = list(rv_q_ids)[:3]
+                st.caption(f"任務題目ID樣本：{sample}")
+                if not df_q.empty:
+                    q_sample = [f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}" for _, r in df_q.head(2).iterrows()]
+                    st.caption(f"df_q ID樣本：{q_sample}")
+                if not df_mcq.empty:
+                    m_sample = [f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}" for _, r in df_mcq.head(2).iterrows()]
+                    st.caption(f"df_mcq ID樣本：{m_sample}")
         else:
             df_rv = pd.concat(all_items, ignore_index=True)
 
