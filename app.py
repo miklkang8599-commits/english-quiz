@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.237 - 從第幾題縮排修復版)
+# 🧩 英文全能練習系統 (V2.9.238 - 從第幾題records修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.237
+# 📌 版本編號 (VERSION): 2.9.238
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.237"
+VERSION = "2.9.238"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3163,7 +3163,7 @@ if not st.session_state.quiz_loaded:
                             if not pending.empty:
                                 st.session_state.update({
                                     "quiz_list": pending.to_dict('records'),
-                                    "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key,
+                                    "q_idx": min(_start_idx_fwd, len(pending)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key,
                                     "ans": [], "used_history": [], "shuf": [], "show_analysis": False
                                 })
                                 st.rerun()
@@ -3178,7 +3178,7 @@ if not st.session_state.quiz_loaded:
                             if not pending_q.empty:
                                 st.session_state.update({
                                     "quiz_list": pending_q.to_dict('records'),
-                                    "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key,
+                                    "q_idx": min(_start_idx_fwd, len(pending_q)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key,
                                     "ans": [], "used_history": [], "shuf": [], "show_analysis": False
                                 })
                                 st.rerun()
