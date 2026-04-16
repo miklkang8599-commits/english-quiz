@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.229 - 任務計次修復版)
+# 🧩 英文全能練習系統 (V2.9.230 - 干擾字數0修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.229
+# 📌 版本編號 (VERSION): 2.9.230
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.229"
+VERSION = "2.9.230"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3742,7 +3742,7 @@ if st.session_state.quiz_loaded:
         meaning  = str(q.get("中文意思") or "").strip()
         task_mode    = q.get("_vocab_mode", "自選")
         use_timer    = int(q.get("_vocab_timer", 0) or 0)
-        extra_letters= int(q.get("_vocab_extra", 3) or 3)
+        extra_letters= int(q.get("_vocab_extra", 3)) if q.get("_vocab_extra") is not None else 3
 
         st.markdown(f"<div style=\'font-size:1.3rem;font-weight:600;padding:12px;background:var(--color-background-secondary);border-radius:8px;\'>📖 {meaning}</div>", unsafe_allow_html=True)
         st.write("")
