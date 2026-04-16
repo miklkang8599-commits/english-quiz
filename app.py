@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.214 - 全能報告依任務詳細版)
+# 🧩 英文全能練習系統 (V2.9.215 - 任務計算修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.214
+# 📌 版本編號 (VERSION): 2.9.215
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.214"
+VERSION = "2.9.215"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -2884,14 +2884,23 @@ if not st.session_state.quiz_loaded:
 
             if q_ids_set:
                 try:
-                    sb_check = get_supabase()
-                    res = sb_check.table("logs").select("question_id").eq("name", user_name).eq("result", "✅").execute()
-                    my_correct = set([r["question_id"] for r in res.data]) if res.data else set()
-                    res_r = sb_check.table("logs").select("question_id").eq("name", user_name).eq("result", "🎤 朗讀").execute()
-                    my_reading = set([r["question_id"] for r in res_r.data]) if res_r.data else set()
-                    my_done    = my_correct | my_reading
-                    done_cnt   = len(q_ids_all & my_done)
-                    all_done   = done_cnt >= len(q_ids_set)
+                    # 用快取的 df_l，依任務編號篩選
+                    task_id_key_check = arow.get('任務編號', '') or ''
+                    if not df_l.empty:
+                        if task_id_key_check and '任務名稱' in df_l.columns:
+                            stu_logs_check = df_l[
+                                (df_l['姓名'] == user_name) &
+                                (df_l['任務名稱'].fillna('') == task_id_key_check)
+                            ]
+                        else:
+                            stu_logs_check = df_l[df_l['姓名'] == user_name]
+                        my_correct = set(stu_logs_check[stu_logs_check['結果'] == '✅']['題目ID'].tolist())
+                        my_reading = set(stu_logs_check[stu_logs_check['結果'] == '🎤 朗讀']['題目ID'].tolist())
+                    else:
+                        my_correct, my_reading = set(), set()
+                    my_done  = my_correct | my_reading
+                    done_cnt = len(q_ids_all & my_done)
+                    all_done = done_cnt >= len(q_ids_set)
                 except:
                     my_done = set()
                     done_cnt, all_done = 0, False
@@ -2959,7 +2968,6 @@ if not st.session_state.quiz_loaded:
                         pending_ids = q_ids_all - my_done
                         if not pending_ids:
                             pending_ids = q_ids_all  # 全部重做
-                        st.write(f"🔍 task_type={task_type} | pending={len(pending_ids)} | sample={list(pending_ids)[:2]}")
 
                         if is_reading_task:
                             df_r2 = df_r.copy()
@@ -3107,23 +3115,30 @@ if not st.session_state.quiz_loaded:
     user_name = st.session_state.user_name
 
     rv_filter = st.radio("篩選方式", ["📋 依任務", "⚙️ 依範圍"], horizontal=True, key="rv_filter")
-    rv_q_ids  = None
+    rv_q_ids     = None
+    rv_task_id   = None  # 任務編號，用來篩選 logs
 
     if rv_filter == "📋 依任務":
         if not df_a.empty and '任務名稱' in df_a.columns:
+            import re as _re_rv
             user_group = st.session_state.group_id
             df_a_rv = df_a[df_a.get('狀態', pd.Series(dtype=str)).fillna('') != '已刪除'].copy()
+            # 只顯示新格式任務
+            df_a_rv = df_a_rv[df_a_rv['任務名稱'].apply(
+                lambda n: bool(_re_rv.search(r'\[T\d+\]', str(n)))
+            )]
             if '對象班級' in df_a_rv.columns:
                 df_a_rv = df_a_rv[df_a_rv['對象班級'].apply(
                     lambda v: user_group in [g.strip() for g in str(v).split(',')]
                 )]
-            task_opts    = ["（請選擇任務）"] + df_a_rv['任務名稱'].tolist()
-            sel_rv_task  = st.selectbox("選擇任務", task_opts, key="rv_task")
+            task_opts   = ["（請選擇任務）"] + df_a_rv['任務名稱'].tolist()
+            sel_rv_task = st.selectbox("選擇任務", task_opts, key="rv_task")
             if sel_rv_task != "（請選擇任務）":
                 task_row = df_a_rv[df_a_rv['任務名稱'] == sel_rv_task].iloc[0]
                 ids_str  = str(task_row.get('題目ID清單', '') or '')
-                rv_q_ids = set([q.strip() for q in ids_str.split(',') if q.strip() and q.strip() != 'nan'])
-                st.info(f"📋 {sel_rv_task}　共 {len(rv_q_ids)} 題")
+                rv_q_ids   = set([q.strip() for q in ids_str.split(',') if q.strip() and q.strip() != 'nan'])
+                rv_task_id = str(task_row.get('任務編號', '') or '')
+                st.info(f"📋 共 {len(rv_q_ids)} 題")
         else:
             st.info("目前沒有指派任務。")
 
@@ -3143,16 +3158,13 @@ if not st.session_state.quiz_loaded:
     rv_scope = st.radio("顯示範圍", ["📚 全部題目", "✏️ 已經答題", "❌ 只看錯題", "❓ 只看未作答", "🔄 複習次數少的優先"], horizontal=True, key="rv_scope")
 
     if st.button("📖 開始復習", type="primary", use_container_width=True, key="rv_start"):
-        # 直接查 Supabase 取最新 logs
+        # 用快取 df_l，依任務編號篩選
         try:
-            # 用快取的 df_l
-            rv_res_data = df_l[df_l['姓名'] == user_name].to_dict('records') if not df_l.empty else []
-            class _RvRes: pass
-            rv_res = _RvRes(); rv_res.data = rv_res_data
-            if rv_res.data:
-                my_logs = pd.DataFrame(rv_res.data)
-                my_logs = _to_cn(my_logs, LOGS_COLS)
-                my_logs = my_logs.drop(columns=['id'], errors='ignore')
+            if not df_l.empty:
+                my_logs = df_l[df_l['姓名'] == user_name].copy()
+                # 依任務篩選（只在依任務模式且有任務編號時）
+                if rv_filter == "📋 依任務" and rv_task_id and '任務名稱' in my_logs.columns:
+                    my_logs = my_logs[my_logs['任務名稱'].fillna('') == rv_task_id]
             else:
                 my_logs = pd.DataFrame()
         except:
@@ -3173,13 +3185,6 @@ if not st.session_state.quiz_loaded:
                 )
             matched = matched.drop(columns=['_qid','_qidv'], errors='ignore')
             return matched
-
-        # 除錯：顯示ID樣本
-        if rv_filter == "📋 依任務" and rv_q_ids:
-            sample_task = list(rv_q_ids)[:2]
-            sample_q = [] if df_q.empty else [_get_qid(r) for _, r in df_q.head(2).iterrows()]
-            sample_qv = [] if df_q.empty else [_get_qid(r, "V_") for _, r in df_q.head(2).iterrows()]
-            st.info(f"任務ID樣本：{sample_task}\n\n題目ID樣本：{sample_q}\n\n題目ID(V_)樣本：{sample_qv}")
 
         all_items = []
 
