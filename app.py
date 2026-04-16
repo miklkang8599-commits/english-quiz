@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.234 - 拼單字空字母池修復版)
+# 🧩 英文全能練習系統 (V2.9.235 - 拼單字固定位置版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.234
+# 📌 版本編號 (VERSION): 2.9.235
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.234"
+VERSION = "2.9.235"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3801,36 +3801,52 @@ if st.session_state.quiz_loaded:
         # ── 拆字母模式 ────────────────────────────────────────────────────
         if "拆字母" in vocab_mode:
             current_ans = st.session_state[ans_key_v]
+            # 答案顯示區
             if current_ans:
                 letters_html = "".join([
-                    f"<span style='display:inline-block;padding:4px 10px;margin:2px;background:#4a90d9;color:white;border-radius:6px;font-size:1.3rem;font-weight:700;letter-spacing:0.05em;'>{c.lower()}</span>"
+                    f"<span style='display:inline-block;padding:4px 10px;margin:2px;background:#4a90d9;color:white;border-radius:6px;font-size:1.3rem;font-weight:700;'>{c.lower()}</span>"
                     for c in current_ans
                 ])
                 ans_display = letters_html
             else:
                 ans_display = "<span style='color:#aaa;font-size:1rem;'>點選下方字母</span>"
             st.markdown(f"<div style='padding:10px;min-height:50px;background:#f0f4ff;border-radius:8px;'>{ans_display}</div>", unsafe_allow_html=True)
+
             bc1, bc2 = st.columns(2)
-            if bc1.button("⬅️ 退回一步", use_container_width=True, key=f"vb_back_{st.session_state.q_idx}"):
+            if bc1.button("⬅️ 退回一步", use_container_width=True, key=f"vb_back_{st.session_state.q_idx}",
+                          disabled=st.session_state.get("show_analysis", False)):
                 if current_ans:
                     st.session_state[ans_key_v].pop()
+                    used_st = st.session_state.get(f"vocab_used_{st.session_state.q_idx}", [])
+                    if used_st:
+                        used_st.pop()
+                    st.session_state[f"vocab_used_{st.session_state.q_idx}"] = used_st
                     st.rerun()
-            if bc2.button("🗑️ 全部清除", use_container_width=True, key=f"vb_clear_{st.session_state.q_idx}"):
+            if bc2.button("🗑️ 全部清除", use_container_width=True, key=f"vb_clear_{st.session_state.q_idx}",
+                          disabled=st.session_state.get("show_analysis", False)):
                 st.session_state[ans_key_v] = []
+                st.session_state[f"vocab_used_{st.session_state.q_idx}"] = []
                 st.rerun()
+
             if not st.session_state.get("show_analysis"):
-                used_indices = st.session_state.get(f"vocab_used_{st.session_state.q_idx}", [])
-                avail = [(i, ltr) for i, ltr in enumerate(letter_pool) if i not in used_indices]
-                if avail:
-                    cols_v = st.columns(min(len(avail), 8))
-                    for ci, (i, ltr) in enumerate(avail):
-                        if cols_v[ci % min(len(avail), 8)].button(ltr.lower(), key=f"vl_{st.session_state.q_idx}_{i}", use_container_width=True):
+                used_indices = set(st.session_state.get(f"vocab_used_{st.session_state.q_idx}", []))
+                # 固定 8 欄，字母位置不移動，已選走的顯示灰色佔位
+                NUM_COLS = 8
+                cols_v = st.columns(NUM_COLS)
+                for i, ltr in enumerate(letter_pool):
+                    col = cols_v[i % NUM_COLS]
+                    if i in used_indices:
+                        col.button("·", key=f"vl_{st.session_state.q_idx}_{i}",
+                                   use_container_width=True, disabled=True)
+                    else:
+                        if col.button(ltr.lower(), key=f"vl_{st.session_state.q_idx}_{i}",
+                                      use_container_width=True):
                             st.session_state[ans_key_v].append(ltr)
                             used_st = st.session_state.get(f"vocab_used_{st.session_state.q_idx}", [])
                             used_st.append(i)
                             st.session_state[f"vocab_used_{st.session_state.q_idx}"] = used_st
                             st.rerun()
-            if len(current_ans) == len(word) and not st.session_state.get("show_analysis"):
+
                 if st.button("✅ 檢查答案", type="primary", use_container_width=True, key=f"vb_check_{st.session_state.q_idx}"):
                     is_ok = "".join(current_ans).upper() == word.upper()
                     st.session_state.update({"current_res": "✅ 正確！" if is_ok else f"❌ 錯誤！正確答案：{word}", "show_analysis": True})
