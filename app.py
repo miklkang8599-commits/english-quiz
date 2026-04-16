@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.217 - task_id寫入修復版)
+# 🧩 英文全能練習系統 (V2.9.218 - 任務列表修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.217
+# 📌 版本編號 (VERSION): 2.9.218
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.217"
+VERSION = "2.9.218"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -2816,9 +2816,9 @@ if not st.session_state.quiz_loaded:
             if str(arow.get('狀態', '')).strip() == '已刪除':
                 debug_info.append(f"❌ {task_n}：已刪除")
                 continue
-            # 只顯示新格式任務（含底線時間戳記）
+            # 只顯示新格式任務（含 [Txxxxxxx] 編號前綴）
             import re as _re2
-            if not _re2.search(r'\d{4}-\d{2}-\d{2}_\d{2}:\d{2}', task_n):
+            if not _re2.search(r'\[T\d+\]', task_n):
                 debug_info.append(f"❌ {task_n}：舊格式，略過")
                 continue
 
@@ -2855,6 +2855,12 @@ if not st.session_state.quiz_loaded:
 
     if my_tasks:
         st.markdown("<h2 style='margin-bottom:0'>📋 我的任務</h2>", unsafe_allow_html=True)
+    else:
+        if is_admin(st.session_state.group_id):
+            # 管理員才顯示 debug 資訊
+            with st.expander("🔍 任務篩選除錯（管理員可見）", expanded=False):
+                for d in debug_info:
+                    st.caption(d)
         for _task_idx, arow in enumerate(my_tasks):
             task_name    = arow.get('任務名稱', '未命名')
             task_id_key  = arow.get('任務編號', '') or ''
