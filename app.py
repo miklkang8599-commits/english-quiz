@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.215 - 任務計算修復版)
+# 🧩 英文全能練習系統 (V2.9.216 - 任務編號提取修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.215
+# 📌 版本編號 (VERSION): 2.9.216
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.215"
+VERSION = "2.9.216"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -2856,7 +2856,13 @@ if not st.session_state.quiz_loaded:
         st.markdown("<h2 style='margin-bottom:0'>📋 我的任務</h2>", unsafe_allow_html=True)
         for _task_idx, arow in enumerate(my_tasks):
             task_name    = arow.get('任務名稱', '未命名')
-            task_id_key  = arow.get('任務編號', '') or task_name[:10]  # 無編號則用名稱前10字
+            task_id_key  = arow.get('任務編號', '') or ''
+            # 若任務編號欄位空白，從任務名稱的 [Txxxxxxx] 提取
+            if not task_id_key and task_name:
+                import re as _re_tid
+                _m = _re_tid.search(r'\[T(\d+)\]', task_name)
+                if _m:
+                    task_id_key = 'T' + _m.group(1)
             task_start   = arow.get('開始日期', '')
             task_end     = arow.get('結束日期', '')
             task_q_ids   = str(arow.get('題目ID清單', '') or '')
@@ -2886,6 +2892,11 @@ if not st.session_state.quiz_loaded:
                 try:
                     # 用快取的 df_l，依任務編號篩選
                     task_id_key_check = arow.get('任務編號', '') or ''
+                    if not task_id_key_check and task_name:
+                        import re as _re_tid2
+                        _m2 = _re_tid2.search(r'\[T(\d+)\]', task_name)
+                        if _m2:
+                            task_id_key_check = 'T' + _m2.group(1)
                     if not df_l.empty:
                         if task_id_key_check and '任務名稱' in df_l.columns:
                             stu_logs_check = df_l[
@@ -3138,6 +3149,12 @@ if not st.session_state.quiz_loaded:
                 ids_str  = str(task_row.get('題目ID清單', '') or '')
                 rv_q_ids   = set([q.strip() for q in ids_str.split(',') if q.strip() and q.strip() != 'nan'])
                 rv_task_id = str(task_row.get('任務編號', '') or '')
+                # 若任務編號欄位空白，從任務名稱提取
+                if not rv_task_id:
+                    import re as _re_rvtid
+                    _m3 = _re_rvtid.search(r'\[T(\d+)\]', sel_rv_task)
+                    if _m3:
+                        rv_task_id = 'T' + _m3.group(1)
                 st.info(f"📋 共 {len(rv_q_ids)} 題")
         else:
             st.info("目前沒有指派任務。")
