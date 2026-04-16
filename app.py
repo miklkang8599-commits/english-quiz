@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.238 - 從第幾題records修復版)
+# 🧩 英文全能練習系統 (V2.9.240 - 練習方式選項版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.238
+# 📌 版本編號 (VERSION): 2.9.240
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.238"
+VERSION = "2.9.240"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3040,21 +3040,36 @@ if not st.session_state.quiz_loaded:
                     task_content = str(arow.get('內容', ''))
                     parts        = [p.strip() for p in task_content.split('|')]
                     can_preload  = len(parts) == 5
+                    remaining    = task_q_count - done_cnt
 
-                    _sc1, _sc2 = st.columns([2, 1])
-                    _start_from = _sc2.number_input(
-                        "從第幾題", min_value=1, max_value=task_q_count, value=1,
-                        key=f"start_from_{_task_idx}"
+                    # 兩個選項
+                    _mode = st.radio(
+                        "練習方式",
+                        ["📌 繼續未完成部分", "🔢 從第幾題開始"],
+                        horizontal=True,
+                        key=f"start_mode_{_task_idx}"
                     )
-                    btn_key = f"start_task_{_task_idx}_{task_name[:20]}"
-                    remaining = task_q_count - done_cnt
-                    label   = f"🚀 進入練習（剩餘 {remaining} 題）"
+                    if _mode == "🔢 從第幾題開始":
+                        _start_from = st.number_input(
+                            "從第幾題（依任務原始題號）",
+                            min_value=1, max_value=task_q_count, value=1,
+                            key=f"start_from_{_task_idx}"
+                        )
+                    else:
+                        _start_from = 1
 
-                    if _sc1.button(label, key=btn_key, type="primary", use_container_width=True):
-                        _start_idx_fwd = max(0, int(_start_from) - 1)
-                        pending_ids = q_ids_all - my_done
-                        if not pending_ids:
-                            pending_ids = q_ids_all  # 全部重做
+                    btn_key = f"start_task_{_task_idx}_{task_name[:20]}"
+                    label   = "📌 繼續未完成部分" if _mode == "📌 繼續未完成部分" else f"🔢 從第 {_start_from} 題開始"
+
+                    if st.button(f"🚀 {label}", key=btn_key, type="primary", use_container_width=True):
+                        if _mode == "📌 繼續未完成部分":
+                            _start_idx_fwd = 0
+                            pending_ids = q_ids_all - my_done
+                            if not pending_ids:
+                                pending_ids = q_ids_all
+                        else:
+                            _start_idx_fwd = max(0, int(_start_from) - 1)
+                            pending_ids = q_ids_all  # 全部題目按原始順序
 
                         if is_reading_task:
                             df_r2 = df_r.copy()
