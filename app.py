@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.233 - vocab_cfg映射修復版)
+# 🧩 英文全能練習系統 (V2.9.234 - 拼單字空字母池修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.233
+# 📌 版本編號 (VERSION): 2.9.234
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.233"
+VERSION = "2.9.234"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3821,14 +3821,15 @@ if st.session_state.quiz_loaded:
             if not st.session_state.get("show_analysis"):
                 used_indices = st.session_state.get(f"vocab_used_{st.session_state.q_idx}", [])
                 avail = [(i, ltr) for i, ltr in enumerate(letter_pool) if i not in used_indices]
-                cols_v = st.columns(min(len(avail), 8))
-                for ci, (i, ltr) in enumerate(avail):
-                    if cols_v[ci % 8].button(ltr.lower(), key=f"vl_{st.session_state.q_idx}_{i}", use_container_width=True):
-                        st.session_state[ans_key_v].append(ltr)  # 仍存大寫供比對
-                        used_st = st.session_state.get(f"vocab_used_{st.session_state.q_idx}", [])
-                        used_st.append(i)
-                        st.session_state[f"vocab_used_{st.session_state.q_idx}"] = used_st
-                        st.rerun()
+                if avail:
+                    cols_v = st.columns(min(len(avail), 8))
+                    for ci, (i, ltr) in enumerate(avail):
+                        if cols_v[ci % min(len(avail), 8)].button(ltr.lower(), key=f"vl_{st.session_state.q_idx}_{i}", use_container_width=True):
+                            st.session_state[ans_key_v].append(ltr)
+                            used_st = st.session_state.get(f"vocab_used_{st.session_state.q_idx}", [])
+                            used_st.append(i)
+                            st.session_state[f"vocab_used_{st.session_state.q_idx}"] = used_st
+                            st.rerun()
             if len(current_ans) == len(word) and not st.session_state.get("show_analysis"):
                 if st.button("✅ 檢查答案", type="primary", use_container_width=True, key=f"vb_check_{st.session_state.q_idx}"):
                     is_ok = "".join(current_ans).upper() == word.upper()
