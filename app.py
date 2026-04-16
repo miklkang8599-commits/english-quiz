@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.227 - 復習篩選正式版)
+# 🧩 英文全能練習系統 (V2.9.228 - 講解依任務篩選版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.227
+# 📌 版本編號 (VERSION): 2.9.228
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.227"
+VERSION = "2.9.228"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -2353,7 +2353,8 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
 
             # 任務篩選：只顯示新格式任務
             import re as _re5
-            rev_task_ids = None
+            rev_task_ids    = None
+            rev_task_id_key = ""
             task_stu_default = students_in_group
             if not df_a.empty and '任務名稱' in df_a.columns:
                 df_a_rev = df_a[df_a.get('狀態', pd.Series(dtype=str)).fillna('') != '已刪除'].copy()
@@ -2378,14 +2379,22 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                         task_stus    = [s.strip() for s in task_stu_str.split(',') if s.strip()]
                         valid_stus   = [s for s in task_stus if s in students_in_group]
                         task_stu_default = valid_stus if valid_stus else students_in_group
+                        # 取任務編號，用來篩選 logs
+                        rev_task_id_key = str(task_row.iloc[0].get('任務編號','') or '')
+                        if not rev_task_id_key:
+                            import re as _re_rtid
+                            _m = _re_rtid.search(r'\[T(\d+)\]', sel_task)
+                            if _m: rev_task_id_key = 'T' + _m.group(1)
                         st.info(f"📋 共 {len(rev_task_ids)} 題")
+            else:
+                rev_task_id_key = ""
 
             rev_students = st.multiselect(
                 "👤 學生（預設全選）", options=students_in_group,
                 default=task_stu_default, key=f"rev_students_{tab_key}"
             )
             target_students = rev_students if rev_students else students_in_group
-            return rev_group, target_students, rev_task_ids
+            return rev_group, target_students, rev_task_ids, rev_task_id_key
 
         # ── 共用：顯示範圍篩選 ───────────────────────────────────────────
         def _rev_scope_filter(tab_key):
@@ -2411,7 +2420,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             return df_scope
         # ── Tab1: 單選講解 ────────────────────────────────────────────────
         with rev4_tab1:
-            rev_group_mcq, target_stus_mcq, task_ids_mcq = _rev_common_filters("mcq")
+            rev_group_mcq, target_stus_mcq, task_ids_mcq, rev_tid_mcq = _rev_common_filters("mcq")
             scope_mcq = _rev_scope_filter("mcq")
 
             if task_ids_mcq is not None:
@@ -2441,6 +2450,9 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 st.info("此範圍尚無單選題。")
             else:
                 mcq_logs = df_l[df_l['姓名'].isin(target_stus_mcq)].copy() if not df_l.empty else pd.DataFrame()
+                if rev_tid_mcq and not mcq_logs.empty and '任務名稱' in mcq_logs.columns:
+                    _fl = mcq_logs[mcq_logs['任務名稱'].fillna('') == rev_tid_mcq]
+                    if not _fl.empty: mcq_logs = _fl
                 df_rev_mcq = _apply_scope(df_rev_mcq, scope_mcq, mcq_logs)
                 st.markdown(f"**共 {len(df_rev_mcq)} 題**")
                 _rev_summary = f"👥 {_group_label(rev_group_mcq)}／{len(target_stus_mcq)} 位　🔍 {scope_mcq}"
@@ -2499,7 +2511,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
 
         # ── Tab2: 重組講解 ────────────────────────────────────────────────
         with rev4_tab2:
-            rev_group_q, target_stus_q, task_ids_q = _rev_common_filters("reorder")
+            rev_group_q, target_stus_q, task_ids_q, rev_tid_q = _rev_common_filters("reorder")
             scope_q = _rev_scope_filter("reorder")
 
             if task_ids_q is not None:
@@ -2526,6 +2538,9 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 st.info("此範圍尚無重組題。")
             else:
                 q_logs = df_l[df_l['姓名'].isin(target_stus_q)].copy() if not df_l.empty else pd.DataFrame()
+                if rev_tid_q and not q_logs.empty and '任務名稱' in q_logs.columns:
+                    _fl = q_logs[q_logs['任務名稱'].fillna('') == rev_tid_q]
+                    if not _fl.empty: q_logs = _fl
                 df_rev_q2 = _apply_scope(df_rev_q2, scope_q, q_logs)
                 st.markdown(f"**共 {len(df_rev_q2)} 題**")
                 st.info(f"👥 {_group_label(rev_group_q)}／{len(target_stus_q)} 位　🔍 {scope_q}")
@@ -2573,7 +2588,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
 
         # ── Tab3: 閱讀單句講解 ────────────────────────────────────────────
         with rev4_tab3:
-            rev_group_rm, target_stus_rm, task_ids_rm = _rev_common_filters("rm")
+            rev_group_rm, target_stus_rm, task_ids_rm, rev_tid_rm = _rev_common_filters("rm")
             scope_rm = _rev_scope_filter("rm")
 
             if task_ids_rm is not None:
@@ -2604,6 +2619,9 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
 
             if not df_rev_rm.empty:
                 rm_logs = df_l[df_l['姓名'].isin(target_stus_rm)].copy() if not df_l.empty else pd.DataFrame()
+                if rev_tid_rm and not rm_logs.empty and '任務名稱' in rm_logs.columns:
+                    _fl = rm_logs[rm_logs['任務名稱'].fillna('') == rev_tid_rm]
+                    if not _fl.empty: rm_logs = _fl
                 df_rev_rm = _apply_scope(df_rev_rm, scope_rm, rm_logs)
                 st.markdown(f"**共 {len(df_rev_rm)} 題**")
                 st.info(f"👥 {_group_label(rev_group_rm)}／{len(target_stus_rm)} 位　🔍 {scope_rm}")
@@ -2653,7 +2671,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
 
         # ── 朗讀講解 ──────────────────────────────────────────────────────
         with rev4_tab4:
-            rev_group_r, target_stus_r, task_ids_r = _rev_common_filters("reading")
+            rev_group_r, target_stus_r, task_ids_r, rev_tid_r = _rev_common_filters("reading")
 
             if task_ids_r is not None:
                 df_r2 = df_r.copy() if not df_r.empty else pd.DataFrame()
@@ -2683,6 +2701,9 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
 
             if not df_rev_r.empty:
                 r_logs = df_l[df_l['姓名'].isin(target_stus_r)].copy() if not df_l.empty else pd.DataFrame()
+                if rev_tid_r and not r_logs.empty and '任務名稱' in r_logs.columns:
+                    _fl = r_logs[r_logs['任務名稱'].fillna('') == rev_tid_r]
+                    if not _fl.empty: r_logs = _fl
                 df_rev_r = _apply_scope(df_rev_r, _rev_scope_filter("reading_s"), r_logs)
                 st.markdown(f"**共 {len(df_rev_r)} 題**")
                 st.info(f"👥 {_group_label(rev_group_r)}／{len(target_stus_r)} 位")
@@ -2722,7 +2743,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
 
         # ── Tab5: 拼單字講解 ──────────────────────────────────────────────
         with rev4_tab5:
-            rev_group_v, target_stus_v, task_ids_v = _rev_common_filters("vocab")
+            rev_group_v, target_stus_v, task_ids_v, rev_tid_v = _rev_common_filters("vocab")
 
             if task_ids_v is not None:
                 df_v2 = df_v.copy() if not df_v.empty else pd.DataFrame()
@@ -2751,6 +2772,9 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
 
             if not df_rev_v.empty:
                 v_logs = df_l[df_l['姓名'].isin(target_stus_v)].copy() if not df_l.empty else pd.DataFrame()
+                if rev_tid_v and not v_logs.empty and '任務名稱' in v_logs.columns:
+                    _fl = v_logs[v_logs['任務名稱'].fillna('') == rev_tid_v]
+                    if not _fl.empty: v_logs = _fl
                 df_rev_v = _apply_scope(df_rev_v, _rev_scope_filter("vocab_s"), v_logs)
                 st.markdown(f"**共 {len(df_rev_v)} 題**")
                 st.info(f"👥 {_group_label(rev_group_v)}／{len(target_stus_v)} 位")
