@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.240 - 練習方式選項版)
+# 🧩 英文全能練習系統 (V2.9.241 - 拼單字字母池清除版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.240
+# 📌 版本編號 (VERSION): 2.9.241
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.240"
+VERSION = "2.9.241"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -2993,6 +2993,8 @@ if not st.session_state.quiz_loaded:
                                 records = retry_r.to_dict('records')
                                 for rec in records:
                                     rec['_type'] = 'reading'
+                                for _k in [k for k in list(st.session_state.keys()) if k.startswith("vocab_pool_") or k.startswith("vocab_ans_") or k.startswith("vocab_used_")]:
+                                    del st.session_state[_k]
                                 st.session_state.update({
                                     "quiz_list": records,
                                     "q_idx": min(_start_idx, len(records)-1),
@@ -3029,6 +3031,8 @@ if not st.session_state.quiz_loaded:
                             if _all_dfs:
                                 retry_all = pd.concat(_all_dfs, ignore_index=True)
                                 records   = retry_all.to_dict('records')
+                                for _k in [k for k in list(st.session_state.keys()) if k.startswith("vocab_pool_") or k.startswith("vocab_ans_") or k.startswith("vocab_used_")]:
+                                    del st.session_state[_k]
                                 st.session_state.update({
                                     "quiz_list": records,
                                     "q_idx": min(_start_idx, len(records)-1),
@@ -3082,6 +3086,9 @@ if not st.session_state.quiz_loaded:
                                 records = pending.to_dict('records')
                                 for r in records:
                                     r['_type'] = 'reading'
+                                # 清除所有舊的字母池，避免題目字母錯誤
+                                for _k in [k for k in list(st.session_state.keys()) if k.startswith("vocab_pool_") or k.startswith("vocab_ans_") or k.startswith("vocab_used_")]:
+                                    del st.session_state[_k]
                                 st.session_state.update({
                                     "quiz_list": records,
                                     "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key,
@@ -3111,6 +3118,9 @@ if not st.session_state.quiz_loaded:
                                     rec['_vocab_mode']  = v_mode_t
                                     rec['_vocab_timer'] = v_timer_t
                                     rec['_vocab_extra'] = v_extra_t
+                                # 清除所有舊的字母池，避免題目字母錯誤
+                                for _k in [k for k in list(st.session_state.keys()) if k.startswith("vocab_pool_") or k.startswith("vocab_ans_") or k.startswith("vocab_used_")]:
+                                    del st.session_state[_k]
                                 st.session_state.update({
                                     "quiz_list": records,
                                     "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key,
@@ -3129,6 +3139,9 @@ if not st.session_state.quiz_loaded:
                                 records = pending.to_dict('records')
                                 for rec in records:
                                     rec['_type'] = 'reading_mcq'
+                                # 清除所有舊的字母池，避免題目字母錯誤
+                                for _k in [k for k in list(st.session_state.keys()) if k.startswith("vocab_pool_") or k.startswith("vocab_ans_") or k.startswith("vocab_used_")]:
+                                    del st.session_state[_k]
                                 st.session_state.update({
                                     "quiz_list": records,
                                     "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key,
@@ -3176,6 +3189,9 @@ if not st.session_state.quiz_loaded:
                                 pending_v['_vocab_extra'] = int(vcfg[2]) if len(vcfg) > 2 else 3
                             pending = pd.concat([pending_q, pending_r, pending_v, pending_rm], ignore_index=True)
                             if not pending.empty:
+                                # 清除所有舊的字母池
+                                for _k in [k for k in list(st.session_state.keys()) if k.startswith("vocab_pool_") or k.startswith("vocab_ans_") or k.startswith("vocab_used_")]:
+                                    del st.session_state[_k]
                                 st.session_state.update({
                                     "quiz_list": pending.to_dict('records'),
                                     "q_idx": min(_start_idx_fwd, len(pending)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key,
@@ -3191,6 +3207,9 @@ if not st.session_state.quiz_loaded:
                             )
                             pending_q = df_q2[df_q2['題目ID'].isin(pending_ids)].copy()
                             if not pending_q.empty:
+                                # 清除所有舊的字母池
+                                for _k in [k for k in list(st.session_state.keys()) if k.startswith("vocab_pool_") or k.startswith("vocab_ans_") or k.startswith("vocab_used_")]:
+                                    del st.session_state[_k]
                                 st.session_state.update({
                                     "quiz_list": pending_q.to_dict('records'),
                                     "q_idx": min(_start_idx_fwd, len(pending_q)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key,
