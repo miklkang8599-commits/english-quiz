@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.242 - 復習朗讀TTS版)
+# 🧩 英文全能練習系統 (V2.9.243 - 復習TTS import修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.242
+# 📌 版本編號 (VERSION): 2.9.243
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.242"
+VERSION = "2.9.243"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3593,8 +3593,8 @@ if not st.session_state.quiz_loaded:
                     tts_rv_data_key = f"rv_tts_data_{i}_{qid}"
                     if st.button("🔊 播放 0.8 倍速朗讀", key=tts_rv_key, use_container_width=True):
                         try:
-                            import base64 as _b64
-                            _client_rv = openai.OpenAI(api_key=st.secrets.get("OPENAI_API_KEY",""))
+                            import openai as _openai_rv, base64 as _b64
+                            _client_rv = _openai_rv.OpenAI(api_key=st.secrets.get("OPENAI_API_KEY",""))
                             tts_rv_raw = _client_rv.audio.speech.create(
                                 model="tts-1", voice="nova", input=q_ans, speed=0.8
                             ).content
