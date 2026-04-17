@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.244 - 復習TTS自動產生版)
+# 🧩 英文全能練習系統 (V2.9.245 - 任務命名加單元版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.244
+# 📌 版本編號 (VERSION): 2.9.245
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.244"
+VERSION = "2.9.245"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1251,8 +1251,10 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
 
                 # 取得主要題型的篩選資訊（只顯示一次題型）
                 def _make_task_name(ttype, v, u, y, b, l, start, count, groups, teacher, ptime, dstart, dend):
+                    # 格式：題型-單元-版本-年度-冊-課-起始題-題數-班級-出題老師-出題戳記-開始日~結束日
+                    u_part    = f"-{u}" if u and str(u).strip() else ""
                     start_str = f"-起始{start}" if start else ""
-                    return f"{ttype}-{v}-{y}年-冊{b}-課{l}{start_str}-{count}題-{groups}-{teacher}-{ptime}-{dstart}~{dend}"
+                    return f"{ttype}{u_part}-{v}-{y}年-冊{b}-課{l}{start_str}-{count}題-{groups}-{teacher}-{ptime}-{dstart}~{dend}"
 
                 if mcq_ids:
                     mv_ = st.session_state.get('mc_v', '')
@@ -1266,25 +1268,28 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     auto_desc = _make_task_name("重組", t1v, t1u, t1y, t1b, t1l, st.session_state.get('t1_start_sent',''), len(q_ids), groups_label, teacher_name, publish_time, str(date_start), str(date_end))
                 elif r_ids:
                     rv_ = st.session_state.get('rt_v', '')
+                    ru_ = st.session_state.get('rt_u', '')
                     ry_ = st.session_state.get('rt_y', '')
                     rb_ = st.session_state.get('rt_b', '')
                     rl_ = st.session_state.get('rt_l', '')
                     rs_ = st.session_state.get('rt_start_sent', '')
-                    auto_desc = _make_task_name("朗讀", rv_, '', ry_, rb_, rl_, rs_, len(r_ids), groups_label, teacher_name, publish_time, str(date_start), str(date_end))
+                    auto_desc = _make_task_name("朗讀", rv_, ru_, ry_, rb_, rl_, rs_, len(r_ids), groups_label, teacher_name, publish_time, str(date_start), str(date_end))
                 elif v_ids:
                     vv_ = st.session_state.get('vt_v', '')
+                    vu_ = st.session_state.get('vt_u', '')
                     vy_ = st.session_state.get('vt_y', '')
                     vb_ = st.session_state.get('vt_b', '')
                     vl_ = st.session_state.get('vt_l', '')
                     vs_ = st.session_state.get('vt_start_sent', '')
-                    auto_desc = _make_task_name("拼單字", vv_, '', vy_, vb_, vl_, vs_, len(v_ids), groups_label, teacher_name, publish_time, str(date_start), str(date_end))
+                    auto_desc = _make_task_name("拼單字", vv_, vu_, vy_, vb_, vl_, vs_, len(v_ids), groups_label, teacher_name, publish_time, str(date_start), str(date_end))
                 elif rm_ids:
                     rmv_ = st.session_state.get('rmt_v', '')
+                    rmu_ = st.session_state.get('rmt_u', '')
                     rmy_ = st.session_state.get('rmt_y', '')
                     rmb_ = st.session_state.get('rmt_b', '')
                     rml_ = st.session_state.get('rmt_l', '')
                     rms_ = st.session_state.get('rmt_start', '')
-                    auto_desc = _make_task_name("閱讀單句", rmv_, '', rmy_, rmb_, rml_, rms_, len(rm_ids), groups_label, teacher_name, publish_time, str(date_start), str(date_end))
+                    auto_desc = _make_task_name("閱讀單句", rmv_, rmu_, rmy_, rmb_, rml_, rms_, len(rm_ids), groups_label, teacher_name, publish_time, str(date_start), str(date_end))
                 else:
                     auto_desc = f"混合任務-{groups_label}-{teacher_name}-{publish_time}-{date_start}~{date_end}"
 
