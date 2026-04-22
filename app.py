@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.246 - 發布清空和題數顯示版)
+# 🧩 英文全能練習系統 (V2.9.247 - 各題型題數顯示版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.246
+# 📌 版本編號 (VERSION): 2.9.247
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.246"
+VERSION = "2.9.247"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -904,7 +904,6 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1
                 )
                 total_in_scope = len(df_t1_scope)
-                st.caption(f"此範圍共 {total_in_scope} 題")
 
                 sc1, sc2 = st.columns(2)
                 all_sent_nums = sorted(df_t1_scope["句編號"].unique(), key=lambda x: int(x) if str(x).isdigit() else 0)
@@ -916,7 +915,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     df_t1_scope = df_t1_scope[df_t1_scope["_num"] >= int(t1_start_sent)].sort_values("_num").copy()
                 if t1_q_count > 0:
                     df_t1_scope = df_t1_scope.head(int(t1_q_count)).copy()
-                st.caption(f"篩選後：{len(df_t1_scope)} 題")
+                st.info(f"📚 範圍總題數：**{total_in_scope} 題**　→　篩選後：**{len(df_t1_scope)} 題**")
 
                 df_t1_final = df_t1_scope.copy()
                 with st.expander(f"📋 預覽重組題清單（{len(df_t1_final)} 題）", expanded=False):
@@ -948,6 +947,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 ml = mc[4].selectbox("課編號", sorted(ml_src["課編號"].unique()), key="mc_l")
 
                 df_mcq_scope = ml_src[ml_src["課編號"] == ml].copy()
+                mc_total_before = len(df_mcq_scope)  # 文法/難度篩選前的總題數
 
                 mc_extra = st.columns(2)
                 if "文法" in df_mcq_scope.columns:
@@ -977,7 +977,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     df_mcq_scope = df_mcq_scope.head(int(mc_count)).copy()
 
                 df_mcq_final = df_mcq_scope.copy()
-                st.caption(f"篩選後：{len(df_mcq_final)} 題")
+                st.info(f"📚 範圍總題數：**{mc_total_before} 題**　→　篩選後：**{len(df_mcq_final)} 題**")
                 with st.expander(f"📋 預覽單選題清單（{len(df_mcq_final)} 題）", expanded=False):
                     prev = [c for c in ["句編號", "單選題目", "題目ID"] if c in df_mcq_final.columns]
                     st.dataframe(df_mcq_final[prev], use_container_width=True)
@@ -1041,7 +1041,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                         df_r_final = df_r_final[df_r_final['難度'] == r_diff]
 
                 r_total = len(df_r_final)
-                st.caption(f"此範圍共 {r_total} 題")
+                # 朗讀總題數已下移合併
 
                 # 起始句編號 & 題目數量
                 rs1, rs2 = st.columns(2)
@@ -1055,7 +1055,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     df_r_final = df_r_final[df_r_final['_num'] >= int(r_start_sent)].sort_values('_num').copy()
                 if r_q_count > 0:
                     df_r_final = df_r_final.head(int(r_q_count)).copy()
-                st.caption(f"篩選後：{len(df_r_final)} 題")
+                st.info(f"📚 範圍總題數：**{r_total} 題**　→　篩選後：**{len(df_r_final)} 題**")
 
                 preview_r_cols = [c for c in ['句編號', '朗讀句子', '英文句子', '題目ID'] if c in df_r_final.columns]
                 with st.expander(f"📋 預覽朗讀清單（{len(df_r_final)} 題）", expanded=False):
@@ -1105,7 +1105,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                         df_v_scope_t1 = df_v_scope_t1[df_v_scope_t1['難度'] == v_diff]
 
                 v_total = len(df_v_scope_t1)
-                st.caption(f"此範圍共 {v_total} 題")
+                # 拼單字總題數已下移合併
 
                 vs1, vs2 = st.columns(2)
                 v_sent_opts = sorted(df_v_scope_t1['句編號'].unique(), key=lambda x: int(x) if str(x).isdigit() else 0) if '句編號' in df_v_scope_t1.columns else []
@@ -1124,7 +1124,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 vt_timer = vm2.number_input("限時（秒，0=不限）", 0, 300, 30, key="vt_timer")
                 vt_extra = vm3.number_input("干擾字母數", 0, 10, 3, key="vt_extra")
 
-                st.caption(f"篩選後：{len(df_v_scope_t1)} 題")
+                st.info(f"📚 範圍總題數：**{v_total} 題**　→　篩選後：**{len(df_v_scope_t1)} 題**")
                 df_v_final = df_v_scope_t1.copy()
 
                 preview_v_cols = [c for c in ['句編號', '中文意思', '英文單字', '題目ID'] if c in df_v_final.columns]
@@ -1187,7 +1187,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     df_rm_scope = df_rm_scope.head(int(rm_count)).copy()
 
                 df_rm_final = df_rm_scope.copy()
-                st.caption(f"此範圍共 {rm_total} 題，篩選後：{len(df_rm_final)} 題")
+                st.info(f"📚 範圍總題數：**{rm_total} 題**　→　篩選後：**{len(df_rm_final)} 題**")
 
                 preview_rm_cols = [c for c in ['句編號', '題目', '選項A', '選項B', '選項C', '選項D', '正確選項列出'] if c in df_rm_final.columns]
                 with st.expander(f"📋 預覽閱讀單句清單（{len(df_rm_final)} 題）", expanded=False):
