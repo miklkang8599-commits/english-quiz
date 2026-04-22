@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.245 - 任務命名加單元版)
+# 🧩 英文全能練習系統 (V2.9.246 - 發布清空和題數顯示版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.245
+# 📌 版本編號 (VERSION): 2.9.246
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.245"
+VERSION = "2.9.246"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1195,9 +1195,19 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
 
         st.divider()
 
-        # 合計
-        total_q = len(df_t1_final) + len(df_mcq_final) + len(df_r_final) + len(df_v_final) + len(df_rm_final)
-        st.info(f"📊 本次任務合計：重組 {len(df_t1_final)} 題 ＋ 單選 {len(df_mcq_final)} 題 ＋ 朗讀 {len(df_r_final)} 題 ＋ 拼單字 {len(df_v_final)} 題 ＋ 閱讀單句 {len(df_rm_final)} 題 ＝ **{total_q} 題**")
+        # 合計摘要表
+        _summary_cols = st.columns(5)
+        _summary_data = [
+            ("✏️ 重組",   len(df_t1_final)),
+            ("🔵 單選",   len(df_mcq_final)),
+            ("🎤 朗讀",   len(df_r_final)),
+            ("🔤 拼單字", len(df_v_final)),
+            ("📖 閱讀",   len(df_rm_final)),
+        ]
+        for _ci, (_lbl, _cnt) in enumerate(_summary_data):
+            _summary_cols[_ci].metric(_lbl, f"{_cnt} 題")
+        total_q = sum(c for _, c in _summary_data)
+        st.info(f"📊 本次任務合計：**{total_q} 題**　（重組 {len(df_t1_final)} ＋ 單選 {len(df_mcq_final)} ＋ 朗讀 {len(df_r_final)} ＋ 拼單字 {len(df_v_final)} ＋ 閱讀單句 {len(df_rm_final)}）")
 
         if st.button("🚀 確認發布任務", use_container_width=True, type="primary"):
             if not target_groups:
@@ -1318,8 +1328,20 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     "類型":       task_type
                 }])
                 if append_to_sheet("assignments", new_task):
-                    st.success(f"✅ 任務已發布！共 {len(all_ids)} 題（重組/單選 {len(df_t1_final)} ＋ 朗讀 {len(df_r_final)}），指派給 {len(target_students_t1)} 位學生")
-                    st.session_state['t1_clear_form'] = True
+                    st.success(f"✅ 任務已發布！共 {len(all_ids)} 題，指派給 {len(target_students_t1)} 位學生")
+                    # 立即清空所有篩選 key
+                    _clear_keys = [
+                        't1_inc_q', 't1_inc_mcq', 't1_inc_reading', 't1_inc_vocab', 't1_inc_rm',
+                        't1_v', 't1_u', 't1_y', 't1_b', 't1_l', 't1_start_sent', 't1_q_count', 't1_grammar', 't1_diff',
+                        'mc_v', 'mc_u', 'mc_y', 'mc_b', 'mc_l', 'mc_start_sent', 'mc_q_count', 'mc_grammar', 'mc_diff',
+                        'rt_v', 'rt_u', 'rt_y', 'rt_b', 'rt_l', 'rt_start_sent', 'rt_q_count',
+                        'vt_v', 'vt_u', 'vt_y', 'vt_b', 'vt_l', 'vt_start_sent', 'vt_q_count', 'vt_mode', 'vt_timer', 'vt_extra',
+                        'rmt_v', 'rmt_u', 'rmt_y', 'rmt_b', 'rmt_l', 'rmt_start', 'rmt_count', 'rmt_grammar', 'rmt_diff',
+                        't1_group', 't1_mode', 't1_stu', 't1_start', 't1_end',
+                        't1_ref_stu', 't1_ref_logic', 't1_ref_n',
+                    ]
+                    for _k in _clear_keys:
+                        st.session_state.pop(_k, None)
                     st.rerun()
 
         # ══════════════════════════════════════════════════════════════════
@@ -1461,6 +1483,10 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                             }])
                             if append_to_sheet("assignments", new_comb_task):
                                 st.success(f"✅ 集合任務已發布！共 {len(filtered_qids)} 題，指派給 {len(final_comb_stus)} 位學生")
+                                for _k in ['combine_src_tasks','combine_scope','combine_ref_group',
+                                           'combine_date_start','combine_date_end','comb_task_name',
+                                           'combine_target_groups','combine_stus']:
+                                    st.session_state.pop(_k, None)
                                 st.rerun()
 
         # ══════════════════════════════════════════════════════════════════
