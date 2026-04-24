@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.247 - 各題型題數顯示版)
+# 🧩 英文全能練習系統 (V2.9.249 - 三種TTS模型0.8倍版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.247
+# 📌 版本編號 (VERSION): 2.9.249
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.247"
+VERSION = "2.9.249"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3618,23 +3618,35 @@ if not st.session_state.quiz_loaded:
                     unsafe_allow_html=True
                 )
 
-                # 朗讀題：TTS 0.8 倍速預習音檔（自動產生，session_state 快取）
+                # 朗讀題：三種 TTS 模型音檔（0.8 倍速，session_state 快取）
                 if q_type == 'reading' or '朗讀' in q_unit:
-                    tts_rv_data_key = f"rv_tts_data_{i}_{qid}"
-                    if not st.session_state.get(tts_rv_data_key) and q_ans:
-                        with st.spinner("🔊 產生朗讀音檔..."):
-                            try:
-                                import openai as _openai_rv, base64 as _b64rv2
-                                _client_rv = _openai_rv.OpenAI(api_key=st.secrets.get("OPENAI_API_KEY",""))
-                                tts_rv_raw = _client_rv.audio.speech.create(
-                                    model="tts-1", voice="nova", input=q_ans, speed=0.8
-                                ).content
-                                st.session_state[tts_rv_data_key] = _b64rv2.b64encode(tts_rv_raw).decode()
-                            except Exception as _e_rv:
-                                st.caption(f"🔇 音檔產生失敗：{_e_rv}")
-                    if st.session_state.get(tts_rv_data_key):
-                        import base64 as _b64rv
-                        st.audio(_b64rv.b64decode(st.session_state[tts_rv_data_key]), format="audio/mp3")
+                    st.markdown("**🔊 朗讀音檔 0.8倍速（點選產生並播放）**")
+                    _tts_options = [
+                        ("🎙️ 高清女聲",  "tts-1-hd", "nova",  f"rv_tts_{i}_{qid}_hd_nova"),
+                        ("🎙️ 高清男聲",  "tts-1-hd", "onyx",  f"rv_tts_{i}_{qid}_hd_onyx"),
+                        ("🎙️ 標準自然聲","tts-1",    "alloy", f"rv_tts_{i}_{qid}_std_alloy"),
+                    ]
+                    for _label, _model, _voice, _tts_key in _tts_options:
+                        _data_key = f"data_{_tts_key}"
+                        _col1, _col2 = st.columns([1, 3])
+                        if _col1.button(_label, key=f"btn_{_tts_key}", use_container_width=True):
+                            if not st.session_state.get(_data_key) and q_ans:
+                                with st.spinner("產生中..."):
+                                    try:
+                                        import openai as _oai_rv, base64 as _b64rv
+                                        _cl = _oai_rv.OpenAI(api_key=st.secrets.get("OPENAI_API_KEY",""))
+                                        _raw = _cl.audio.speech.create(
+                                            model=_model, voice=_voice, input=q_ans, speed=0.8
+                                        ).content
+                                        st.session_state[_data_key] = _b64rv.b64encode(_raw).decode()
+                                    except Exception as _e:
+                                        st.caption(f"🔇 失敗：{_e}")
+                        if st.session_state.get(_data_key):
+                            import base64 as _b64rv2
+                            _col2.audio(_b64rv2.b64decode(st.session_state[_data_key]), format="audio/mp3")
+                        else:
+                            _col2.caption("← 點左側按鈕產生音檔")
+                    st.caption("🤖 音檔由 OpenAI TTS 產生（tts-1 / tts-1-hd 模型，速度 0.8x）")
 
                 # 複習按鈕（只有已作答才顯示）
                 if has_answer:
