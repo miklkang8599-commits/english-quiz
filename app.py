@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.250 - 任務編號日期格式+TTS自動版)
+# 🧩 英文全能練習系統 (V2.9.251 - TTS速度0.6x版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.250
+# 📌 版本編號 (VERSION): 2.9.251
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.250"
+VERSION = "2.9.251"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3630,9 +3630,9 @@ if not st.session_state.quiz_loaded:
                 if q_type == 'reading' or '朗讀' in q_unit:
                     st.markdown("**🔊 朗讀音檔（點選產生並播放）**")
                     _tts_options = [
-                        ("🎙️ 高清女聲",   "tts-1-hd", "nova",  0.8,  f"rv_tts_{i}_{qid}_hd_nova",   False),
-                        ("🎙️ 高清男聲",   "tts-1-hd", "onyx",  0.8,  f"rv_tts_{i}_{qid}_hd_onyx",   False),
-                        ("🎙️ 標準自然聲", "tts-1",    "alloy", 0.75, f"rv_tts_{i}_{qid}_std_alloy",  True),
+                        ("🎙️ 高清女聲",   "tts-1-hd", "nova",  0.6,  f"rv_tts_{i}_{qid}_hd_nova",   False),
+                        ("🎙️ 高清男聲",   "tts-1-hd", "onyx",  0.6,  f"rv_tts_{i}_{qid}_hd_onyx",   False),
+                        ("🎙️ 標準自然聲", "tts-1",    "alloy", 0.6,  f"rv_tts_{i}_{qid}_std_alloy",  True),
                     ]
                     for _label, _model, _voice, _speed, _tts_key, _auto in _tts_options:
                         _data_key = f"data_{_tts_key}"
@@ -3673,7 +3673,7 @@ if not st.session_state.quiz_loaded:
                                 _col2.audio(_b64rv2.b64decode(st.session_state[_data_key]), format="audio/mp3")
                             else:
                                 _col2.caption("← 點左側按鈕產生音檔")
-                    st.caption("🤖 音檔由 OpenAI TTS 產生（tts-1 / tts-1-hd 模型）")
+                    st.caption("🤖 音檔由 OpenAI TTS 產生（tts-1 / tts-1-hd 模型，速度 0.6x）")
 
                 # 複習按鈕（只有已作答才顯示）
                 if has_answer:
