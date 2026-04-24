@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.249 - 三種TTS模型0.8倍版)
+# 🧩 英文全能練習系統 (V2.9.250 - 任務編號日期格式+TTS自動版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.249
+# 📌 版本編號 (VERSION): 2.9.250
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.249"
+VERSION = "2.9.250"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1303,9 +1303,14 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 else:
                     auto_desc = f"混合任務-{groups_label}-{teacher_name}-{publish_time}-{date_start}~{date_end}"
 
-                # 產生唯一流水編號：T + 時間戳記毫秒（確保唯一）
-                import time as _t
-                task_id = f"T{int(_t.time() * 1000) % 10000000:07d}"
+                # 產生唯一編號：T + 6碼台灣日期 + 3碼流水號（從001計）
+                _today_str = get_now().strftime("%y%m%d")  # 台灣時間 yymmdd
+                # 查詢今日已有幾個任務（從 df_a 計算）
+                import re as _re_tid
+                _today_prefix = f"T{_today_str}"
+                _existing = [str(r.get('任務編號','') or '') for _, r in df_a.iterrows() if not df_a.empty] if not df_a.empty else []
+                _today_cnt = sum(1 for _e in _existing if _e.startswith(_today_prefix))
+                task_id = f"T{_today_str}{_today_cnt+1:03d}"
                 # 任務名稱前面加編號
                 auto_desc = f"[{task_id}] {auto_desc}"
 
@@ -1459,8 +1464,11 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                         elif not final_comb_stus:
                             st.error("❌ 沒有指派學生")
                         else:
-                            import time as _t2
-                            comb_task_id = f"T{int(_t2.time() * 1000) % 10000000:07d}"
+                            _today_str2 = get_now().strftime("%y%m%d")
+                            _today_prefix2 = f"T{_today_str2}"
+                            _existing2 = [str(r.get('任務編號','') or '') for _, r in df_a.iterrows()] if not df_a.empty else []
+                            _today_cnt2 = sum(1 for _e in _existing2 if _e.startswith(_today_prefix2))
+                            comb_task_id = f"T{_today_str2}{_today_cnt2+1:03d}"
                             raw_name = comb_task_name.strip() or f"集合任務 {','.join(target_comb_groups)} {st.session_state.user_name} {get_now().strftime('%Y-%m-%d_%H:%M')} {comb_date_start}~{comb_date_end}"
                             auto_name = f"[{comb_task_id}] {raw_name}"
                             new_comb_task = pd.DataFrame([{
@@ -3618,35 +3626,54 @@ if not st.session_state.quiz_loaded:
                     unsafe_allow_html=True
                 )
 
-                # 朗讀題：三種 TTS 模型音檔（0.8 倍速，session_state 快取）
+                # 朗讀題：三種 TTS 模型音檔（session_state 快取）
                 if q_type == 'reading' or '朗讀' in q_unit:
-                    st.markdown("**🔊 朗讀音檔 0.8倍速（點選產生並播放）**")
+                    st.markdown("**🔊 朗讀音檔（點選產生並播放）**")
                     _tts_options = [
-                        ("🎙️ 高清女聲",  "tts-1-hd", "nova",  f"rv_tts_{i}_{qid}_hd_nova"),
-                        ("🎙️ 高清男聲",  "tts-1-hd", "onyx",  f"rv_tts_{i}_{qid}_hd_onyx"),
-                        ("🎙️ 標準自然聲","tts-1",    "alloy", f"rv_tts_{i}_{qid}_std_alloy"),
+                        ("🎙️ 高清女聲",   "tts-1-hd", "nova",  0.8,  f"rv_tts_{i}_{qid}_hd_nova",   False),
+                        ("🎙️ 高清男聲",   "tts-1-hd", "onyx",  0.8,  f"rv_tts_{i}_{qid}_hd_onyx",   False),
+                        ("🎙️ 標準自然聲", "tts-1",    "alloy", 0.75, f"rv_tts_{i}_{qid}_std_alloy",  True),
                     ]
-                    for _label, _model, _voice, _tts_key in _tts_options:
+                    for _label, _model, _voice, _speed, _tts_key, _auto in _tts_options:
                         _data_key = f"data_{_tts_key}"
-                        _col1, _col2 = st.columns([1, 3])
-                        if _col1.button(_label, key=f"btn_{_tts_key}", use_container_width=True):
+                        # 標準自然聲：自動產生，直接顯示播放器
+                        if _auto:
                             if not st.session_state.get(_data_key) and q_ans:
-                                with st.spinner("產生中..."):
+                                with st.spinner(f"{_label} 產生中..."):
                                     try:
                                         import openai as _oai_rv, base64 as _b64rv
                                         _cl = _oai_rv.OpenAI(api_key=st.secrets.get("OPENAI_API_KEY",""))
                                         _raw = _cl.audio.speech.create(
-                                            model=_model, voice=_voice, input=q_ans, speed=0.8
+                                            model=_model, voice=_voice, input=q_ans, speed=_speed
                                         ).content
                                         st.session_state[_data_key] = _b64rv.b64encode(_raw).decode()
                                     except Exception as _e:
-                                        st.caption(f"🔇 失敗：{_e}")
-                        if st.session_state.get(_data_key):
-                            import base64 as _b64rv2
-                            _col2.audio(_b64rv2.b64decode(st.session_state[_data_key]), format="audio/mp3")
+                                        st.caption(f"🔇 {_label} 失敗：{_e}")
+                            if st.session_state.get(_data_key):
+                                import base64 as _b64rv2
+                                st.caption(f"{_label}（{_model}，{_speed}x）")
+                                st.audio(_b64rv2.b64decode(st.session_state[_data_key]), format="audio/mp3")
                         else:
-                            _col2.caption("← 點左側按鈕產生音檔")
-                    st.caption("🤖 音檔由 OpenAI TTS 產生（tts-1 / tts-1-hd 模型，速度 0.8x）")
+                            # 其他兩種：按鈕觸發
+                            _col1, _col2 = st.columns([1, 3])
+                            if _col1.button(_label, key=f"btn_{_tts_key}", use_container_width=True):
+                                if not st.session_state.get(_data_key) and q_ans:
+                                    with st.spinner("產生中..."):
+                                        try:
+                                            import openai as _oai_rv, base64 as _b64rv
+                                            _cl = _oai_rv.OpenAI(api_key=st.secrets.get("OPENAI_API_KEY",""))
+                                            _raw = _cl.audio.speech.create(
+                                                model=_model, voice=_voice, input=q_ans, speed=_speed
+                                            ).content
+                                            st.session_state[_data_key] = _b64rv.b64encode(_raw).decode()
+                                        except Exception as _e:
+                                            _col2.caption(f"🔇 失敗：{_e}")
+                            if st.session_state.get(_data_key):
+                                import base64 as _b64rv2
+                                _col2.audio(_b64rv2.b64decode(st.session_state[_data_key]), format="audio/mp3")
+                            else:
+                                _col2.caption("← 點左側按鈕產生音檔")
+                    st.caption("🤖 音檔由 OpenAI TTS 產生（tts-1 / tts-1-hd 模型）")
 
                 # 複習按鈕（只有已作答才顯示）
                 if has_answer:
