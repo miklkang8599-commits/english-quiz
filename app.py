@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.251 - TTS速度0.6x版)
+# 🧩 英文全能練習系統 (V2.9.252 - 任務名稱排序版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.251
+# 📌 版本編號 (VERSION): 2.9.252
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.251"
+VERSION = "2.9.252"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -121,6 +121,14 @@ ASSIGN_COLS = {
     "status": "狀態", "task_type": "類型", "task_id": "任務編號",
     "vocab_cfg": "單字設定"
 }
+
+
+def _sort_task_names(names):
+    """依序號後的名稱排序任務清單（移除 [Txxxxxxxx] 前綴後排列）"""
+    import re as _re_sort
+    def _sort_key(n):
+        return _re_sort.sub(r'^\[T\d+\]\s*', '', str(n)).strip().lower()
+    return sorted(names, key=_sort_key)
 
 def _to_cn(df: pd.DataFrame, col_map: dict) -> pd.DataFrame:
     """把 Supabase 英文欄位名轉回程式用的中文欄位名"""
@@ -1361,7 +1369,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
         if df_a_active.empty:
             st.info("目前尚無任務可選。")
         else:
-            task_names_all = df_a_active['任務名稱'].tolist() if '任務名稱' in df_a_active.columns else []
+            task_names_all = _sort_task_names(df_a_active['任務名稱'].tolist()) if '任務名稱' in df_a_active.columns else []
 
             # ── 步驟1：選擇來源任務 ──────────────────────────────────────
             st.markdown("**① 選擇來源任務（可複選）**")
@@ -1506,7 +1514,11 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
         df_a2 = df_a[df_a.get('狀態', pd.Series(dtype=str)).fillna('') != '已刪除'].copy() if not df_a.empty else pd.DataFrame()
         # 最新任務排在最前
         if not df_a2.empty and '建立時間' in df_a2.columns:
-            df_a2 = df_a2.sort_values('建立時間', ascending=False).reset_index(drop=True)
+            df_a2 = df_a2.sort_values(
+                by='任務名稱',
+                key=lambda col: col.apply(lambda n: re.sub(r'^\[T\d+\]\s*', '', str(n)).strip().lower()),
+                ascending=True
+            ).reset_index(drop=True)
         # 只保留新格式任務（包含底線日期時間，例如 2026-04-15_10:30）
         if not df_a2.empty and '任務名稱' in df_a2.columns:
             df_a2 = df_a2[df_a2['任務名稱'].str.contains(r'\d{4}-\d{2}-\d{2}_\d{2}:\d{2}', regex=True, na=False)]
@@ -1820,7 +1832,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
 
             # 任務篩選獨立一列（避免截斷）
             df_a_t2     = df_a[df_a.get("狀態", pd.Series(dtype=str)).fillna("") != "已刪除"].copy() if not df_a.empty else pd.DataFrame()
-            task_opts   = ["（不限）"] + (df_a_t2["任務名稱"].tolist() if not df_a_t2.empty and "任務名稱" in df_a_t2.columns else [])
+            task_opts   = ["（不限）"] + (_sort_task_names(df_a_t2["任務名稱"].tolist()) if not df_a_t2.empty and "任務名稱" in df_a_t2.columns else [])
             sel_task_t2 = st.selectbox("📋 任務篩選（選填）", task_opts, key="t2_task")
 
             # 篩選條件改變時重置查詢
@@ -2123,7 +2135,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 df_a_rpt = df_a_rpt[df_a_rpt["任務名稱"].apply(
                     lambda n: bool(_rer.search(r"\[T\d+\]", str(n)))
                 )]
-            task_opts_rpt = df_a_rpt["任務名稱"].tolist() if not df_a_rpt.empty else []
+            task_opts_rpt = _sort_task_names(df_a_rpt["任務名稱"].tolist()) if not df_a_rpt.empty else []
             sel_tasks_rpt = st.multiselect(
                 "📋 任務（空白=全部任務分開列出）", task_opts_rpt, default=[], key="rpt_tasks"
             )
@@ -2421,7 +2433,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     df_a_rev = df_a_rev[df_a_rev['對象班級'].apply(
                         lambda v: rev_group in [g.strip() for g in str(v).split(',')]
                     )]
-                task_names = ["（不限）"] + df_a_rev['任務名稱'].tolist()
+                task_names = ["（不限）"] + _sort_task_names(df_a_rev['任務名稱'].tolist())
 
                 sel_task = st.selectbox("📋 依任務篩選（選填）", task_names, key=f"rev_task_{tab_key}")
 
@@ -2932,6 +2944,9 @@ if not st.session_state.quiz_loaded:
                 continue
             my_tasks.append(arow)
 
+    # 依序號後的名稱排序（移除 [Txxxxxxxx] 前綴）
+    my_tasks.sort(key=lambda r: re.sub(r'^\[T\d+\]\s*', '', str(r.get('任務名稱',''))).strip().lower())
+
     if my_tasks:
         st.markdown("<h2 style='margin-bottom:0'>📋 我的任務</h2>", unsafe_allow_html=True)
         for _task_idx, arow in enumerate(my_tasks):
@@ -3300,7 +3315,7 @@ if not st.session_state.quiz_loaded:
                 df_a_rv = df_a_rv[df_a_rv['對象班級'].apply(
                     lambda v: user_group in [g.strip() for g in str(v).split(',')]
                 )]
-            task_opts   = ["（請選擇任務）"] + df_a_rv['任務名稱'].tolist()
+            task_opts   = ["（請選擇任務）"] + _sort_task_names(df_a_rv['任務名稱'].tolist())
             sel_rv_task = st.selectbox("選擇任務", task_opts, key="rv_task")
             if sel_rv_task != "（請選擇任務）":
                 task_row = df_a_rv[df_a_rv['任務名稱'] == sel_rv_task].iloc[0]
