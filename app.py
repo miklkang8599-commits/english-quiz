@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.252 - 任務名稱排序版)
+# 🧩 英文全能練習系統 (V2.9.253 - 拼單字比對修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.252
+# 📌 版本編號 (VERSION): 2.9.253
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.252"
+VERSION = "2.9.253"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -129,6 +129,12 @@ def _sort_task_names(names):
     def _sort_key(n):
         return _re_sort.sub(r'^\[T\d+\]\s*', '', str(n)).strip().lower()
     return sorted(names, key=_sort_key)
+
+
+def _clean_vocab(w):
+    """去除空格、標點、統一大寫，只保留字母，用於拼單字比對"""
+    import re as _re_v
+    return _re_v.sub(r'[^A-Za-z]', '', str(w)).upper()
 
 def _to_cn(df: pd.DataFrame, col_map: dict) -> pd.DataFrame:
     """把 Supabase 英文欄位名轉回程式用的中文欄位名"""
@@ -3962,9 +3968,10 @@ if st.session_state.quiz_loaded:
             for _k in [k for k in st.session_state if k.startswith(f"vocab_pool_{st.session_state.q_idx}_")]:
                 if _k != pool_key:
                     del st.session_state[_k]
-            letters = list(word.upper())
+            _clean_word = _clean_vocab(word)
+            letters = list(_clean_word)
             _random.shuffle(letters)
-            candidates = [c for c in _string.ascii_uppercase if c not in word.upper()]
+            candidates = [c for c in _string.ascii_uppercase if c not in _clean_word]
             extra = _random.sample(candidates, min(extra_letters, len(candidates)))
             all_letters = letters + extra
             _random.shuffle(all_letters)
@@ -4025,7 +4032,7 @@ if st.session_state.quiz_loaded:
                             st.rerun()
 
                 if st.button("✅ 檢查答案", type="primary", use_container_width=True, key=f"vb_check_{st.session_state.q_idx}"):
-                    is_ok = "".join(current_ans).upper() == word.upper()
+                    is_ok = _clean_vocab("".join(current_ans)) == _clean_vocab(word)
                     st.session_state.update({"current_res": "✅ 正確！" if is_ok else f"❌ 錯誤！正確答案：{word}", "show_analysis": True})
                     append_to_sheet("logs", pd.DataFrame([{"時間": get_now().strftime("%Y-%m-%d %H:%M:%S"), "姓名": st.session_state.user_name, "分組": st.session_state.group_id, "題目ID": q.get("題目ID","N/A"), "結果": "✅" if is_ok else "❌", "學生答案": "".join(current_ans), "任務名稱": st.session_state.get("current_task_name","")}]))
                     st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
@@ -4047,9 +4054,9 @@ if st.session_state.quiz_loaded:
                             st.session_state[f"vocab_kb_{st.session_state.q_idx}"] = st.session_state.get(f"vocab_kb_{st.session_state.q_idx}", "") + k.upper()
                             st.rerun()
                 kb_current = st.session_state.get(f"vocab_kb_{st.session_state.q_idx}", "")
-                if len(kb_current) >= len(word):
+                if len(kb_current) >= len(_clean_vocab(word)):
                     if st.button("✅ 檢查答案", type="primary", use_container_width=True, key=f"kb_check_{st.session_state.q_idx}"):
-                        is_ok = kb_current.upper() == word.upper()
+                        is_ok = _clean_vocab(kb_current) == _clean_vocab(word)
                         st.session_state.update({"current_res": "✅ 正確！" if is_ok else f"❌ 錯誤！正確答案：{word}", "show_analysis": True})
                         append_to_sheet("logs", pd.DataFrame([{"時間": get_now().strftime("%Y-%m-%d %H:%M:%S"), "姓名": st.session_state.user_name, "分組": st.session_state.group_id, "題目ID": q.get("題目ID","N/A"), "結果": "✅" if is_ok else "❌", "學生答案": kb_current, "任務名稱": st.session_state.get("current_task_name","")}]))
                         st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
