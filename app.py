@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.261 - 聽力復習音檔版)
+# 🧩 英文全能練習系統 (V2.9.262 - 聽力復習題庫修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.261
+# 📌 版本編號 (VERSION): 2.9.262
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.261"
+VERSION = "2.9.262"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3613,6 +3613,14 @@ if not st.session_state.quiz_loaded:
                 if not mrm.empty:
                     mrm['_type'] = 'reading_mcq'
                     all_items.append(mrm)
+            # 聽力音標
+            if not df_lp.empty:
+                dlp_rv = df_lp.copy()
+                dlp_rv['題目ID'] = dlp_rv.apply(_get_lp_qid, axis=1)
+                dlp_rv['_type']  = 'listen_phon'
+                mlp = dlp_rv[dlp_rv['題目ID'].isin(rv_q_ids)].copy()
+                if not mlp.empty:
+                    all_items.append(mlp)
 
             # 若題庫找不到，改用 logs 裡的題目ID直接建立簡易題目列表
             if not all_items and not my_logs.empty:
@@ -3679,6 +3687,16 @@ if not st.session_state.quiz_loaded:
                     drm['題目ID'] = drm.apply(lambda r: f"RM_{_get_qid(r)}", axis=1)
                     drm['_type'] = 'reading_mcq'
                     all_items.append(drm)
+            # 聽力音標（依範圍）
+            if not df_lp.empty:
+                dlp_range = df_lp.copy()
+                dlp_range['題目ID'] = dlp_range.apply(_get_lp_qid, axis=1)
+                dlp_range['_type']  = 'listen_phon'
+                # 依版本/年度/冊/課篩選（聽力音標沒有年度/冊/課欄位，只用版本）
+                if rv_v:
+                    dlp_range = dlp_range[dlp_range['版本'] == rv_v]
+                if not dlp_range.empty:
+                    all_items.append(dlp_range)
 
         if not all_items:
             st.error("❌ 找不到題目，請重新選擇")
