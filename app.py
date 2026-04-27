@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.265 - 效能深度優化版)
+# 🧩 英文全能練習系統 (V2.9.266 - 排行榜手動更新+計算鍵版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.265
+# 📌 版本編號 (VERSION): 2.9.266
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.265"
+VERSION = "2.9.266"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -354,21 +354,19 @@ with st.sidebar:
     now_sb = get_now()
     today  = now_sb.date()
 
-    # 6個選項用按鈕排成兩列，單選
+    # 時段選擇（不觸發 rerun，存入 session_state）
     _periods = ["今日", "昨天", "前天", "三天", "七天", "30天"]
     if 'sb_period' not in st.session_state:
         st.session_state['sb_period'] = "今日"
-    _pb = st.columns(3)
+    _pb_cols = st.columns(3)
     for _i, _p in enumerate(_periods):
-        _col = _pb[_i % 3]
-        _active = st.session_state['sb_period'] == _p
-        if _col.button(_p, key=f"sb_btn_{_p}",
-                       type="primary" if _active else "secondary",
-                       use_container_width=True):
+        if _pb_cols[_i % 3].button(_p, key=f"sb_btn_{_p}",
+            type="primary" if st.session_state['sb_period'] == _p else "secondary",
+            use_container_width=True):
             st.session_state['sb_period'] = _p
-            st.rerun()
-    period = st.session_state['sb_period']
+            st.session_state['_lb_dirty'] = True  # 標記需要更新，不立即 rerun
 
+    period = st.session_state['sb_period']
     _d = {
         "今日": (today, today),
         "昨天": (today - timedelta(days=1), today - timedelta(days=1)),
@@ -378,55 +376,55 @@ with st.sidebar:
         "30天": (today - timedelta(days=29), today),
     }
     date_from, date_to = _d.get(period, (today, today))
-    date_from = date_from.strftime("%Y-%m-%d")
-    date_to   = date_to.strftime("%Y-%m-%d")
-    st.caption(f"📅 {period}：{date_from} ～ {date_to}")
+    date_from_str = date_from.strftime("%Y-%m-%d")
+    date_to_str   = date_to.strftime("%Y-%m-%d")
+    st.caption(f"📅 {period}：{date_from_str} ～ {date_to_str}")
 
-    try:
-        target_group = st.session_state.group_id if not is_admin(st.session_state.group_id) else None
+    # 更新按鈕 + 自動計算
+    _lb_cache_key = f"_lb_{period}_{st.session_state.group_id}"
+    _need_update  = st.session_state.get('_lb_dirty', False) or _lb_cache_key not in st.session_state
 
-        # 用快取的 logs（30秒更新一次，不影響效能）
-        df_lb_all = _load_logs_cached()
-
-        if not df_lb_all.empty:
-            df_lb = df_lb_all.copy()
-            if target_group:
-                df_lb = df_lb[df_lb["分組"] == target_group]
-
-            # 字串比對過濾日期
-            df_lb = df_lb[
-                (df_lb["時間"].str[:10] >= date_from) &
-                (df_lb["時間"].str[:10] <= date_to)
-            ]
-
-            # 排除講解紀錄
-            df_lb_ans = df_lb[~df_lb["結果"].str.contains("📖", na=False)]
-
-            if target_group:
-                members = sorted(df_s[df_s["分組"] == target_group]["姓名"].tolist())
+    if st.button("🔄 更新排行榜", use_container_width=True, key="lb_refresh") or _need_update:
+        try:
+            target_group = st.session_state.group_id if not is_admin(st.session_state.group_id) else None
+            df_lb_all = _load_logs_cached()
+            if not df_lb_all.empty:
+                df_lb = df_lb_all.copy()
+                if target_group:
+                    df_lb = df_lb[df_lb["分組"] == target_group]
+                df_lb = df_lb[
+                    (df_lb["時間"].str[:10] >= date_from_str) &
+                    (df_lb["時間"].str[:10] <= date_to_str)
+                ]
+                df_lb_ans = df_lb[~df_lb["結果"].str.contains("📖", na=False)]
+                if target_group:
+                    members = sorted(df_s[df_s["分組"] == target_group]["姓名"].tolist())
+                else:
+                    members = sorted(df_s[~df_s["分組"].isin(["ADMIN","TEACHER"])]["姓名"].tolist())
+                member_stats = []
+                for m in members:
+                    m_logs = df_lb_ans[df_lb_ans["姓名"] == m]
+                    member_stats.append((m, len(m_logs[m_logs["結果"] == "✅"]), len(m_logs)))
+                member_stats.sort(key=lambda x: x[1], reverse=True)
+                st.session_state[_lb_cache_key] = member_stats
+                st.session_state['_lb_dirty'] = False
             else:
-                members = sorted(df_s[~df_s["分組"].isin(["ADMIN","TEACHER"])]["姓名"].tolist())
+                st.session_state[_lb_cache_key] = []
+        except Exception as e:
+            st.caption(f"排行榜載入失敗：{e}")
 
-            # 統計：該時間段內的答對數 / 總答題數
-            member_stats = []
-            for m in members:
-                m_logs    = df_lb_ans[df_lb_ans["姓名"] == m]
-                total_ans = len(m_logs)
-                correct   = len(m_logs[m_logs["結果"] == "✅"])
-                member_stats.append((m, correct, total_ans))
-            member_stats.sort(key=lambda x: x[1], reverse=True)
-
-            for rank, (m, correct, total_ans) in enumerate(member_stats, 1):
-                medal = "🥇" if rank == 1 else ("🥈" if rank == 2 else ("🥉" if rank == 3 else "👤"))
-                color = "#c8a400" if rank == 1 else ("#9e9e9e" if rank == 2 else ("#cd7f32" if rank == 3 else "#333"))
-                st.markdown(
-                    f'<div style="font-size:12px;color:{color};">{medal} {m}: {correct} ({total_ans} 題)</div>',
-                    unsafe_allow_html=True
-                )
-        else:
-            st.caption("暫無資料")
-    except Exception as e:
-        st.caption(f"排行榜載入失敗：{e}")
+    # 顯示快取結果（不重新計算）
+    member_stats = st.session_state.get(_lb_cache_key, [])
+    if member_stats:
+        for rank, (m, correct, total_ans) in enumerate(member_stats, 1):
+            medal = "🥇" if rank == 1 else ("🥈" if rank == 2 else ("🥉" if rank == 3 else "👤"))
+            color = "#c8a400" if rank == 1 else ("#9e9e9e" if rank == 2 else ("#cd7f32" if rank == 3 else "#333"))
+            st.markdown(
+                f'<div style="font-size:12px;color:{color};">{medal} {m}: {correct} ({total_ans} 題)</div>',
+                unsafe_allow_html=True
+            )
+    else:
+        st.caption("暫無資料，請按更新")
     st.caption(f"Ver {VERSION}")
 
 # 共用：產生含學生名字的班級標籤
@@ -1009,7 +1007,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     df_t1_scope = df_t1_scope[df_t1_scope["_num"] >= int(t1_start_sent)].sort_values("_num").copy()
                 if t1_q_count > 0:
                     df_t1_scope = df_t1_scope.head(int(t1_q_count)).copy()
-                st.info(f"📚 範圍總題數：**{total_in_scope} 題**　→　篩選後：**{len(df_t1_scope)} 題**")
+                st.caption(f"📚 範圍 {total_in_scope} 題 → 篩選後 {len(df_t1_scope)} 題")
 
                 df_t1_final = df_t1_scope.copy()
                 with st.expander(f"📋 預覽重組題清單（{len(df_t1_final)} 題）", expanded=False):
@@ -1071,7 +1069,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     df_mcq_scope = df_mcq_scope.head(int(mc_count)).copy()
 
                 df_mcq_final = df_mcq_scope.copy()
-                st.info(f"📚 範圍總題數：**{mc_total_before} 題**　→　篩選後：**{len(df_mcq_final)} 題**")
+                st.caption(f"📚 範圍 {mc_total_before} 題 → 篩選後 {len(df_mcq_final)} 題")
                 with st.expander(f"📋 預覽單選題清單（{len(df_mcq_final)} 題）", expanded=False):
                     prev = [c for c in ["句編號", "單選題目", "題目ID"] if c in df_mcq_final.columns]
                     st.dataframe(df_mcq_final[prev], use_container_width=True)
@@ -1149,7 +1147,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     df_r_final = df_r_final[df_r_final['_num'] >= int(r_start_sent)].sort_values('_num').copy()
                 if r_q_count > 0:
                     df_r_final = df_r_final.head(int(r_q_count)).copy()
-                st.info(f"📚 範圍總題數：**{r_total} 題**　→　篩選後：**{len(df_r_final)} 題**")
+                st.caption(f"📚 範圍 {r_total} 題 → 篩選後 {len(df_r_final)} 題")
 
                 preview_r_cols = [c for c in ['句編號', '朗讀句子', '英文句子', '題目ID'] if c in df_r_final.columns]
                 with st.expander(f"📋 預覽朗讀清單（{len(df_r_final)} 題）", expanded=False):
@@ -1218,7 +1216,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 vt_timer = vm2.number_input("限時（秒，0=不限）", 0, 300, 30, key="vt_timer")
                 vt_extra = vm3.number_input("干擾字母數", 0, 10, 3, key="vt_extra")
 
-                st.info(f"📚 範圍總題數：**{v_total} 題**　→　篩選後：**{len(df_v_scope_t1)} 題**")
+                st.caption(f"📚 範圍 {v_total} 題 → 篩選後 {len(df_v_scope_t1)} 題")
                 df_v_final = df_v_scope_t1.copy()
 
                 preview_v_cols = [c for c in ['句編號', '中文意思', '英文單字', '題目ID'] if c in df_v_final.columns]
@@ -1252,7 +1250,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             lp_count = lpc_[3].number_input("題數", min_value=0, max_value=max(lp_total, 1), value=lp_total, key="lpt_count")
             df_lp_final = lp_src3.head(int(lp_count)).copy() if lp_count > 0 else lp_src3.copy()
             df_lp_final = df_lp_final.sample(frac=1).reset_index(drop=True)  # 隨機排列（無固定種子）
-            st.info(f"📚 範圍總題數：**{lp_total} 題**　→　篩選後：**{len(df_lp_final)} 題**")
+            st.caption(f"📚 範圍 {lp_total} 題 → 篩選後 {len(df_lp_final)} 題")
         else:
             df_lp_final = pd.DataFrame()
         df_rm_final = pd.DataFrame()
@@ -1307,7 +1305,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     df_rm_scope = df_rm_scope.head(int(rm_count)).copy()
 
                 df_rm_final = df_rm_scope.copy()
-                st.info(f"📚 範圍總題數：**{rm_total} 題**　→　篩選後：**{len(df_rm_final)} 題**")
+                st.caption(f"📚 範圍 {rm_total} 題 → 篩選後 {len(df_rm_final)} 題")
 
                 preview_rm_cols = [c for c in ['句編號', '題目', '選項A', '選項B', '選項C', '選項D', '正確選項列出'] if c in df_rm_final.columns]
                 with st.expander(f"📋 預覽閱讀單句清單（{len(df_rm_final)} 題）", expanded=False):
@@ -1315,20 +1313,33 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
 
         st.divider()
 
-        # 合計摘要表
-        _summary_cols = st.columns(6)
-        _summary_data = [
-            ("✏️ 重組",   len(df_t1_final)),
-            ("🔵 單選",   len(df_mcq_final)),
-            ("🎤 朗讀",   len(df_r_final)),
-            ("🔤 拼單字", len(df_v_final)),
-            ("📖 閱讀",   len(df_rm_final)),
-            ("🎧 聽力",   len(df_lp_final)),
-        ]
-        for _ci, (_lbl, _cnt) in enumerate(_summary_data):
-            _summary_cols[_ci].metric(_lbl, f"{_cnt} 題")
-        total_q = sum(c for _, c in _summary_data)
-        st.info(f"📊 本次任務合計：**{total_q} 題**　（重組 {len(df_t1_final)} ＋ 單選 {len(df_mcq_final)} ＋ 朗讀 {len(df_r_final)} ＋ 拼單字 {len(df_v_final)} ＋ 閱讀單句 {len(df_rm_final)} ＋ 聽力音標 {len(df_lp_final)}）")
+        # 合計摘要表（按計算鍵後才更新）
+        st.divider()
+        _calc_col1, _calc_col2 = st.columns([3, 1])
+        _calc_col1.markdown("**📊 確認題數後再發布**")
+        _do_calc = _calc_col2.button("🔢 計算題數", use_container_width=True, key="t1_calc")
+
+        if _do_calc:
+            st.session_state['_t1_summary'] = {
+                '重組': len(df_t1_final),
+                '單選': len(df_mcq_final),
+                '朗讀': len(df_r_final),
+                '拼單字': len(df_v_final),
+                '閱讀': len(df_rm_final),
+                '聽力': len(df_lp_final),
+            }
+
+        _summary = st.session_state.get('_t1_summary')
+        if _summary:
+            _summary_cols = st.columns(6)
+            _icons = ["✏️ 重組","🔵 單選","🎤 朗讀","🔤 拼單字","📖 閱讀","🎧 聽力"]
+            _keys  = ["重組","單選","朗讀","拼單字","閱讀","聽力"]
+            for _ci, (_lbl, _k) in enumerate(zip(_icons, _keys)):
+                _summary_cols[_ci].metric(_lbl, f"{_summary.get(_k, 0)} 題")
+            total_q = sum(_summary.values())
+            st.info(f"📊 本次任務合計：**{total_q} 題**　（重組 {_summary['重組']} ＋ 單選 {_summary['單選']} ＋ 朗讀 {_summary['朗讀']} ＋ 拼單字 {_summary['拼單字']} ＋ 閱讀單句 {_summary['閱讀']} ＋ 聽力音標 {_summary['聽力']}）")
+        else:
+            st.caption("← 點「計算題數」確認出題範圍")
 
         if st.button("🚀 確認發布任務", use_container_width=True, type="primary"):
             if not target_groups:
@@ -1474,7 +1485,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                         'rmt_v', 'rmt_u', 'rmt_y', 'rmt_b', 'rmt_l', 'rmt_start', 'rmt_count', 'rmt_grammar', 'rmt_diff',
                         'lpt_v', 'lpt_u', 'lpt_g', 'lpt_count',
                         't1_group', 't1_mode', 't1_stu', 't1_start', 't1_end',
-                        't1_ref_stu', 't1_ref_logic', 't1_ref_n',
+                        't1_ref_stu', 't1_ref_logic', 't1_ref_n', '_t1_summary',
                     ]
                     for _k in _clear_keys:
                         st.session_state.pop(_k, None)
