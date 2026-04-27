@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.263 - 效能優化+聽力預載版)
+# 🧩 英文全能練習系統 (V2.9.264 - 任務列表懶載入版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.263
+# 📌 版本編號 (VERSION): 2.9.264
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.263"
+VERSION = "2.9.264"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1705,43 +1705,42 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                         task_group   = row.get('對象班級', row.get('對象', ''))
                         task_start   = row.get('開始日期', '')
                         task_end     = row.get('結束日期', '')
-                        task_stu_str = str(row.get('指派學生', ''))
-                        task_q_ids   = str(row.get('題目ID清單', ''))
                         task_status  = str(row.get('狀態', '進行中'))
-        
-                        assigned_stus = [s.strip() for s in task_stu_str.split(',') if s.strip()] if task_stu_str else []
-                        q_ids_set     = set([q.strip() for q in task_q_ids.split(',') if q.strip()]) if task_q_ids else set()
-                        task_q_count  = len(q_ids_set) if q_ids_set else max(int(float(str(row.get('題目數', 0)) or 0)), 0)
-                        assign_count  = len(assigned_stus)
+                        date_info    = f"{task_start} ～ {task_end}" if task_start else ""
+                        done_icon    = "⚫" if task_status == '已結束' else "🔵"
 
-                        # 取任務編號（用來篩選 logs）
-                        _tid = str(row.get('任務編號', '') or '')
-                        if not _tid:
-                            import re as _re_tid_t1
-                            _m = _re_tid_t1.search(r'\[T(\d+)\]', task_name)
-                            if _m: _tid = 'T' + _m.group(1)
+                        with st.expander(f"{done_icon} {task_name}　{task_group}　{date_info}"):
+                            # ── 展開後才計算 ─────────────────────────────────
+                            task_stu_str = str(row.get('指派學生', ''))
+                            task_q_ids   = str(row.get('題目ID清單', ''))
+                            assigned_stus = [s.strip() for s in task_stu_str.split(',') if s.strip()] if task_stu_str else []
+                            q_ids_set     = set([q.strip() for q in task_q_ids.split(',') if q.strip()]) if task_q_ids else set()
+                            task_q_count  = len(q_ids_set) if q_ids_set else max(int(float(str(row.get('題目數', 0)) or 0)), 0)
+                            assign_count  = len(assigned_stus)
 
-                        # 依任務編號篩選 df_l
-                        if _tid and not df_l.empty and '任務名稱' in df_l.columns:
-                            df_l_task = df_l[df_l['任務名稱'].fillna('') == _tid]
-                            if df_l_task.empty:
-                                df_l_task = df_l  # 舊資料無任務編號，回退全部
-                        else:
-                            df_l_task = df_l
+                            # 取任務編號（用來篩選 logs）
+                            _tid = str(row.get('任務編號', '') or '')
+                            if not _tid:
+                                _m = re.search(r'\[T(\d+)\]', task_name)
+                                if _m: _tid = 'T' + _m.group(1)
 
-                        # 計算完成人數：每位指派學生都答過所有題目ID（依任務篩選）
-                        completed = 0
-                        if assigned_stus and q_ids_set and not df_l_task.empty and '題目ID' in df_l_task.columns:
-                            for stu in assigned_stus:
-                                stu_done = set(df_l_task[(df_l_task['姓名'] == stu) & (~df_l_task['結果'].str.contains('📖', na=False))]['題目ID'].tolist())
-                                if q_ids_set.issubset(stu_done):
-                                    completed += 1
-        
-                        all_done  = (completed == assign_count and assign_count > 0)
-                        done_icon = "🟢" if all_done else "🔴"
-                        date_info = f"{task_start} ～ {task_end}" if task_start else ""
-        
-                        with st.expander(f"{done_icon} {task_name}　{task_group}　{date_info}　✅{completed}/{assign_count}人"):
+                            # 依任務編號篩選 df_l
+                            if _tid and not df_l.empty and '任務名稱' in df_l.columns:
+                                df_l_task = df_l[df_l['任務名稱'].fillna('') == _tid]
+                                if df_l_task.empty:
+                                    df_l_task = df_l
+                            else:
+                                df_l_task = df_l
+
+                            # 計算完成人數
+                            completed = 0
+                            if assigned_stus and q_ids_set and not df_l_task.empty and '題目ID' in df_l_task.columns:
+                                for stu in assigned_stus:
+                                    stu_done = set(df_l_task[(df_l_task['姓名'] == stu) & (~df_l_task['結果'].str.contains('📖', na=False))]['題目ID'].tolist())
+                                    if q_ids_set.issubset(stu_done):
+                                        completed += 1
+
+                            all_done = (completed == assign_count and assign_count > 0)
                             # 任務說明
                             admin_desc = str(row.get('任務說明', '')).strip()
                             if admin_desc and admin_desc != 'nan':
