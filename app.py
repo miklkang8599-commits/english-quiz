@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.262 - 聽力復習題庫修復版)
+# 🧩 英文全能練習系統 (V2.9.263 - 效能優化+聽力預載版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.262
+# 📌 版本編號 (VERSION): 2.9.263
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.262"
+VERSION = "2.9.263"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -208,6 +208,7 @@ def _to_en_assign(row: dict) -> dict:
 # ==============================================================================
 # 動態資料讀取（Supabase）- 移除快取，每次 rerun 直接讀最新
 # ==============================================================================
+@st.cache_data(ttl=30)
 @st.cache_data(ttl=30)
 def load_dynamic_data():
     """assignments 30秒快取，logs 走獨立快取函式"""
@@ -3369,6 +3370,28 @@ if not st.session_state.quiz_loaded:
                                     import random as _rand_lp_final
                                     _rand_lp_final.shuffle(lp_recs2)
                                     records = lp_recs2
+                                    # 預載第一題音檔
+                                    if records:
+                                        _f1 = records[min(_start_idx_fwd, len(records)-1)]
+                                        _f1_num = str(_f1.get('總編號','')).strip()
+                                        _f1_sym = str(_f1.get('KK符號','')).strip()
+                                        _f1_qid = _f1.get('題目ID','')
+                                        try:
+                                            _f1_fkey = f"{int(_f1_num):02d}-{_f1_sym}".lower()
+                                        except:
+                                            _f1_fkey = f"{_f1_num}-{_f1_sym}".lower()
+                                        _f1_cache = f"lp_audio_{min(_start_idx_fwd, len(records)-1)}_{_f1_qid}"
+                                        if not st.session_state.get(_f1_cache):
+                                            try:
+                                                import requests as _req_f1, base64 as _b64_f1
+                                                _f1_idx = load_audio_file_index()
+                                                _f1_fid = _f1_idx.get(_f1_fkey, "")
+                                                if _f1_fid:
+                                                    _f1_r = _req_f1.get(get_audio_url(_f1_fid), timeout=8)
+                                                    if _f1_r.status_code == 200:
+                                                        st.session_state[_f1_cache] = _b64_f1.b64encode(_f1_r.content).decode()
+                                            except:
+                                                pass
                                     for _k in [k for k in list(st.session_state.keys()) if k.startswith("vocab_pool_") or k.startswith("vocab_ans_") or k.startswith("vocab_used_")]:
                                         del st.session_state[_k]
                                     st.session_state.update({
@@ -4002,17 +4025,22 @@ if st.session_state.quiz_loaded:
             except:
                 pass
         if file_id:
-            audio_url = get_audio_url(file_id)
             st.markdown("**🎧 請聆聽音檔，選出正確的 KK 音標：**")
-            try:
-                import requests as _req_lp
-                _r = _req_lp.get(audio_url, timeout=8)
-                if _r.status_code == 200:
-                    st.audio(_r.content, format="audio/mp3")
-                else:
-                    st.audio(audio_url)
-            except:
-                st.audio(audio_url)
+            # 優先用預載快取（下一題按鈕預先載入）
+            _lp_cache_key = f"lp_audio_{st.session_state.q_idx}_{lp_qid}"
+            if not st.session_state.get(_lp_cache_key):
+                try:
+                    import requests as _req_lp, base64 as _b64_lp
+                    _r = _req_lp.get(get_audio_url(file_id), timeout=8)
+                    if _r.status_code == 200:
+                        st.session_state[_lp_cache_key] = _b64_lp.b64encode(_r.content).decode()
+                except:
+                    pass
+            if st.session_state.get(_lp_cache_key):
+                import base64 as _b64_lp2
+                st.audio(_b64_lp2.b64decode(st.session_state[_lp_cache_key]), format="audio/mp3")
+            else:
+                st.audio(get_audio_url(file_id))
         else:
             st.warning(f"⚠️ 找不到音檔：{lp_num}")
 
@@ -4576,6 +4604,29 @@ if st.session_state.quiz_loaded:
     nxt_label = "下一題 ➡️" if st.session_state.q_idx + 1 < len(st.session_state.quiz_list) else "🏁 結束練習"
     if c_nav[1].button(nxt_label, type="primary", use_container_width=True):
         if st.session_state.q_idx + 1 < len(st.session_state.quiz_list):
+            next_idx = st.session_state.q_idx + 1
+            # 預先載入下一題聽力音檔
+            next_q = st.session_state.quiz_list[next_idx]
+            if next_q.get('_type') == 'listen_phon':
+                _nx_num = str(next_q.get('總編號', '')).strip()
+                _nx_sym = str(next_q.get('KK符號', '')).strip()
+                _nx_qid = next_q.get('題目ID', '')
+                try:
+                    _nx_key = f"{int(_nx_num):02d}-{_nx_sym}".lower()
+                except:
+                    _nx_key = f"{_nx_num}-{_nx_sym}".lower()
+                _nx_data_key = f"lp_audio_{next_idx}_{_nx_qid}"
+                if not st.session_state.get(_nx_data_key):
+                    try:
+                        import requests as _req_nx, base64 as _b64_nx
+                        _nx_idx = load_audio_file_index()
+                        _nx_fid = _nx_idx.get(_nx_key, "")
+                        if _nx_fid:
+                            _nx_r = _req_nx.get(get_audio_url(_nx_fid), timeout=8)
+                            if _nx_r.status_code == 200:
+                                st.session_state[_nx_data_key] = _b64_nx.b64encode(_nx_r.content).decode()
+                    except:
+                        pass
             st.session_state.q_idx += 1
             _clear_q()
             st.rerun()
