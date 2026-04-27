@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.255 - sort函式修復版)
+# 🧩 英文全能練習系統 (V2.9.256 - 聽力勾選驗證修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.255
+# 📌 版本編號 (VERSION): 2.9.256
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.255"
+VERSION = "2.9.256"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1235,6 +1235,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
 
         # ── 聽力音標 ─────────────────────────────────────────────────────────
         include_lp = st.checkbox("🎧 加入聽力音標題", key="t1_inc_lp")
+        df_lp_final = pd.DataFrame()  # 預設空值
         if include_lp and not df_lp.empty:
             st.markdown("**🎧 聽力音標出題範圍**")
             lpc_ = st.columns(4)
@@ -1332,9 +1333,9 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
         if st.button("🚀 確認發布任務", use_container_width=True, type="primary"):
             if not target_groups:
                 st.error("❌ 請至少選擇一個目標班級")
-            elif not include_q and not include_mcq and not include_reading and not include_vocab:
+            elif not include_q and not include_mcq and not include_reading and not include_vocab and not include_rm and not include_lp:
                 st.error("❌ 請至少勾選一種題型")
-            elif df_t1_final.empty and df_mcq_final.empty and df_r_final.empty and df_v_final.empty and df_rm_final.empty:
+            elif df_t1_final.empty and df_mcq_final.empty and df_r_final.empty and df_v_final.empty and df_rm_final.empty and df_lp_final.empty:
                 st.error("❌ 目前無符合條件的題目，請調整篩選條件")
             elif not target_students_t1:
                 st.error("❌ 請至少選擇一位學生")
