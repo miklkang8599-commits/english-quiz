@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.257 - 聽力音標命名修復版)
+# 🧩 英文全能練習系統 (V2.9.258 - 聽力任務載入修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.257
+# 📌 版本編號 (VERSION): 2.9.258
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.257"
+VERSION = "2.9.258"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3105,6 +3105,7 @@ if not st.session_state.quiz_loaded:
             is_vocab_task   = task_type == '單字'
             is_mixed_task   = task_type == '混合'
             is_rm_task      = task_type == '閱讀單句'
+            is_lp_task      = task_type == '聽力音標'
 
             if q_ids_set:
                 try:
@@ -3210,7 +3211,7 @@ if not st.session_state.quiz_loaded:
                                 dlp2 = df_lp.copy()
                                 dlp2['題目ID'] = dlp2.apply(_get_lp_qid, axis=1)
                                 dlp2['_type']  = 'listen_phon'
-                                rlp = dlp2[dlp2['題目ID'].isin(pending_ids if "pending_ids" in dir() else q_ids_set)].copy()
+                                rlp = dlp2[dlp2['題目ID'].isin(q_ids_set)].copy()
                                 if not rlp.empty:
                                     import random as _rand_lp
                                     lp_recs = []
@@ -3224,8 +3225,7 @@ if not st.session_state.quiz_loaded:
                                         lp_d['_lp_opts']        = opts
                                         lp_d['_lp_correct_opt'] = ["A","B","C","D"][correct_idx]
                                         lp_recs.append(lp_d)
-                                    _dlp_final = pd.DataFrame(lp_recs)
-                                    all_dfs.append(_dlp_final)
+                                    _all_dfs.append(pd.DataFrame(lp_recs))
                             if _all_dfs:
                                 retry_all = pd.concat(_all_dfs, ignore_index=True)
                                 records   = retry_all.to_dict('records')
@@ -3347,6 +3347,35 @@ if not st.session_state.quiz_loaded:
                                 })
                                 st.rerun()
 
+                        elif is_lp_task:
+                            if not df_lp.empty:
+                                dlp2 = df_lp.copy()
+                                dlp2['題目ID'] = dlp2.apply(_get_lp_qid, axis=1)
+                                pending_lp = dlp2[dlp2['題目ID'].isin(pending_ids)].copy()
+                                if not pending_lp.empty:
+                                    import random as _rand_lp2
+                                    lp_recs2 = []
+                                    for _, lp_row in pending_lp.iterrows():
+                                        lp_d = lp_row.to_dict()
+                                        distractors = _get_lp_distractors(df_lp, lp_row, n=3)
+                                        opts = distractors + [lp_row.to_dict()]
+                                        _rand_lp2.shuffle(opts)
+                                        opts = opts[:4]
+                                        correct_idx = next((i for i, o in enumerate(opts) if o.get('KK符號') == lp_d.get('KK符號')), 0)
+                                        lp_d['_lp_opts']        = opts
+                                        lp_d['_lp_correct_opt'] = ["A","B","C","D"][correct_idx]
+                                        lp_d['_type']           = 'listen_phon'
+                                        lp_recs2.append(lp_d)
+                                    records = lp_recs2
+                                    for _k in [k for k in list(st.session_state.keys()) if k.startswith("vocab_pool_") or k.startswith("vocab_ans_") or k.startswith("vocab_used_")]:
+                                        del st.session_state[_k]
+                                    st.session_state.update({
+                                        "quiz_list": records,
+                                        "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key,
+                                        "ans": [], "used_history": [], "shuf": [], "show_analysis": False
+                                    })
+                                    st.rerun()
+
                         elif is_mixed_task:
                             df_q2 = pd.concat([df_q, df_mcq], ignore_index=True).drop_duplicates() if not df_mcq.empty else df_q.copy()
                             df_q2['題目ID'] = df_q2.apply(
@@ -3385,7 +3414,28 @@ if not st.session_state.quiz_loaded:
                                 pending_v['_vocab_mode']  = v_mode_mixed
                                 pending_v['_vocab_timer'] = int(vcfg[1]) if len(vcfg) > 1 else 30
                                 pending_v['_vocab_extra'] = int(vcfg[2]) if len(vcfg) > 2 else 3
-                            pending = pd.concat([pending_q, pending_r, pending_v, pending_rm], ignore_index=True)
+                            # 聽力音標（混合任務）
+                            pending_lp_m = pd.DataFrame()
+                            if not df_lp.empty:
+                                dlp_m = df_lp.copy()
+                                dlp_m['題目ID'] = dlp_m.apply(_get_lp_qid, axis=1)
+                                _plp = dlp_m[dlp_m['題目ID'].isin(pending_ids)].copy()
+                                if not _plp.empty:
+                                    import random as _rand_lpm
+                                    _lp_recs_m = []
+                                    for _, _lr in _plp.iterrows():
+                                        _ld = _lr.to_dict()
+                                        _dis = _get_lp_distractors(df_lp, _lr, n=3)
+                                        _opts = _dis + [_lr.to_dict()]
+                                        _rand_lpm.shuffle(_opts)
+                                        _opts = _opts[:4]
+                                        _ci = next((i for i, o in enumerate(_opts) if o.get('KK符號') == _ld.get('KK符號')), 0)
+                                        _ld['_lp_opts'] = _opts
+                                        _ld['_lp_correct_opt'] = ["A","B","C","D"][_ci]
+                                        _ld['_type'] = 'listen_phon'
+                                        _lp_recs_m.append(_ld)
+                                    pending_lp_m = pd.DataFrame(_lp_recs_m)
+                            pending = pd.concat([pending_q, pending_r, pending_v, pending_rm, pending_lp_m], ignore_index=True)
                             if not pending.empty:
                                 # 清除所有舊的字母池
                                 for _k in [k for k in list(st.session_state.keys()) if k.startswith("vocab_pool_") or k.startswith("vocab_ans_") or k.startswith("vocab_used_")]:
