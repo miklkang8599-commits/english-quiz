@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.253 - 拼單字比對修復版)
+# 🧩 英文全能練習系統 (V2.9.254 - 聽力音標題型版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.253
+# 📌 版本編號 (VERSION): 2.9.254
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.253"
+VERSION = "2.9.254"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -89,7 +89,11 @@ def load_static_data():
             df_rm['_type'] = 'reading_mcq'
         except:
             df_rm = pd.DataFrame()
-        return df_q, df_s, df_r, df_v, df_rm, df_mcq
+        try:
+            df_lp = conn.read(worksheet="聽力音標", ttl=600).fillna("").astype(str).replace(r'\.0$', '', regex=True)
+        except:
+            df_lp = pd.DataFrame()
+        return df_q, df_s, df_r, df_v, df_rm, df_mcq, df_lp
     except Exception as e:
         import streamlit as _st
         _st.session_state['_load_error'] = str(e)
@@ -123,7 +127,28 @@ ASSIGN_COLS = {
 }
 
 
-def _sort_task_names(names):
+def _get_lp_qid(row):
+    """產生聽力音標題目ID：LP_{版本}_{單元編號}_{組編號}_{符號編號}"""
+    return f"LP_{row.get('版本','')}_{row.get('單元編號','')}_{row.get('組編號','')}_{row.get('符號編號','')}"
+
+def _get_lp_distractors(df_lp, correct_row, n=3):
+    """依編號相近原則取 n 個干擾選項"""
+    correct_num = int(str(correct_row.get('總編號', '0')).split('-')[0]) if str(correct_row.get('總編號','')).split('-')[0].isdigit() else 0
+    correct_sym = str(correct_row.get('KK符號', ''))
+    others = df_lp[df_lp['KK符號'] != correct_sym].copy()
+    if others.empty:
+        return []
+    # 計算與正確答案的編號距離
+    def _num(r):
+        try:
+            return int(str(r.get('總編號', '0')).split('-')[0])
+        except:
+            return 999
+    others['_dist'] = others.apply(lambda r: abs(_num(r) - correct_num), axis=1)
+    others = others.sort_values('_dist').drop_duplicates('KK符號')
+    return others.head(n).to_dict('records')
+
+
     """依序號後的名稱排序任務清單（移除 [Txxxxxxxx] 前綴後排列）"""
     import re as _re_sort
     def _sort_key(n):
@@ -250,11 +275,11 @@ def append_to_sheet(worksheet_name: str, new_row: pd.DataFrame):
 # 🔐 【權限控管與登入】
 # ------------------------------------------------------------------------------
 if not st.session_state.get('logged_in', False):
-    df_q, df_s, df_r, df_v, df_rm, df_mcq = load_static_data()
+    df_q, df_s, df_r, df_v, df_rm, df_mcq, df_lp = load_static_data()
     # 失敗立即重試一次
     if df_s is None:
         load_static_data.clear()
-        df_q, df_s, df_r, df_v, df_rm, df_mcq = load_static_data()
+        df_q, df_s, df_r, df_v, df_rm, df_mcq, df_lp = load_static_data()
     _, c, _ = st.columns([1, 1.2, 1])
     with c:
         if df_s is None:
@@ -287,13 +312,13 @@ if not st.session_state.get('logged_in', False):
     st.stop()
 
 # 載入資料（登入後）
-df_q, df_s, df_r, df_v, df_rm, df_mcq = load_static_data()
+df_q, df_s, df_r, df_v, df_rm, df_mcq, df_lp = load_static_data()
 df_a, df_l = load_dynamic_data()
 
 if df_q is None or df_s is None:
     # 立即清快取重試一次
     load_static_data.clear()
-    df_q, df_s, df_r, df_v, df_rm, df_mcq = load_static_data()
+    df_q, df_s, df_r, df_v, df_rm, df_mcq, df_lp = load_static_data()
 
 if df_q is None or df_s is None:
     st.error("⚠️ 題庫讀取失敗，請按下方按鈕重試。")
@@ -578,8 +603,57 @@ def _gen_print_pdf(questions, mode, title="題目列表", group_logs=None, targe
     return buf.read()
 
 
-# ── Google Drive 上傳功能 ──────────────────────────────────────────────────
-GDRIVE_FOLDER_ID = "1OrJ4sbSPywtErLGoOpRxijVyZyoIg3lm"
+# ── Google Drive 聽力音檔資料夾 ───────────────────────────────────────────────
+GDRIVE_AUDIO_FOLDER_ID = "1tp1vjB2kSg60OBrdAj2kPm5fPI1ls9EO"
+
+@st.cache_resource
+def get_gdrive_audio_service():
+    """取得可讀取 Drive 資料夾的 service（drive.readonly scope）"""
+    from google.oauth2.service_account import Credentials
+    from googleapiclient.discovery import build
+    creds_dict = {
+        "type": "service_account",
+        "project_id":                  st.secrets["connections"]["gsheets"]["project_id"],
+        "private_key_id":              st.secrets["connections"]["gsheets"]["private_key_id"],
+        "private_key":                 st.secrets["connections"]["gsheets"]["private_key"],
+        "client_email":                st.secrets["connections"]["gsheets"]["client_email"],
+        "client_id":                   st.secrets["connections"]["gsheets"]["client_id"],
+        "auth_uri":                    "https://accounts.google.com/o/oauth2/auth",
+        "token_uri":                   "https://oauth2.googleapis.com/token",
+        "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+        "client_x509_cert_url":        st.secrets["connections"]["gsheets"].get("client_x509_cert_url", "")
+    }
+    creds = Credentials.from_service_account_info(
+        creds_dict,
+        scopes=["https://www.googleapis.com/auth/drive.readonly"]
+    )
+    return build("drive", "v3", credentials=creds)
+
+@st.cache_data(ttl=3600)
+def load_audio_file_index():
+    """讀取音檔資料夾，建立 {總編號: file_id} 對照表，快取 1 小時"""
+    try:
+        svc     = get_gdrive_audio_service()
+        results = svc.files().list(
+            q=f"'{GDRIVE_AUDIO_FOLDER_ID}' in parents and trashed=false",
+            fields="files(id, name)",
+            pageSize=500
+        ).execute()
+        files = results.get("files", [])
+        # 檔名格式：01-p.mp3 → key = "01-p"
+        index = {}
+        for f in files:
+            name_no_ext = f["name"].rsplit(".", 1)[0]  # 去副檔名
+            index[name_no_ext.lower()] = f["id"]
+        return index
+    except Exception as e:
+        return {}
+
+def get_audio_url(file_id):
+    """回傳可直接播放的 Drive 音檔 URL"""
+    return f"https://drive.google.com/uc?export=download&id={file_id}"
+
+
 
 @st.cache_resource
 def get_gdrive_service():
@@ -1149,6 +1223,31 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
 
         # ── 閱讀單句範圍（選填） ──────────────────────────────────────────
         include_rm = st.checkbox("📖 加入閱讀單句題", key="t1_inc_rm")
+        if include_rm and not df_rm.empty:
+            # 閱讀單句篩選（已有）
+            pass
+
+        # ── 聽力音標 ─────────────────────────────────────────────────────────
+        include_lp = st.checkbox("🎧 加入聽力音標題", key="t1_inc_lp")
+        if include_lp and not df_lp.empty:
+            st.markdown("**🎧 聽力音標出題範圍**")
+            lpc_ = st.columns(4)
+            lpv_opts = [""] + sorted(df_lp['版本'].unique().tolist())
+            lpv_ = lpc_[0].selectbox("版本", lpv_opts, key="lpt_v")
+            lp_src = df_lp[df_lp['版本'] == lpv_] if lpv_ else df_lp
+            lpu_opts = [""] + sorted(lp_src['單元'].unique().tolist())
+            lpu_ = lpc_[1].selectbox("單元", lpu_opts, key="lpt_u")
+            lp_src2 = lp_src[lp_src['單元'] == lpu_] if lpu_ else lp_src
+            lpg_opts = [""] + sorted(lp_src2['組編號'].unique().tolist())
+            lpg_ = lpc_[2].selectbox("組編號", lpg_opts, key="lpt_g")
+            lp_src3 = lp_src2[lp_src2['組編號'] == lpg_] if lpg_ else lp_src2
+            lp_total = len(lp_src3)
+            lp_count = lpc_[3].number_input("題數", min_value=0, max_value=max(lp_total, 1), value=lp_total, key="lpt_count")
+            df_lp_final = lp_src3.head(int(lp_count)).copy() if lp_count > 0 else lp_src3.copy()
+            df_lp_final = df_lp_final.sample(frac=1, random_state=42).reset_index(drop=True)  # 隨機排列
+            st.info(f"📚 範圍總題數：**{lp_total} 題**　→　篩選後：**{len(df_lp_final)} 題**")
+        else:
+            df_lp_final = pd.DataFrame()
         df_rm_final = pd.DataFrame()
 
         if include_rm:
@@ -1210,18 +1309,19 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
         st.divider()
 
         # 合計摘要表
-        _summary_cols = st.columns(5)
+        _summary_cols = st.columns(6)
         _summary_data = [
             ("✏️ 重組",   len(df_t1_final)),
             ("🔵 單選",   len(df_mcq_final)),
             ("🎤 朗讀",   len(df_r_final)),
             ("🔤 拼單字", len(df_v_final)),
             ("📖 閱讀",   len(df_rm_final)),
+            ("🎧 聽力",   len(df_lp_final)),
         ]
         for _ci, (_lbl, _cnt) in enumerate(_summary_data):
             _summary_cols[_ci].metric(_lbl, f"{_cnt} 題")
         total_q = sum(c for _, c in _summary_data)
-        st.info(f"📊 本次任務合計：**{total_q} 題**　（重組 {len(df_t1_final)} ＋ 單選 {len(df_mcq_final)} ＋ 朗讀 {len(df_r_final)} ＋ 拼單字 {len(df_v_final)} ＋ 閱讀單句 {len(df_rm_final)}）")
+        st.info(f"📊 本次任務合計：**{total_q} 題**　（重組 {len(df_t1_final)} ＋ 單選 {len(df_mcq_final)} ＋ 朗讀 {len(df_r_final)} ＋ 拼單字 {len(df_v_final)} ＋ 閱讀單句 {len(df_rm_final)} ＋ 聽力音標 {len(df_lp_final)}）")
 
         if st.button("🚀 確認發布任務", use_container_width=True, type="primary"):
             if not target_groups:
@@ -1240,7 +1340,8 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 r_ids   = df_r_final['題目ID'].tolist()   if (not df_r_final.empty   and '題目ID' in df_r_final.columns)   else []
                 v_ids   = df_v_final['題目ID'].tolist()   if (not df_v_final.empty   and '題目ID' in df_v_final.columns)   else []
                 rm_ids  = df_rm_final['題目ID'].tolist()  if (not df_rm_final.empty  and '題目ID' in df_rm_final.columns)  else []
-                all_ids = q_ids + mcq_ids + r_ids + v_ids + rm_ids
+                lp_ids  = [_get_lp_qid(r) for _, r in df_lp_final.iterrows()] if not df_lp_final.empty else []
+                all_ids = q_ids + mcq_ids + r_ids + v_ids + rm_ids + lp_ids
 
                 has_q   = bool(q_ids)
                 has_mcq = bool(mcq_ids)
@@ -1350,12 +1451,13 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     st.success(f"✅ 任務已發布！共 {len(all_ids)} 題，指派給 {len(target_students_t1)} 位學生")
                     # 立即清空所有篩選 key
                     _clear_keys = [
-                        't1_inc_q', 't1_inc_mcq', 't1_inc_reading', 't1_inc_vocab', 't1_inc_rm',
+                        't1_inc_q', 't1_inc_mcq', 't1_inc_reading', 't1_inc_vocab', 't1_inc_rm', 't1_inc_lp',
                         't1_v', 't1_u', 't1_y', 't1_b', 't1_l', 't1_start_sent', 't1_q_count', 't1_grammar', 't1_diff',
                         'mc_v', 'mc_u', 'mc_y', 'mc_b', 'mc_l', 'mc_start_sent', 'mc_q_count', 'mc_grammar', 'mc_diff',
                         'rt_v', 'rt_u', 'rt_y', 'rt_b', 'rt_l', 'rt_start_sent', 'rt_q_count',
                         'vt_v', 'vt_u', 'vt_y', 'vt_b', 'vt_l', 'vt_start_sent', 'vt_q_count', 'vt_mode', 'vt_timer', 'vt_extra',
                         'rmt_v', 'rmt_u', 'rmt_y', 'rmt_b', 'rmt_l', 'rmt_start', 'rmt_count', 'rmt_grammar', 'rmt_diff',
+                        'lpt_v', 'lpt_u', 'lpt_g', 'lpt_count',
                         't1_group', 't1_mode', 't1_stu', 't1_start', 't1_end',
                         't1_ref_stu', 't1_ref_logic', 't1_ref_n',
                     ]
@@ -2167,9 +2269,10 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     qid_unit_rpt = dict(zip(df_qall["_qid"], df_qall["單元"]))
 
                     def _qtype_rpt(qid):
-                        if qid.startswith("R_"):  return "朗讀"
-                        if qid.startswith("V_"):  return "拼單字"
-                        if qid.startswith("RM_"): return "閱讀單句"
+                        if qid.startswith("R_"):   return "朗讀"
+                        if qid.startswith("V_"):   return "拼單字"
+                        if qid.startswith("RM_"):  return "閱讀單句"
+                        if qid.startswith("LP_"):  return "聽力音標"
                         return "單選" if "單選" in qid_unit_rpt.get(qid, "") else "重組"
 
                     def _qnum(qid):
@@ -3088,6 +3191,27 @@ if not st.session_state.quiz_loaded:
                                 if not rrm.empty:
                                     rrm['_type'] = 'reading_mcq'
                                     _all_dfs.append(rrm)
+                            # 聽力音標
+                            if not df_lp.empty:
+                                dlp2 = df_lp.copy()
+                                dlp2['題目ID'] = dlp2.apply(_get_lp_qid, axis=1)
+                                dlp2['_type']  = 'listen_phon'
+                                rlp = dlp2[dlp2['題目ID'].isin(pending_ids if "pending_ids" in dir() else q_ids_set)].copy()
+                                if not rlp.empty:
+                                    import random as _rand_lp
+                                    lp_recs = []
+                                    for _, lp_row in rlp.iterrows():
+                                        lp_d = lp_row.to_dict()
+                                        distractors = _get_lp_distractors(df_lp, lp_row, n=3)
+                                        opts = distractors + [lp_row.to_dict()]
+                                        _rand_lp.shuffle(opts)
+                                        opts = opts[:4]
+                                        correct_idx = next((i for i, o in enumerate(opts) if o.get('KK符號') == lp_d.get('KK符號')), 0)
+                                        lp_d['_lp_opts']        = opts
+                                        lp_d['_lp_correct_opt'] = ["A","B","C","D"][correct_idx]
+                                        lp_recs.append(lp_d)
+                                    _dlp_final = pd.DataFrame(lp_recs)
+                                    all_dfs.append(_dlp_final)
                             if _all_dfs:
                                 retry_all = pd.concat(_all_dfs, ignore_index=True)
                                 records   = retry_all.to_dict('records')
@@ -3732,9 +3856,87 @@ if st.session_state.quiz_loaded:
     is_reading     = q.get("_type") == "reading" or "朗讀" in q.get("單元", "")
     is_vocab       = q.get("_type") == "vocab"
     is_reading_mcq = q.get("_type") == "reading_mcq"
+    is_listen_phon = q.get("_type") == "listen_phon"
 
     # 題目標題
-    if is_reading_mcq:
+    if is_listen_phon:
+        # ── 聽力音標題 ──────────────────────────────────────────────────────
+        lp_qid     = q.get("題目ID", "")
+        lp_num     = str(q.get("總編號", "")).strip()
+        lp_correct = str(q.get("KK符號", "")).strip()
+        lp_opts    = q.get("_lp_opts", [])  # [{"KK符號":..., "總編號":...}, ...]
+        lp_correct_opt = q.get("_lp_correct_opt", "A")
+
+        # 載入音檔
+        audio_index = load_audio_file_index()
+        file_key    = lp_num.lower()
+        file_id     = audio_index.get(file_key, "")
+        if file_id:
+            audio_url = get_audio_url(file_id)
+            st.markdown("**🎧 請聆聽音檔，選出正確的 KK 音標：**")
+            try:
+                import requests as _req_lp
+                _r = _req_lp.get(audio_url, timeout=8)
+                if _r.status_code == 200:
+                    st.audio(_r.content, format="audio/mp3")
+                else:
+                    st.audio(audio_url)
+            except:
+                st.audio(audio_url)
+        else:
+            st.warning(f"⚠️ 找不到音檔：{lp_num}")
+
+        already_lp = st.session_state.get("show_analysis", False)
+        opt_cols   = st.columns(2)
+        for oi, opt_row in enumerate(lp_opts):
+            opt_sym = str(opt_row.get("KK符號", "")).strip()
+            opt_label = ["A","B","C","D"][oi]
+            opt_btn_key = f"lp_opt_{st.session_state.q_idx}_{oi}"
+            col = opt_cols[oi % 2]
+            # 顯示結果時加上顏色
+            if already_lp:
+                if opt_label == lp_correct_opt:
+                    col.success(f"**{opt_label}）{opt_sym}** ✅")
+                else:
+                    col.markdown(f"**{opt_label}）{opt_sym}**")
+            else:
+                if col.button(f"{opt_label}）{opt_sym}", key=opt_btn_key, use_container_width=True):
+                    is_lp_ok = (opt_label == lp_correct_opt)
+                    try:
+                        import time as _tlp
+                        sb_lp  = get_supabase()
+                        en_lp  = _to_en_logs({
+                            "時間":    get_now().strftime("%Y-%m-%d %H:%M:%S"),
+                            "姓名":    st.session_state.user_name,
+                            "分組":    st.session_state.group_id,
+                            "題目ID":  lp_qid,
+                            "結果":    "✅" if is_lp_ok else "❌",
+                            "學生答案": opt_sym,
+                            "分數":    "",
+                            "任務名稱": st.session_state.get("current_task_name", "")
+                        })
+                        sb_lp.table("logs").insert(en_lp).execute()
+                        _tlp.sleep(0.3)
+                        st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
+                    except Exception as _e_lp:
+                        st.error(f"寫入失敗：{_e_lp}")
+                    st.session_state.update({
+                        "current_res":  "✅ 正確！" if is_lp_ok else f"❌ 錯誤！正確答案：{lp_correct}",
+                        "show_analysis": True
+                    })
+                    st.rerun()
+
+        if already_lp:
+            res = st.session_state.get("current_res", "")
+            if "✅" in res:
+                st.success(res)
+            else:
+                st.error(res)
+            lp_analysis = str(q.get("解析") or "").strip()
+            if lp_analysis:
+                st.info(f"📝 {lp_analysis}")
+
+    elif is_reading_mcq:
         # ── 閱讀單句題 ──────────────────────────────────────────────────────
         rm_passage = str(q.get("答案") or "").strip()
         rm_question = str(q.get("題目") or "").strip()
@@ -4212,7 +4414,7 @@ if st.session_state.quiz_loaded:
                 st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
                 st.rerun()
 
-    if st.session_state.get('show_analysis') and not is_reading and not is_reading_mcq:
+    if st.session_state.get('show_analysis') and not is_reading and not is_reading_mcq and not is_listen_phon:
         st.warning(st.session_state.current_res)
         # 單選題：答題後一律顯示解析
         if is_mcq:
