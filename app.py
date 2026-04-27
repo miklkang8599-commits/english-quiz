@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.259 - 聽力音檔key修復版)
+# 🧩 英文全能練習系統 (V2.9.260 - 聽力隨機出題版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.259
+# 📌 版本編號 (VERSION): 2.9.260
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.259"
+VERSION = "2.9.260"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1251,7 +1251,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             lp_total = len(lp_src3)
             lp_count = lpc_[3].number_input("題數", min_value=0, max_value=max(lp_total, 1), value=lp_total, key="lpt_count")
             df_lp_final = lp_src3.head(int(lp_count)).copy() if lp_count > 0 else lp_src3.copy()
-            df_lp_final = df_lp_final.sample(frac=1, random_state=42).reset_index(drop=True)  # 隨機排列
+            df_lp_final = df_lp_final.sample(frac=1).reset_index(drop=True)  # 隨機排列（無固定種子）
             st.info(f"📚 範圍總題數：**{lp_total} 題**　→　篩選後：**{len(df_lp_final)} 題**")
         else:
             df_lp_final = pd.DataFrame()
@@ -3366,6 +3366,8 @@ if not st.session_state.quiz_loaded:
                                         lp_d['_lp_correct_opt'] = ["A","B","C","D"][correct_idx]
                                         lp_d['_type']           = 'listen_phon'
                                         lp_recs2.append(lp_d)
+                                    import random as _rand_lp_final
+                                    _rand_lp_final.shuffle(lp_recs2)
                                     records = lp_recs2
                                     for _k in [k for k in list(st.session_state.keys()) if k.startswith("vocab_pool_") or k.startswith("vocab_ans_") or k.startswith("vocab_used_")]:
                                         del st.session_state[_k]
