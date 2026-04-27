@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.254 - 聽力音標題型版)
+# 🧩 英文全能練習系統 (V2.9.255 - sort函式修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.254
+# 📌 版本編號 (VERSION): 2.9.255
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.254"
+VERSION = "2.9.255"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -126,6 +126,12 @@ ASSIGN_COLS = {
     "vocab_cfg": "單字設定"
 }
 
+
+def _sort_task_names(names):
+    """依序號後的名稱排序任務清單（移除 [Txxxxxxxx] 前綴後排列）"""
+    def _key(n):
+        return re.sub(r'^\[T\d+\]\s*', '', str(n)).strip().lower()
+    return sorted(names, key=_key)
 
 def _get_lp_qid(row):
     """產生聽力音標題目ID：LP_{版本}_{單元編號}_{組編號}_{符號編號}"""
