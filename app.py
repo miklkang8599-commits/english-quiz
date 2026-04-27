@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.258 - 聽力任務載入修復版)
+# 🧩 英文全能練習系統 (V2.9.259 - 聽力音檔key修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.258
+# 📌 版本編號 (VERSION): 2.9.259
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.258"
+VERSION = "2.9.259"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3931,10 +3931,20 @@ if st.session_state.quiz_loaded:
         lp_opts    = q.get("_lp_opts", [])  # [{"KK符號":..., "總編號":...}, ...]
         lp_correct_opt = q.get("_lp_correct_opt", "A")
 
-        # 載入音檔
+        # 音檔 key：總編號補零2位 + "-" + KK符號，例如 "01-p"
         audio_index = load_audio_file_index()
-        file_key    = lp_num.lower()
+        try:
+            file_key = f"{int(lp_num):02d}-{lp_correct}".lower()
+        except:
+            file_key = f"{lp_num}-{lp_correct}".lower()
         file_id     = audio_index.get(file_key, "")
+        # 若找不到，也嘗試純數字補零
+        if not file_id:
+            try:
+                alt_key = f"{int(lp_num):02d}".lower()
+                file_id = audio_index.get(alt_key, "")
+            except:
+                pass
         if file_id:
             audio_url = get_audio_url(file_id)
             st.markdown("**🎧 請聆聽音檔，選出正確的 KK 音標：**")
