@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.264 - 任務列表懶載入版)
+# 🧩 英文全能練習系統 (V2.9.265 - 效能深度優化版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.264
+# 📌 版本編號 (VERSION): 2.9.265
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.264"
+VERSION = "2.9.265"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -209,7 +209,6 @@ def _to_en_assign(row: dict) -> dict:
 # 動態資料讀取（Supabase）- 移除快取，每次 rerun 直接讀最新
 # ==============================================================================
 @st.cache_data(ttl=30)
-@st.cache_data(ttl=30)
 def load_dynamic_data():
     """assignments 30秒快取，logs 走獨立快取函式"""
     try:
@@ -229,16 +228,17 @@ def load_dynamic_data():
 
 @st.cache_data(ttl=60)
 def _load_logs_cached():
-    """logs 資料，30秒快取，避免每次 rerun 都撈全部"""
+    """logs 資料，60秒快取，只撈必要欄位"""
     try:
         sb       = get_supabase()
         all_logs = []
         page     = 0
         while True:
-            res = sb.table("logs").select("*") \
-                    .order("created_at", desc=False) \
-                    .range(page * 1000, (page + 1) * 1000 - 1) \
-                    .execute()
+            res = sb.table("logs").select(
+                "created_at,name,group_id,question_id,result,student_answer,score,task_name"
+            ).order("created_at", desc=False) \
+             .range(page * 1000, (page + 1) * 1000 - 1) \
+             .execute()
             if not res.data:
                 break
             all_logs.extend(res.data)
@@ -248,7 +248,6 @@ def _load_logs_cached():
         if all_logs:
             df_l = pd.DataFrame(all_logs)
             df_l = _to_cn(df_l, LOGS_COLS)
-            df_l = df_l.drop(columns=["id"], errors="ignore")
             return df_l
         return pd.DataFrame()
     except:
@@ -1464,6 +1463,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 }])
                 if append_to_sheet("assignments", new_task):
                     st.success(f"✅ 任務已發布！共 {len(all_ids)} 題，指派給 {len(target_students_t1)} 位學生")
+                    st.session_state['_a2_cache_stale'] = True  # 任務列表需重新整理
                     # 立即清空所有篩選 key
                     _clear_keys = [
                         't1_inc_q', 't1_inc_mcq', 't1_inc_reading', 't1_inc_vocab', 't1_inc_rm', 't1_inc_lp',
@@ -1634,39 +1634,39 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
         st.divider()
         st.subheader("📋 任務列表")
 
-        df_a2 = df_a[df_a.get('狀態', pd.Series(dtype=str)).fillna('') != '已刪除'].copy() if not df_a.empty else pd.DataFrame()
-        # 最新任務排在最前
-        if not df_a2.empty and '建立時間' in df_a2.columns:
-            df_a2 = df_a2.sort_values(
-                by='任務名稱',
-                key=lambda col: col.apply(lambda n: re.sub(r'^\[T\d+\]\s*', '', str(n)).strip().lower()),
-                ascending=True
-            ).reset_index(drop=True)
-        # 只保留新格式任務（包含底線日期時間，例如 2026-04-15_10:30）
-        if not df_a2.empty and '任務名稱' in df_a2.columns:
-            df_a2 = df_a2[df_a2['任務名稱'].str.contains(r'\d{4}-\d{2}-\d{2}_\d{2}:\d{2}', regex=True, na=False)]
-
-        if df_a2.empty or '任務名稱' not in df_a2.columns:
-            st.info("目前尚無任務。")
-        else:
-            # 從任務名稱提取出題老師（第一個 - 前的文字）
+        # ── 任務列表（處理結果快取在 session_state，避免每次 rerun 重跑）──
+        _a2_cache_key = f"_df_a2_processed_{len(df_a)}"
+        if _a2_cache_key not in st.session_state or st.session_state.get('_a2_cache_stale', False):
+            df_a2 = df_a[df_a.get('狀態', pd.Series(dtype=str)).fillna('') != '已刪除'].copy() if not df_a.empty else pd.DataFrame()
+            if not df_a2.empty and '建立時間' in df_a2.columns:
+                df_a2 = df_a2.sort_values(
+                    by='任務名稱',
+                    key=lambda col: col.apply(lambda n: re.sub(r'^\[T\d+\]\s*', '', str(n)).strip().lower()),
+                    ascending=True
+                ).reset_index(drop=True)
+            if not df_a2.empty and '任務名稱' in df_a2.columns:
+                df_a2 = df_a2[df_a2['任務名稱'].str.contains(r'\[T\d+\]', regex=True, na=False)]
+            # 提取老師名
             def _get_teacher(name):
-                import re as _re4
-                # 移除編號前綴 [Txxxxxxx]
-                clean = _re4.sub(r'^\[T\d+\]\s*', '', str(name).strip())
-                # 找到日期時間的位置（格式：2026-04-15_10:30）
-                m = _re4.search(r'(\d{4}-\d{2}-\d{2}_\d{2}:\d{2})', clean)
+                clean = re.sub(r'^\[T\d+\]\s*', '', str(name).strip())
+                m = re.search(r'(\d{4}-\d{2}-\d{2}_\d{2}:\d{2})', clean)
                 if m:
-                    # 取日期時間之前的部分，再按 - 分割，老師名是最後一個
                     before_dt = clean[:m.start()].rstrip('-')
                     parts = before_dt.split('-')
                     if parts:
                         return parts[-1].strip()
-                # 備用：直接取第一個 - 前
                 return clean.split('-')[0].strip() or '未知'
+            if not df_a2.empty:
+                df_a2['_teacher'] = df_a2['任務名稱'].apply(_get_teacher)
+            st.session_state[_a2_cache_key] = df_a2
+            st.session_state['_a2_cache_stale'] = False
+        else:
+            df_a2 = st.session_state[_a2_cache_key]
 
-            df_a2['_teacher'] = df_a2['任務名稱'].apply(_get_teacher)
-            teachers = sorted(df_a2['_teacher'].unique().tolist())
+        if df_a2.empty or '任務名稱' not in df_a2.columns:
+            st.info("目前尚無任務。")
+        else:
+            teachers = sorted(df_a2['_teacher'].unique().tolist()) if '_teacher' in df_a2.columns else []
 
             # 依老師建立 Tab
             if len(teachers) == 1:
