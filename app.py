@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.260 - 聽力隨機出題版)
+# 🧩 英文全能練習系統 (V2.9.261 - 聽力復習音檔版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.260
+# 📌 版本編號 (VERSION): 2.9.261
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.260"
+VERSION = "2.9.261"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3785,6 +3785,10 @@ if not st.session_state.quiz_loaded:
                     q_text     = str(item.get('中文意思') or '').strip()
                     q_ans      = str(item.get('英文單字') or '').strip()
                     type_label = "🔤 單字"
+                elif q_type == 'listen_phon':
+                    q_text     = str(item.get('KK符號') or '').strip()
+                    q_ans      = q_text
+                    type_label = "🎧 聽力音標"
                 elif '單選' in q_unit:
                     q_text     = str(item.get('單選題目') or item.get('中文題目') or '').strip()
                     q_ans      = str(item.get('單選答案') or '').strip()
@@ -3815,6 +3819,10 @@ if not st.session_state.quiz_loaded:
                 if q_type == 'reading' or '朗讀' in q_unit:
                     # 朗讀：永遠顯示答案（英文句子）和 TTS
                     ans_html      = f"<div style='color:#1565c0; font-size:1.1rem; font-weight:600; margin-top:6px;'>🔊 {q_ans}</div>"
+                    analysis_html = f"<div style='color:#555; font-size:0.9rem; margin-top:4px;'>📝 {q_analysis}</div>" if q_analysis else ""
+                elif q_type == 'listen_phon':
+                    # 聽力音標：永遠顯示 KK 符號答案
+                    ans_html      = f"<div style='color:#1565c0; font-size:1.2rem; font-weight:600; margin-top:6px;'>🎧 正確音標：{q_ans}</div>"
                     analysis_html = f"<div style='color:#555; font-size:0.9rem; margin-top:4px;'>📝 {q_analysis}</div>" if q_analysis else ""
                 else:
                     ans_html      = f"<div style='color:#2e7d32; font-size:1rem; margin-top:6px;'>✅ 答案：{q_ans}</div>" if has_answer else "<div style='color:#999; font-size:0.9rem; margin-top:6px;'>🔒 作答後才顯示答案</div>"
@@ -3885,6 +3893,34 @@ if not st.session_state.quiz_loaded:
                             else:
                                 _col2.caption("← 點左側按鈕產生音檔")
                     st.caption("🤖 音檔由 OpenAI TTS 產生（tts-1 / tts-1-hd 模型，速度 0.6x）")
+
+                # 聽力音標：播放原始音檔
+                if q_type == 'listen_phon':
+                    lp_rv_num = str(item.get('總編號', '')).strip()
+                    lp_rv_sym = str(item.get('KK符號', '')).strip()
+                    try:
+                        _lp_rv_key = f"{int(lp_rv_num):02d}-{lp_rv_sym}".lower()
+                    except:
+                        _lp_rv_key = f"{lp_rv_num}-{lp_rv_sym}".lower()
+                    _rv_audio_index = load_audio_file_index()
+                    _rv_file_id = _rv_audio_index.get(_lp_rv_key, "")
+                    if _rv_file_id:
+                        _rv_audio_data_key = f"rv_lp_audio_{i}_{qid}"
+                        if not st.session_state.get(_rv_audio_data_key):
+                            try:
+                                import requests as _req_rv_lp
+                                _rv_r = _req_rv_lp.get(get_audio_url(_rv_file_id), timeout=8)
+                                if _rv_r.status_code == 200:
+                                    import base64 as _b64_rv_lp
+                                    st.session_state[_rv_audio_data_key] = _b64_rv_lp.b64encode(_rv_r.content).decode()
+                            except:
+                                pass
+                        if st.session_state.get(_rv_audio_data_key):
+                            import base64 as _b64_rv_lp2
+                            st.markdown("**🎧 聆聽音檔：**")
+                            st.audio(_b64_rv_lp2.b64decode(st.session_state[_rv_audio_data_key]), format="audio/mp3")
+                    else:
+                        st.caption(f"⚠️ 找不到音檔：{_lp_rv_key}")
 
                 # 複習按鈕（只有已作答才顯示）
                 if has_answer:
