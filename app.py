@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.256 - 聽力勾選驗證修復版)
+# 🧩 英文全能練習系統 (V2.9.257 - 聽力音標命名修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.256
+# 📌 版本編號 (VERSION): 2.9.257
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.256"
+VERSION = "2.9.257"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1355,15 +1355,18 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 has_r   = bool(r_ids)
                 has_v   = bool(v_ids)
                 has_rm  = bool(rm_ids)
-                if has_rm and not has_q and not has_mcq and not has_r and not has_v:
+                has_lp  = bool(lp_ids)
+                if has_lp and not has_q and not has_mcq and not has_r and not has_v and not has_rm:
+                    task_type = "聽力音標"
+                elif has_rm and not has_q and not has_mcq and not has_r and not has_v and not has_lp:
                     task_type = "閱讀單句"
-                elif has_r and not has_q and not has_mcq and not has_v and not has_rm:
+                elif has_r and not has_q and not has_mcq and not has_v and not has_rm and not has_lp:
                     task_type = "朗讀"
-                elif has_v and not has_q and not has_mcq and not has_r and not has_rm:
+                elif has_v and not has_q and not has_mcq and not has_r and not has_rm and not has_lp:
                     task_type = "單字"
-                elif has_mcq and not has_q and not has_r and not has_v and not has_rm:
+                elif has_mcq and not has_q and not has_r and not has_v and not has_rm and not has_lp:
                     task_type = "單選"
-                elif has_q and not has_mcq and not has_r and not has_v and not has_rm:
+                elif has_q and not has_mcq and not has_r and not has_v and not has_rm and not has_lp:
                     task_type = "一般"
                 else:
                     task_type = "混合"
@@ -1422,6 +1425,10 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     rml_ = st.session_state.get('rmt_l', '')
                     rms_ = st.session_state.get('rmt_start', '')
                     auto_desc = _make_task_name("閱讀單句", rmv_, rmu_, rmy_, rmb_, rml_, rms_, len(rm_ids), groups_label, teacher_name, publish_time, str(date_start), str(date_end))
+                elif lp_ids:
+                    lpv_ = st.session_state.get('lpt_v', '')
+                    lpu_ = st.session_state.get('lpt_u', '')
+                    auto_desc = _make_task_name("聽力音標", lpv_, lpu_, '', '', '', '', len(lp_ids), groups_label, teacher_name, publish_time, str(date_start), str(date_end))
                 else:
                     auto_desc = f"混合任務-{groups_label}-{teacher_name}-{publish_time}-{date_start}~{date_end}"
 
