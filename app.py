@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.273 - 發布訊息含序號版)
+# 🧩 英文全能練習系統 (V2.9.274 - 今日學習報告TAB版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.273
+# 📌 版本編號 (VERSION): 2.9.274
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.273"
+VERSION = "2.9.274"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -899,7 +899,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
         except Exception as e:
             st.error(f"❌ 寫入失敗：{e}")
 
-    t1, t2, t3, t4 = st.tabs(["📋 指派任務", "📈 數據監控", "📋 學生名單", "📖 題目講解"])
+    t1, t2, t3, t4, t5 = st.tabs(["📋 指派任務", "📈 數據監控", "📋 學生名單", "📖 題目講解", "📊 今日學習報告"])
 
     with t1:
         # 發布成功後清空表單（在 widget 渲染前執行）
@@ -3069,7 +3069,124 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                             if append_to_sheet("logs", pd.DataFrame(rows_log)):
                                 st.success(f"✅ 已為 {len(target_stus_v)} 位學生寫入講解紀錄！")
 
-    show_version_caption()
+    # ══════════════════════════════════════════════════════════════════════════
+    # Tab5：今日學習報告
+    # ══════════════════════════════════════════════════════════════════════════
+    with t5:
+        st.subheader("📊 今日學習報告")
+
+        # 資料更新鍵
+        _t5c1, _t5c2 = st.columns([3, 1])
+        _t5c1.caption(f"今日：{get_now().strftime('%Y-%m-%d')}　統計學生今日各任務的答題狀況")
+        _t5_refresh = _t5c2.button("🔄 更新資料", key="t5_refresh", use_container_width=True)
+
+        # 班級篩選
+        all_groups_t5 = sorted(df_s[~df_s['分組'].isin(['ADMIN','TEACHER'])]['分組'].unique())
+        grp_opts_t5   = ["全班"] + [_group_label(g) for g in all_groups_t5]
+        grp_map_t5    = {"全班": None, **{_group_label(g): g for g in all_groups_t5}}
+        sel_grp_t5    = st.selectbox("👥 班級", grp_opts_t5, key="t5_grp")
+        grp_t5        = grp_map_t5.get(sel_grp_t5)
+
+        _t5_cache_key = f"_t5_report_{sel_grp_t5}"
+
+        if _t5_refresh or _t5_cache_key not in st.session_state:
+            today_str = get_now().strftime("%Y-%m-%d")
+
+            # 只取今日 logs
+            df_l_today = df_l[df_l['時間'].str[:10] == today_str].copy() if not df_l.empty and '時間' in df_l.columns else pd.DataFrame()
+
+            # 班級篩選
+            if grp_t5 and not df_l_today.empty:
+                df_l_today = df_l_today[df_l_today['分組'] == grp_t5]
+
+            # 學生名單
+            if grp_t5:
+                students_t5 = sorted(df_s[df_s['分組'] == grp_t5]['姓名'].tolist())
+            else:
+                students_t5 = sorted(df_s[~df_s['分組'].isin(['ADMIN','TEACHER'])]['姓名'].tolist())
+
+            # 任務名稱→編號對照
+            task_id_to_name_t5 = {}
+            if not df_a.empty:
+                for _, _ar in df_a.iterrows():
+                    _ti = str(_ar.get('任務編號','') or '')
+                    _tn = str(_ar.get('任務名稱',''))
+                    if _ti:
+                        task_id_to_name_t5[_ti] = _tn
+
+            # 題型識別
+            def _qtype_t5(qid):
+                if qid.startswith("R_"):   return "🎤 朗讀"
+                if qid.startswith("V_"):   return "🔤 拼單字"
+                if qid.startswith("RM_"):  return "📖 閱讀"
+                if qid.startswith("LP_"):  return "🎧 聽力音標"
+                if qid.startswith("LS_"):  return "🎧 聽力重組"
+                return "🔵 單選" if "單選" in qid else "✏️ 重組"
+
+            type_icons = {"🎤 朗讀":"🎤","🔤 拼單字":"🔤","📖 閱讀":"📖",
+                          "🎧 聽力音標":"🎧","🎧 聽力重組":"🎧","🔵 單選":"🔵","✏️ 重組":"✏️"}
+
+            report_data = {}
+            for stu in students_t5:
+                stu_l = df_l_today[df_l_today['姓名'] == stu].copy() if not df_l_today.empty else pd.DataFrame()
+                if stu_l.empty:
+                    continue
+                stu_ans = stu_l[~stu_l['結果'].str.contains('📖', na=False)]
+                if stu_ans.empty:
+                    continue
+
+                # 依任務分組
+                task_groups = {}
+                for _, row in stu_ans.iterrows():
+                    tid  = str(row.get('任務名稱','') or '') if '任務名稱' in stu_ans.columns else ''
+                    tname = task_id_to_name_t5.get(tid, tid) if tid else '（無任務）'
+                    import re as _re_t5
+                    tname_short = _re_t5.sub(r'^\[T\d+\]\s*', '', tname).strip() or '（無任務）'
+                    if tname_short not in task_groups:
+                        task_groups[tname_short] = []
+                    task_groups[tname_short].append(row)
+
+                if task_groups:
+                    report_data[stu] = task_groups
+
+            st.session_state[_t5_cache_key] = (report_data, students_t5, today_str)
+
+        # 顯示報告
+        cached = st.session_state.get(_t5_cache_key)
+        if cached:
+            report_data, students_t5, today_str = cached
+            if not report_data:
+                st.info("今日尚無學生答題記錄。")
+            else:
+                for stu in students_t5:
+                    if stu not in report_data:
+                        continue
+                    task_groups = report_data[stu]
+                    with st.expander(f"👤 **{stu}**　共 {len(task_groups)} 個任務有答題", expanded=True):
+                        for tname_short, rows in task_groups.items():
+                            st.markdown(f"**▌ {tname_short}**")
+                            # 依題型統計
+                            type_stats = {}
+                            for row in rows:
+                                qt = _qtype_t5(str(row.get('題目ID','')))
+                                if qt not in type_stats:
+                                    type_stats[qt] = {'total':0, 'correct':0, 'wrong':0}
+                                res = str(row.get('結果',''))
+                                type_stats[qt]['total'] += 1
+                                if res == '✅':
+                                    type_stats[qt]['correct'] += 1
+                                elif res == '❌':
+                                    type_stats[qt]['wrong'] += 1
+                            # 顯示各題型統計
+                            cols_t5 = st.columns(len(type_stats)) if type_stats else []
+                            for ci, (qt, stat) in enumerate(type_stats.items()):
+                                acc = f"{int(stat['correct']/stat['total']*100)}%" if stat['total'] else "—"
+                                cols_t5[ci].metric(
+                                    qt,
+                                    f"✅{stat['correct']}/❌{stat['wrong']}",
+                                    f"正確率 {acc}"
+                                )
+                            st.divider()
 
     show_version_caption()
     st.stop()
