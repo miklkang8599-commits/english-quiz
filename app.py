@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.271 - summary欄位修復版)
+# 🧩 英文全能練習系統 (V2.9.272 - 無預設勾選+發布回饋版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.271
+# 📌 版本編號 (VERSION): 2.9.272
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.271"
+VERSION = "2.9.272"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1023,7 +1023,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
         st.divider()
 
         # ── 單選題範圍（選填） ────────────────────────────────────────────
-        include_mcq = st.checkbox("🔵 加入單選題", value=True, key="t1_inc_mcq")
+        include_mcq = st.checkbox("🔵 加入單選題", value=False, key="t1_inc_mcq")
         df_mcq_final = pd.DataFrame()
 
         if include_mcq:
@@ -1513,8 +1513,9 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     "類型":       task_type
                 }])
                 if append_to_sheet("assignments", new_task):
-                    st.success(f"✅ 任務已發布！共 {len(all_ids)} 題，指派給 {len(target_students_t1)} 位學生")
-                    st.session_state['_a2_cache_stale'] = True  # 任務列表需重新整理
+                    st.success(f"🎉 任務發布成功！共 {len(all_ids)} 題，已指派給 {len(target_students_t1)} 位學生。請至任務列表確認。")
+                    st.balloons()
+                    st.session_state['_a2_cache_stale'] = True
                     # 立即清空所有篩選 key
                     _clear_keys = [
                         't1_inc_q', 't1_inc_mcq', 't1_inc_reading', 't1_inc_vocab', 't1_inc_rm', 't1_inc_lp',
