@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.274 - 今日學習報告TAB版)
+# 🧩 英文全能練習系統 (V2.9.275 - 重組拼字自動對答版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.274
+# 📌 版本編號 (VERSION): 2.9.275
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.274"
+VERSION = "2.9.275"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -4813,7 +4813,8 @@ if st.session_state.quiz_loaded:
                             st.session_state[f"vocab_used_{st.session_state.q_idx}"] = used_st
                             st.rerun()
 
-                if st.button("✅ 檢查答案", type="primary", use_container_width=True, key=f"vb_check_{st.session_state.q_idx}"):
+                # 選完正確字母數後自動對答
+                if len(current_ans) >= len(_clean_vocab(word)) and not st.session_state.get("show_analysis"):
                     is_ok = _clean_vocab("".join(current_ans)) == _clean_vocab(word)
                     st.session_state.update({"current_res": "✅ 正確！" if is_ok else f"❌ 錯誤！正確答案：{word}", "show_analysis": True})
                     append_to_sheet("logs", pd.DataFrame([{"時間": get_now().strftime("%Y-%m-%d %H:%M:%S"), "姓名": st.session_state.user_name, "分組": st.session_state.group_id, "題目ID": q.get("題目ID","N/A"), "結果": "✅" if is_ok else "❌", "學生答案": "".join(current_ans), "任務名稱": st.session_state.get("current_task_name","")}]))
@@ -4975,24 +4976,23 @@ if st.session_state.quiz_loaded:
                     st.rerun()
 
         if len(st.session_state.ans) == len(tk) and not st.session_state.show_analysis:
-            if st.button("✅ 🔵 檢查作答結果", type="primary", use_container_width=True):
-                is_ok = clean_string_for_compare("".join(st.session_state.ans)) == clean_string_for_compare(ans_key)
-                st.session_state.update({
-                    "current_res": "✅ 正確！" if is_ok else f"❌ 錯誤！正確答案：{ans_key}",
-                    "show_analysis": True
-                })
-                # ✅ 修復 2：改用 append 寫入 Log
-                log_data = pd.DataFrame([{
-                    "時間": get_now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "姓名": st.session_state.user_name,
-                    "分組": st.session_state.group_id,
-                    "題目ID": q.get('題目ID', 'N/A'),
-                    "結果": "✅" if is_ok else "❌",
-                    "任務名稱": st.session_state.get("current_task_name", "")
-                }])
-                append_to_sheet("logs", log_data)
-                st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
-                st.rerun()
+            # 全部選完自動對答
+            is_ok = clean_string_for_compare("".join(st.session_state.ans)) == clean_string_for_compare(ans_key)
+            st.session_state.update({
+                "current_res": "✅ 正確！" if is_ok else f"❌ 錯誤！正確答案：{ans_key}",
+                "show_analysis": True
+            })
+            log_data = pd.DataFrame([{
+                "時間": get_now().strftime("%Y-%m-%d %H:%M:%S"),
+                "姓名": st.session_state.user_name,
+                "分組": st.session_state.group_id,
+                "題目ID": q.get('題目ID', 'N/A'),
+                "結果": "✅" if is_ok else "❌",
+                "任務名稱": st.session_state.get("current_task_name", "")
+            }])
+            append_to_sheet("logs", log_data)
+            st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
+            st.rerun()
 
     if st.session_state.get('show_analysis') and not is_reading and not is_reading_mcq and not is_listen_phon and not is_listen_sent:
         st.warning(st.session_state.current_res)
