@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.272 - 無預設勾選+發布回饋版)
+# 🧩 英文全能練習系統 (V2.9.273 - 發布訊息含序號版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.272
+# 📌 版本編號 (VERSION): 2.9.273
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.272"
+VERSION = "2.9.273"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1371,6 +1371,8 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             st.caption("← 點「計算題數」確認出題範圍")
 
         if st.button("🚀 確認發布任務", use_container_width=True, type="primary"):
+            # 清除舊的成功訊息
+            st.session_state.pop('_publish_success', None)
             if not target_groups:
                 st.error("❌ 請至少選擇一個目標班級")
             elif not include_q and not include_mcq and not include_reading and not include_vocab and not include_rm and not include_lp and not include_ls:
@@ -1516,6 +1518,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     st.success(f"🎉 任務發布成功！共 {len(all_ids)} 題，已指派給 {len(target_students_t1)} 位學生。請至任務列表確認。")
                     st.balloons()
                     st.session_state['_a2_cache_stale'] = True
+                    st.session_state['_publish_success'] = f"🎉 任務發布成功！\n任務序號：**{task_id}**\n任務名稱：**{auto_desc}**\n共 {len(all_ids)} 題，已指派給 {len(target_students_t1)} 位學生。"
                     # 立即清空所有篩選 key
                     _clear_keys = [
                         't1_inc_q', 't1_inc_mcq', 't1_inc_reading', 't1_inc_vocab', 't1_inc_rm', 't1_inc_lp',
@@ -1532,6 +1535,10 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     for _k in _clear_keys:
                         st.session_state.pop(_k, None)
                     st.rerun()
+
+        # 顯示發布成功訊息（rerun 後仍然保留）
+        if st.session_state.get('_publish_success'):
+            st.success(st.session_state['_publish_success'])
 
         # ══════════════════════════════════════════════════════════════════
         # 區塊二：集合多任務→指派新任務
