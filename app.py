@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.269 - 排行榜selectbox版)
+# 🧩 英文全能練習系統 (V2.9.270 - 聽力句子重組題型版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.269
+# 📌 版本編號 (VERSION): 2.9.270
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.269"
+VERSION = "2.9.270"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -93,7 +93,11 @@ def load_static_data():
             df_lp = conn.read(worksheet="聽力音標", ttl=600).fillna("").astype(str).replace(r'\.0$', '', regex=True)
         except:
             df_lp = pd.DataFrame()
-        return df_q, df_s, df_r, df_v, df_rm, df_mcq, df_lp
+        try:
+            df_ls = conn.read(worksheet="聽力句子重組", ttl=600).fillna("").astype(str).replace(r'\.0$', '', regex=True)
+        except:
+            df_ls = pd.DataFrame()
+        return df_q, df_s, df_r, df_v, df_rm, df_mcq, df_lp, df_ls
     except Exception as e:
         import streamlit as _st
         _st.session_state['_load_error'] = str(e)
@@ -132,6 +136,16 @@ def _sort_task_names(names):
     def _key(n):
         return re.sub(r'^\[T\d+\]\s*', '', str(n)).strip().lower()
     return sorted(names, key=_key)
+
+def _get_ls_qid(row):
+    """產生聽力句子重組題目ID：LS_版本_年度_冊編號_單元_課編號_句編號"""
+    return f"LS_{row.get('版本','')}_{row.get('年度','')}_{row.get('冊編號','')}_{row.get('單元','')}_{row.get('課編號','')}_{row.get('句編號','')}"
+
+def _ls_split_words(sentence):
+    """將英文句子拆成單字清單（去除標點，保留大小寫）"""
+    import re as _re_ls
+    words = _re_ls.findall(r"[A-Za-z']+(?:-[A-Za-z']+)*", sentence)
+    return words
 
 def _get_lp_qid(row):
     """產生聽力音標題目ID：LP_{版本}_{單元編號}_{組編號}_{符號編號}"""
@@ -281,11 +295,11 @@ def append_to_sheet(worksheet_name: str, new_row: pd.DataFrame):
 # 🔐 【權限控管與登入】
 # ------------------------------------------------------------------------------
 if not st.session_state.get('logged_in', False):
-    df_q, df_s, df_r, df_v, df_rm, df_mcq, df_lp = load_static_data()
+    df_q, df_s, df_r, df_v, df_rm, df_mcq, df_lp, df_ls = load_static_data()
     # 失敗立即重試一次
     if df_s is None:
         load_static_data.clear()
-        df_q, df_s, df_r, df_v, df_rm, df_mcq, df_lp = load_static_data()
+        df_q, df_s, df_r, df_v, df_rm, df_mcq, df_lp, df_ls = load_static_data()
     _, c, _ = st.columns([1, 1.2, 1])
     with c:
         if df_s is None:
@@ -318,13 +332,13 @@ if not st.session_state.get('logged_in', False):
     st.stop()
 
 # 載入資料（登入後）
-df_q, df_s, df_r, df_v, df_rm, df_mcq, df_lp = load_static_data()
+df_q, df_s, df_r, df_v, df_rm, df_mcq, df_lp, df_ls = load_static_data()
 df_a, df_l = load_dynamic_data()
 
 if df_q is None or df_s is None:
     # 立即清快取重試一次
     load_static_data.clear()
-    df_q, df_s, df_r, df_v, df_rm, df_mcq, df_lp = load_static_data()
+    df_q, df_s, df_r, df_v, df_rm, df_mcq, df_lp, df_ls = load_static_data()
 
 if df_q is None or df_s is None:
     st.error("⚠️ 題庫讀取失敗，請按下方按鈕重試。")
@@ -1221,10 +1235,34 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             # 閱讀單句篩選（已有）
             pass
 
-        # ── 聽力音標 ─────────────────────────────────────────────────────────
+        # ── 聽力句子重組 ───────────────────────────────────────────────────────
+        include_ls = st.checkbox("🎧 加入聽力句子重組題", key="t1_inc_ls")
+        df_ls_final = pd.DataFrame()
+        if include_ls and not df_ls.empty:
+            st.markdown("**🎧 聽力句子重組出題範圍**")
+            lsc_ = st.columns(5)
+            lsv_opts = [""] + sorted(df_ls['版本'].unique().tolist())
+            lsv_ = lsc_[0].selectbox("版本", lsv_opts, key="lst_v")
+            ls_src = df_ls[df_ls['版本'] == lsv_] if lsv_ else df_ls
+            lsu_opts = [""] + sorted(ls_src['單元'].unique().tolist()) if '單元' in ls_src.columns else [""]
+            lsu_ = lsc_[1].selectbox("單元", lsu_opts, key="lst_u")
+            ls_src2 = ls_src[ls_src['單元'] == lsu_] if lsu_ and '單元' in ls_src.columns else ls_src
+            lsy_opts = [""] + sorted(ls_src2['年度'].unique().tolist())
+            lsy_ = lsc_[2].selectbox("年度", lsy_opts, key="lst_y")
+            ls_src3 = ls_src2[ls_src2['年度'] == lsy_] if lsy_ else ls_src2
+            lsb_opts = [""] + sorted(ls_src3['冊編號'].unique().tolist())
+            lsb_ = lsc_[3].selectbox("冊編號", lsb_opts, key="lst_b")
+            ls_src4 = ls_src3[ls_src3['冊編號'] == lsb_] if lsb_ else ls_src3
+            lsl_opts = [""] + sorted(ls_src4['課編號'].unique().tolist())
+            lsl_ = lsc_[4].selectbox("課編號", lsl_opts, key="lst_l")
+            ls_src5 = ls_src4[ls_src4['課編號'] == lsl_] if lsl_ else ls_src4
+            ls_total = len(ls_src5)
+            df_ls_final = ls_src5.sample(frac=1).reset_index(drop=True)
+            st.caption(f"📚 範圍 {ls_total} 題 → 篩選後 {len(df_ls_final)} 題")
         include_lp = st.checkbox("🎧 加入聽力音標題", key="t1_inc_lp")
         df_lp_final = pd.DataFrame()  # 預設空值
         if include_lp and not df_lp.empty:
+
             st.markdown("**🎧 聽力音標出題範圍**")
             lpc_ = st.columns(4)
             lpv_opts = [""] + sorted(df_lp['版本'].unique().tolist())
@@ -1316,14 +1354,15 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 '朗讀': len(df_r_final),
                 '拼單字': len(df_v_final),
                 '閱讀': len(df_rm_final),
-                '聽力': len(df_lp_final),
+                '聽力音標': len(df_lp_final),
+                '聽力重組': len(df_ls_final),
             }
 
         _summary = st.session_state.get('_t1_summary')
         if _summary:
             _summary_cols = st.columns(6)
-            _icons = ["✏️ 重組","🔵 單選","🎤 朗讀","🔤 拼單字","📖 閱讀","🎧 聽力"]
-            _keys  = ["重組","單選","朗讀","拼單字","閱讀","聽力"]
+            _icons = ["✏️ 重組","🔵 單選","🎤 朗讀","🔤 拼單字","📖 閱讀","🎧 聽力音標","🎧 聽力重組"]
+            _keys  = ["重組","單選","朗讀","拼單字","閱讀","聽力音標","聽力重組"]
             for _ci, (_lbl, _k) in enumerate(zip(_icons, _keys)):
                 _summary_cols[_ci].metric(_lbl, f"{_summary.get(_k, 0)} 題")
             total_q = sum(_summary.values())
@@ -1334,9 +1373,9 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
         if st.button("🚀 確認發布任務", use_container_width=True, type="primary"):
             if not target_groups:
                 st.error("❌ 請至少選擇一個目標班級")
-            elif not include_q and not include_mcq and not include_reading and not include_vocab and not include_rm and not include_lp:
+            elif not include_q and not include_mcq and not include_reading and not include_vocab and not include_rm and not include_lp and not include_ls:
                 st.error("❌ 請至少勾選一種題型")
-            elif df_t1_final.empty and df_mcq_final.empty and df_r_final.empty and df_v_final.empty and df_rm_final.empty and df_lp_final.empty:
+            elif df_t1_final.empty and df_mcq_final.empty and df_r_final.empty and df_v_final.empty and df_rm_final.empty and df_lp_final.empty and df_ls_final.empty:
                 st.error("❌ 目前無符合條件的題目，請調整篩選條件")
             elif not target_students_t1:
                 st.error("❌ 請至少選擇一位學生")
@@ -1349,7 +1388,8 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 v_ids   = df_v_final['題目ID'].tolist()   if (not df_v_final.empty   and '題目ID' in df_v_final.columns)   else []
                 rm_ids  = df_rm_final['題目ID'].tolist()  if (not df_rm_final.empty  and '題目ID' in df_rm_final.columns)  else []
                 lp_ids  = [_get_lp_qid(r) for _, r in df_lp_final.iterrows()] if not df_lp_final.empty else []
-                all_ids = q_ids + mcq_ids + r_ids + v_ids + rm_ids + lp_ids
+                ls_ids  = [_get_ls_qid(r) for _, r in df_ls_final.iterrows()] if not df_ls_final.empty else []
+                all_ids = q_ids + mcq_ids + r_ids + v_ids + rm_ids + lp_ids + ls_ids
 
                 has_q   = bool(q_ids)
                 has_mcq = bool(mcq_ids)
@@ -1357,7 +1397,10 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 has_v   = bool(v_ids)
                 has_rm  = bool(rm_ids)
                 has_lp  = bool(lp_ids)
-                if has_lp and not has_q and not has_mcq and not has_r and not has_v and not has_rm:
+                has_ls  = bool(ls_ids)
+                if has_ls and not has_q and not has_mcq and not has_r and not has_v and not has_rm and not has_lp:
+                    task_type = "聽力重組"
+                elif has_lp and not has_q and not has_mcq and not has_r and not has_v and not has_rm and not has_ls:
                     task_type = "聽力音標"
                 elif has_rm and not has_q and not has_mcq and not has_r and not has_v and not has_lp:
                     task_type = "閱讀單句"
@@ -1430,6 +1473,13 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     lpv_ = st.session_state.get('lpt_v', '')
                     lpu_ = st.session_state.get('lpt_u', '')
                     auto_desc = _make_task_name("聽力音標", lpv_, lpu_, '', '', '', '', len(lp_ids), groups_label, teacher_name, publish_time, str(date_start), str(date_end))
+                elif ls_ids:
+                    lsv_ = st.session_state.get('lst_v', '')
+                    lsu_ = st.session_state.get('lst_u', '')
+                    lsy_ = st.session_state.get('lst_y', '')
+                    lsb_ = st.session_state.get('lst_b', '')
+                    lsl_ = st.session_state.get('lst_l', '')
+                    auto_desc = _make_task_name("聽力重組", lsv_, lsu_, lsy_, lsb_, lsl_, '', len(ls_ids), groups_label, teacher_name, publish_time, str(date_start), str(date_end))
                 else:
                     auto_desc = f"混合任務-{groups_label}-{teacher_name}-{publish_time}-{date_start}~{date_end}"
 
@@ -1474,6 +1524,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                         'vt_v', 'vt_u', 'vt_y', 'vt_b', 'vt_l', 'vt_start_sent', 'vt_q_count', 'vt_mode', 'vt_timer', 'vt_extra',
                         'rmt_v', 'rmt_u', 'rmt_y', 'rmt_b', 'rmt_l', 'rmt_start', 'rmt_count', 'rmt_grammar', 'rmt_diff',
                         'lpt_v', 'lpt_u', 'lpt_g', 'lpt_count',
+                        'lst_v', 'lst_u', 'lst_y', 'lst_b', 'lst_l', 't1_inc_ls',
                         't1_group', 't1_mode', 't1_stu', 't1_start', 't1_end',
                         't1_ref_stu', 't1_ref_logic', 't1_ref_n', '_t1_summary',
                     ]
@@ -2292,6 +2343,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                         if qid.startswith("V_"):   return "拼單字"
                         if qid.startswith("RM_"):  return "閱讀單句"
                         if qid.startswith("LP_"):  return "聽力音標"
+                        if qid.startswith("LS_"):  return "聽力重組"
                         return "單選" if "單選" in qid_unit_rpt.get(qid, "") else "重組"
 
                     def _qnum(qid):
@@ -3111,6 +3163,7 @@ if not st.session_state.quiz_loaded:
             is_mixed_task   = task_type == '混合'
             is_rm_task      = task_type == '閱讀單句'
             is_lp_task      = task_type == '聽力音標'
+            is_ls_task      = task_type == '聽力重組'
 
             if q_ids_set:
                 try:
@@ -3231,6 +3284,15 @@ if not st.session_state.quiz_loaded:
                                         lp_d['_lp_correct_opt'] = ["A","B","C","D"][correct_idx]
                                         lp_recs.append(lp_d)
                                     _all_dfs.append(pd.DataFrame(lp_recs))
+                            # 聽力句子重組
+                            if not df_ls.empty:
+                                dls2 = df_ls.copy()
+                                dls2['題目ID'] = dls2.apply(_get_ls_qid, axis=1)
+                                dls2['_type']  = 'listen_sent'
+                                rls = dls2[dls2['題目ID'].isin(pending_ids)].copy()
+                                if not rls.empty:
+                                    rls['_ls_words'] = rls['聽力重組英文答案'].apply(_ls_split_words)
+                                    all_dfs.append(rls)
                             if _all_dfs:
                                 retry_all = pd.concat(_all_dfs, ignore_index=True)
                                 records   = retry_all.to_dict('records')
@@ -3374,6 +3436,15 @@ if not st.session_state.quiz_loaded:
                                     import random as _rand_lp_final
                                     _rand_lp_final.shuffle(lp_recs2)
                                     records = lp_recs2
+                            # 聽力句子重組（純聽力任務路徑）
+                            if not df_ls.empty:
+                                dls_lp = df_ls.copy()
+                                dls_lp['題目ID'] = dls_lp.apply(_get_ls_qid, axis=1)
+                                dls_lp['_type'] = 'listen_sent'
+                                rls_lp = dls_lp[dls_lp['題目ID'].isin(pending_ids)].copy()
+                                if not rls_lp.empty:
+                                    rls_lp['_ls_words'] = rls_lp['聽力重組英文答案'].apply(_ls_split_words)
+                                    records = records + rls_lp.to_dict('records')
                                     # 預載第一題音檔
                                     if records:
                                         _f1 = records[min(_start_idx_fwd, len(records)-1)]
@@ -3397,6 +3468,24 @@ if not st.session_state.quiz_loaded:
                                             except:
                                                 pass
                                     for _k in [k for k in list(st.session_state.keys()) if k.startswith("vocab_pool_") or k.startswith("vocab_ans_") or k.startswith("vocab_used_")]:
+                                        del st.session_state[_k]
+                                    st.session_state.update({
+                                        "quiz_list": records,
+                                        "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key,
+                                        "ans": [], "used_history": [], "shuf": [], "show_analysis": False
+                                    })
+                                    st.rerun()
+
+                        elif is_ls_task:
+                            if not df_ls.empty:
+                                dls_t = df_ls.copy()
+                                dls_t['題目ID'] = dls_t.apply(_get_ls_qid, axis=1)
+                                dls_t['_type']  = 'listen_sent'
+                                pending_ls = dls_t[dls_t['題目ID'].isin(pending_ids)].copy()
+                                if not pending_ls.empty:
+                                    pending_ls['_ls_words'] = pending_ls['聽力重組英文答案'].apply(_ls_split_words)
+                                    records = pending_ls.to_dict('records')
+                                    for _k in [k for k in list(st.session_state.keys()) if k.startswith("vocab_pool_") or k.startswith("vocab_ans_") or k.startswith("vocab_used_") or k.startswith("ls_ans_") or k.startswith("ls_used_") or k.startswith("ls_shuf_")]:
                                         del st.session_state[_k]
                                     st.session_state.update({
                                         "quiz_list": records,
@@ -3464,7 +3553,17 @@ if not st.session_state.quiz_loaded:
                                         _ld['_type'] = 'listen_phon'
                                         _lp_recs_m.append(_ld)
                                     pending_lp_m = pd.DataFrame(_lp_recs_m)
-                            pending = pd.concat([pending_q, pending_r, pending_v, pending_rm, pending_lp_m], ignore_index=True)
+                            # 聽力句子重組（混合任務）
+                            pending_ls_m = pd.DataFrame()
+                            if not df_ls.empty:
+                                dls_m = df_ls.copy()
+                                dls_m['題目ID'] = dls_m.apply(_get_ls_qid, axis=1)
+                                dls_m['_type'] = 'listen_sent'
+                                _pls = dls_m[dls_m['題目ID'].isin(pending_ids)].copy()
+                                if not _pls.empty:
+                                    _pls['_ls_words'] = _pls['聽力重組英文答案'].apply(_ls_split_words)
+                                    pending_ls_m = _pls
+                            pending = pd.concat([pending_q, pending_r, pending_v, pending_rm, pending_lp_m, pending_ls_m], ignore_index=True)
                             if not pending.empty:
                                 # 清除所有舊的字母池
                                 for _k in [k for k in list(st.session_state.keys()) if k.startswith("vocab_pool_") or k.startswith("vocab_ans_") or k.startswith("vocab_used_")]:
@@ -3648,6 +3747,14 @@ if not st.session_state.quiz_loaded:
                 mlp = dlp_rv[dlp_rv['題目ID'].isin(rv_q_ids)].copy()
                 if not mlp.empty:
                     all_items.append(mlp)
+            # 聽力句子重組
+            if not df_ls.empty:
+                dls_rv = df_ls.copy()
+                dls_rv['題目ID'] = dls_rv.apply(_get_ls_qid, axis=1)
+                dls_rv['_type']  = 'listen_sent'
+                mls = dls_rv[dls_rv['題目ID'].isin(rv_q_ids)].copy()
+                if not mls.empty:
+                    all_items.append(mls)
 
             # 若題庫找不到，改用 logs 裡的題目ID直接建立簡易題目列表
             if not all_items and not my_logs.empty:
@@ -3830,6 +3937,10 @@ if not st.session_state.quiz_loaded:
                     q_text     = str(item.get('中文意思') or '').strip()
                     q_ans      = str(item.get('英文單字') or '').strip()
                     type_label = "🔤 單字"
+                elif q_type == 'listen_sent':
+                    q_text     = str(item.get('聽力重組英文答案') or '').strip()
+                    q_ans      = q_text
+                    type_label = "🎧 聽力重組"
                 elif q_type == 'listen_phon':
                     q_text     = str(item.get('KK符號') or '').strip()
                     q_ans      = q_text
@@ -3869,6 +3980,11 @@ if not st.session_state.quiz_loaded:
                     # 聽力音標：永遠顯示 KK 符號答案
                     ans_html      = f"<div style='color:#1565c0; font-size:1.2rem; font-weight:600; margin-top:6px;'>🎧 正確音標：{q_ans}</div>"
                     analysis_html = f"<div style='color:#555; font-size:0.9rem; margin-top:4px;'>📝 {q_analysis}</div>" if q_analysis else ""
+                elif q_type == 'listen_sent':
+                    # 聽力重組：永遠顯示答案和翻譯
+                    ls_rv_trans = str(item.get('聽力重組中文翻譯') or '').strip()
+                    ans_html      = f"<div style='color:#1565c0; font-size:1.1rem; font-weight:600; margin-top:6px;'>🎧 {q_ans}</div>" + (f"<div style='color:#555; font-size:0.9rem;'>📖 {ls_rv_trans}</div>" if ls_rv_trans else "")
+                    analysis_html = ""
                 else:
                     ans_html      = f"<div style='color:#2e7d32; font-size:1rem; margin-top:6px;'>✅ 答案：{q_ans}</div>" if has_answer else "<div style='color:#999; font-size:0.9rem; margin-top:6px;'>🔒 作答後才顯示答案</div>"
                     analysis_html = f"<div style='color:#555; font-size:0.9rem; margin-top:4px;'>📝 {q_analysis}</div>" if (q_analysis and has_answer) else ""
@@ -3967,6 +4083,29 @@ if not st.session_state.quiz_loaded:
                     else:
                         st.caption(f"⚠️ 找不到音檔：{_lp_rv_key}")
 
+                # 聽力句子重組：TTS 音檔
+                if q_type == 'listen_sent':
+                    ls_rv_ans   = str(item.get('聽力重組英文答案') or '').strip()
+                    ls_rv_trans = str(item.get('聽力重組中文翻譯') or '').strip()
+                    ls_rv_tts_key = f"rv_ls_tts_{i}_{qid}"
+                    if not st.session_state.get(ls_rv_tts_key) and ls_rv_ans:
+                        with st.spinner("🔊 產生音檔..."):
+                            try:
+                                import openai as _oai_rv_ls, base64 as _b64_rv_ls
+                                _cl_rv_ls = _oai_rv_ls.OpenAI(api_key=st.secrets.get("OPENAI_API_KEY",""))
+                                _raw_rv_ls = _cl_rv_ls.audio.speech.create(
+                                    model="tts-1", voice="alloy", input=ls_rv_ans, speed=0.8
+                                ).content
+                                st.session_state[ls_rv_tts_key] = _b64_rv_ls.b64encode(_raw_rv_ls).decode()
+                            except Exception as _e_rv_ls:
+                                st.caption(f"🔇 失敗：{_e_rv_ls}")
+                    if st.session_state.get(ls_rv_tts_key):
+                        import base64 as _b64_rv_ls2
+                        st.markdown("**🎧 聆聽音檔：**")
+                        st.audio(_b64_rv_ls2.b64decode(st.session_state[ls_rv_tts_key]), format="audio/mp3")
+                    if ls_rv_trans:
+                        st.info(f"📖 中文翻譯：{ls_rv_trans}")
+
                 # 複習按鈕（只有已作答才顯示）
                 if has_answer:
                     if st.button("🔄 我已複習這題", key=f"rv_done_{i}_{qid}", use_container_width=True):
@@ -4004,9 +4143,163 @@ if st.session_state.quiz_loaded:
     is_vocab       = q.get("_type") == "vocab"
     is_reading_mcq = q.get("_type") == "reading_mcq"
     is_listen_phon = q.get("_type") == "listen_phon"
+    is_listen_sent = q.get("_type") == "listen_sent"
 
     # 題目標題
-    if is_listen_phon:
+    if is_listen_sent:
+        # ── 聽力句子重組題 ────────────────────────────────────────────────────
+        ls_qid     = q.get("題目ID", "")
+        ls_answer  = str(q.get("聽力重組英文答案") or "").strip()
+        ls_trans   = str(q.get("聽力重組中文翻譯") or "").strip()
+        ls_words   = q.get("_ls_words", _ls_split_words(ls_answer))
+
+        # TTS 音檔（自動產生，natural voice）
+        ls_tts_key = f"ls_tts_{st.session_state.q_idx}_{ls_qid}"
+        if not st.session_state.get(ls_tts_key) and ls_answer:
+            with st.spinner("🔊 產生聆聽音檔..."):
+                try:
+                    import openai as _oai_ls, base64 as _b64_ls
+                    _cl_ls = _oai_ls.OpenAI(api_key=st.secrets.get("OPENAI_API_KEY",""))
+                    _raw_ls = _cl_ls.audio.speech.create(
+                        model="tts-1", voice="alloy", input=ls_answer, speed=0.8
+                    ).content
+                    st.session_state[ls_tts_key] = _b64_ls.b64encode(_raw_ls).decode()
+                except Exception as _e_ls:
+                    st.caption(f"🔇 音檔產生失敗：{_e_ls}")
+        st.markdown("**🎧 請聆聽音檔，重組成正確句子：**")
+        if st.session_state.get(ls_tts_key):
+            import base64 as _b64_ls2
+            st.audio(_b64_ls2.b64decode(st.session_state[ls_tts_key]), format="audio/mp3")
+
+        already_ls = st.session_state.get("show_analysis", False)
+
+        # 答案顯示區
+        ls_ans_key  = f"ls_ans_{st.session_state.q_idx}"
+        ls_used_key = f"ls_used_{st.session_state.q_idx}"
+        ls_shuf_key = f"ls_shuf_{st.session_state.q_idx}"
+        if ls_shuf_key not in st.session_state:
+            import random as _rls
+            _rls_words = ls_words.copy()
+            _rls.shuffle(_rls_words)
+            st.session_state[ls_shuf_key] = _rls_words
+        if ls_ans_key not in st.session_state:
+            st.session_state[ls_ans_key] = []
+        if ls_used_key not in st.session_state:
+            st.session_state[ls_used_key] = []
+
+        current_ls_ans = st.session_state[ls_ans_key]
+        shuffled_words = st.session_state[ls_shuf_key]
+        used_ls        = set(st.session_state[ls_used_key])
+
+        # 顯示已選單字
+        if current_ls_ans:
+            ans_html_ls = " ".join([
+                f"<span style='display:inline-block;padding:4px 10px;margin:2px;background:#4a90d9;color:white;border-radius:6px;font-size:1.1rem;font-weight:600;'>{w}</span>"
+                for w in current_ls_ans
+            ])
+        else:
+            ans_html_ls = "<span style='color:#aaa;font-size:1rem;'>點選下方單字</span>"
+        st.markdown(f"<div style='padding:10px;min-height:45px;background:#f0f4ff;border-radius:8px;margin-bottom:6px;'>{ans_html_ls}</div>", unsafe_allow_html=True)
+
+        # 退回/清除按鈕
+        if not already_ls:
+            _lsc1, _lsc2 = st.columns(2)
+            if _lsc1.button("⬅️ 退回一步", key=f"ls_back_{st.session_state.q_idx}", use_container_width=True):
+                if current_ls_ans:
+                    st.session_state[ls_ans_key].pop()
+                    used = st.session_state[ls_used_key]
+                    if used:
+                        used.pop()
+                    st.session_state[ls_used_key] = used
+                    st.rerun()
+            if _lsc2.button("🗑️ 全部清除", key=f"ls_clear_{st.session_state.q_idx}", use_container_width=True):
+                st.session_state[ls_ans_key] = []
+                st.session_state[ls_used_key] = []
+                st.rerun()
+
+            # 單字按鈕（固定8欄）
+            NUM_COLS_LS = min(len(shuffled_words), 8)
+            if NUM_COLS_LS > 0:
+                cols_ls = st.columns(NUM_COLS_LS)
+                for wi, word in enumerate(shuffled_words):
+                    col = cols_ls[wi % NUM_COLS_LS]
+                    if wi in used_ls:
+                        col.button("·", key=f"ls_w_{st.session_state.q_idx}_{wi}", use_container_width=True, disabled=True)
+                    else:
+                        if col.button(word, key=f"ls_w_{st.session_state.q_idx}_{wi}", use_container_width=True):
+                            st.session_state[ls_ans_key].append(word)
+                            st.session_state[ls_used_key].append(wi)
+                            st.rerun()
+
+            # 全部選完自動檢查
+            if len(current_ls_ans) == len(shuffled_words) and not already_ls:
+                _ls_user = " ".join(current_ls_ans)
+                _ls_correct_clean = " ".join(_ls_split_words(ls_answer))
+                _ls_ok = _ls_user.lower() == _ls_correct_clean.lower()
+                try:
+                    import time as _tls
+                    sb_ls  = get_supabase()
+                    en_ls  = _to_en_logs({
+                        "時間":    get_now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "姓名":    st.session_state.user_name,
+                        "分組":    st.session_state.group_id,
+                        "題目ID":  ls_qid,
+                        "結果":    "✅" if _ls_ok else "❌",
+                        "學生答案": _ls_user,
+                        "分數":    "",
+                        "任務名稱": st.session_state.get("current_task_name", "")
+                    })
+                    sb_ls.table("logs").insert(en_ls).execute()
+                    _tls.sleep(0.3)
+                    st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
+                except Exception as _e_ls2:
+                    st.error(f"寫入失敗：{_e_ls2}")
+                st.session_state.update({
+                    "current_res":   "✅ 正確！" if _ls_ok else f"❌ 錯誤！",
+                    "show_analysis": True
+                })
+                st.rerun()
+
+            # 手動送出按鈕
+            if st.button("✅ 檢查作答結果", type="primary", use_container_width=True, key=f"ls_submit_{st.session_state.q_idx}"):
+                _ls_user2 = " ".join(current_ls_ans)
+                _ls_ok2   = _ls_user2.lower() == " ".join(_ls_split_words(ls_answer)).lower()
+                try:
+                    import time as _tls2
+                    sb_ls2 = get_supabase()
+                    en_ls2 = _to_en_logs({
+                        "時間":    get_now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "姓名":    st.session_state.user_name,
+                        "分組":    st.session_state.group_id,
+                        "題目ID":  ls_qid,
+                        "結果":    "✅" if _ls_ok2 else "❌",
+                        "學生答案": _ls_user2,
+                        "分數":    "",
+                        "任務名稱": st.session_state.get("current_task_name", "")
+                    })
+                    sb_ls2.table("logs").insert(en_ls2).execute()
+                    _tls2.sleep(0.3)
+                    st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
+                except:
+                    pass
+                st.session_state.update({
+                    "current_res":   "✅ 正確！" if _ls_ok2 else "❌ 錯誤！",
+                    "show_analysis": True
+                })
+                st.rerun()
+
+        # 結果顯示
+        if already_ls:
+            res_ls = st.session_state.get("current_res", "")
+            if "✅" in res_ls:
+                st.success(res_ls)
+            else:
+                st.error(res_ls)
+            st.markdown(f"**正確答案：** {ls_answer}")
+            if ls_trans:
+                st.info(f"📖 中文翻譯：{ls_trans}")
+
+    elif is_listen_phon:
         # ── 聽力音標題 ──────────────────────────────────────────────────────
         lp_qid     = q.get("題目ID", "")
         lp_num     = str(q.get("總編號", "")).strip()
@@ -4576,7 +4869,7 @@ if st.session_state.quiz_loaded:
                 st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
                 st.rerun()
 
-    if st.session_state.get('show_analysis') and not is_reading and not is_reading_mcq and not is_listen_phon:
+    if st.session_state.get('show_analysis') and not is_reading and not is_reading_mcq and not is_listen_phon and not is_listen_sent:
         st.warning(st.session_state.current_res)
         # 單選題：答題後一律顯示解析
         if is_mcq:
@@ -4595,9 +4888,10 @@ if st.session_state.quiz_loaded:
         })
         # 清除該題目的所有 vocab pool（含新格式 vocab_pool_{q_idx}_{extra}）
         for k in list(st.session_state.keys()):
-            if k.startswith(f"vocab_pool_{q_idx}") or k in [
+            if k.startswith(f"vocab_pool_{q_idx}") or k.startswith(f"ls_tts_{q_idx}") or k in [
                 f"vocab_ans_{q_idx}", f"vocab_used_{q_idx}",
-                f"vocab_kb_{q_idx}", f"vocab_tts_{q_idx}"
+                f"vocab_kb_{q_idx}", f"vocab_tts_{q_idx}",
+                f"ls_ans_{q_idx}", f"ls_used_{q_idx}", f"ls_shuf_{q_idx}"
             ]:
                 st.session_state.pop(k, None)
 
