@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.280 - 聽力任務載入修復版)
+# 🧩 英文全能練習系統 (V2.9.282 - KK符號去括號版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.280
+# 📌 版本編號 (VERSION): 2.9.282
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.280"
+VERSION = "2.9.282"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -91,6 +91,8 @@ def load_static_data():
             df_rm = pd.DataFrame()
         try:
             df_lp = conn.read(worksheet="聽力音標", ttl=600).fillna("").astype(str).replace(r'\.0$', '', regex=True)
+            if 'KK符號' in df_lp.columns:
+                df_lp['KK符號'] = df_lp['KK符號'].str.strip().str.strip('[]').str.strip()
         except:
             df_lp = pd.DataFrame()
         try:
@@ -4455,7 +4457,7 @@ if st.session_state.quiz_loaded:
         # ── 聽力音標題 ──────────────────────────────────────────────────────
         lp_qid     = q.get("題目ID", "")
         lp_num     = str(q.get("總編號", "")).strip()
-        lp_correct = str(q.get("KK符號", "")).strip()
+        lp_correct = str(q.get("KK符號", "")).strip().strip("[]").strip()
         lp_opts    = q.get("_lp_opts", [])  # [{"KK符號":..., "總編號":...}, ...]
         lp_correct_opt = q.get("_lp_correct_opt", "A")
 
@@ -4491,7 +4493,7 @@ if st.session_state.quiz_loaded:
             else:
                 st.audio(get_audio_url(file_id))
         else:
-            st.warning(f"⚠️ 找不到音檔：{lp_num}")
+            st.warning(f"⚠️ 找不到音檔：{lp_num}（key={file_key}）")
 
         already_lp = st.session_state.get("show_analysis", False)
         opt_cols   = st.columns(2)
