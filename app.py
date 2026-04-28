@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.266 - 排行榜手動更新+計算鍵版)
+# 🧩 英文全能練習系統 (V2.9.267 - 任務列表50頁+老師預選版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.266
+# 📌 版本編號 (VERSION): 2.9.267
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.266"
+VERSION = "2.9.267"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1679,11 +1679,14 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
         else:
             teachers = sorted(df_a2['_teacher'].unique().tolist()) if '_teacher' in df_a2.columns else []
 
-            # 依老師建立 Tab
+            # 依老師建立 Tab，預設選目前登入老師
+            current_teacher = st.session_state.get('user_name', '')
             if len(teachers) == 1:
                 teacher_tabs = [st.container()]
                 teacher_map  = {teachers[0]: teacher_tabs[0]}
             else:
+                # 若登入老師有任務，預設選該老師的 tab
+                default_tab_idx = teachers.index(current_teacher) if current_teacher in teachers else 0
                 teacher_tabs = st.tabs(teachers)
                 teacher_map  = {t: teacher_tabs[i] for i, t in enumerate(teachers)}
 
@@ -1691,7 +1694,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 with tab_container:
                     df_teacher = df_a2[df_a2['_teacher'] == teacher]
                     # 分頁顯示任務
-                    TASK_PAGE = 20
+                    TASK_PAGE = 50
                     total_tasks = len(df_teacher)
                     total_task_pages = max(1, (total_tasks + TASK_PAGE - 1) // TASK_PAGE)
                     task_page_key = f"task_page_{teacher}"
@@ -1918,7 +1921,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                                        type="primary" if _active else "secondary",
                                        use_container_width=True):
                     st.session_state["t2_period"] = _p
-                    st.rerun()
+                    st.session_state["t2_do_query"] = False  # 重置查詢，不 rerun
 
             t2_period = st.session_state["t2_period"]
             _t2_d = {
@@ -1940,7 +1943,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     st.session_state["t2_custom_from"] = t2_from_custom
                     st.session_state["t2_custom_to"]   = t2_to_custom
                     st.session_state["t2_period"]      = "自訂"
-                    st.rerun()
+                    st.session_state["t2_do_query"]    = False
 
             # 如果是自訂模式，用 session_state 的自訂日期
             if t2_period == "自訂":
