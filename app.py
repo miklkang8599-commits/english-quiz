@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.275 - 重組拼字自動對答版)
+# 🧩 英文全能練習系統 (V2.9.276 - 今日報告函式修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.275
+# 📌 版本編號 (VERSION): 2.9.276
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.275"
+VERSION = "2.9.276"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3087,6 +3087,15 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
         sel_grp_t5    = st.selectbox("👥 班級", grp_opts_t5, key="t5_grp")
         grp_t5        = grp_map_t5.get(sel_grp_t5)
 
+        # 題型識別（定義在快取區塊外，顯示時也能使用）
+        def _qtype_t5(qid):
+            if qid.startswith("R_"):   return "🎤 朗讀"
+            if qid.startswith("V_"):   return "🔤 拼單字"
+            if qid.startswith("RM_"):  return "📖 閱讀"
+            if qid.startswith("LP_"):  return "🎧 聽力音標"
+            if qid.startswith("LS_"):  return "🎧 聽力重組"
+            return "🔵 單選" if "單選" in qid else "✏️ 重組"
+
         _t5_cache_key = f"_t5_report_{sel_grp_t5}"
 
         if _t5_refresh or _t5_cache_key not in st.session_state:
@@ -3115,13 +3124,8 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                         task_id_to_name_t5[_ti] = _tn
 
             # 題型識別
-            def _qtype_t5(qid):
-                if qid.startswith("R_"):   return "🎤 朗讀"
-                if qid.startswith("V_"):   return "🔤 拼單字"
-                if qid.startswith("RM_"):  return "📖 閱讀"
-                if qid.startswith("LP_"):  return "🎧 聽力音標"
-                if qid.startswith("LS_"):  return "🎧 聽力重組"
-                return "🔵 單選" if "單選" in qid else "✏️ 重組"
+            def _qtype_t5_inner(qid):
+                return _qtype_t5(qid)
 
             type_icons = {"🎤 朗讀":"🎤","🔤 拼單字":"🔤","📖 閱讀":"📖",
                           "🎧 聽力音標":"🎧","🎧 聽力重組":"🎧","🔵 單選":"🔵","✏️ 重組":"✏️"}
@@ -3144,7 +3148,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     tname_short = _re_t5.sub(r'^\[T\d+\]\s*', '', tname).strip() or '（無任務）'
                     if tname_short not in task_groups:
                         task_groups[tname_short] = []
-                    task_groups[tname_short].append(row)
+                    task_groups[tname_short].append(row.to_dict())
 
                 if task_groups:
                     report_data[stu] = task_groups
