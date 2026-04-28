@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.268 - 老師Tab排第一版)
+# 🧩 英文全能練習系統 (V2.9.269 - 排行榜selectbox版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.268
+# 📌 版本編號 (VERSION): 2.9.269
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.268"
+VERSION = "2.9.269"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -354,19 +354,10 @@ with st.sidebar:
     now_sb = get_now()
     today  = now_sb.date()
 
-    # 時段選擇（不觸發 rerun，存入 session_state）
+    # 時段選擇：用 selectbox（不產生額外按鈕 rerun）
     _periods = ["今日", "昨天", "前天", "三天", "七天", "30天"]
-    if 'sb_period' not in st.session_state:
-        st.session_state['sb_period'] = "今日"
-    _pb_cols = st.columns(3)
-    for _i, _p in enumerate(_periods):
-        if _pb_cols[_i % 3].button(_p, key=f"sb_btn_{_p}",
-            type="primary" if st.session_state['sb_period'] == _p else "secondary",
-            use_container_width=True):
-            st.session_state['sb_period'] = _p
-            st.session_state['_lb_dirty'] = True  # 標記需要更新，不立即 rerun
+    period = st.selectbox("📅 統計期間", _periods, key="sb_period", label_visibility="collapsed")
 
-    period = st.session_state['sb_period']
     _d = {
         "今日": (today, today),
         "昨天": (today - timedelta(days=1), today - timedelta(days=1)),
@@ -378,11 +369,11 @@ with st.sidebar:
     date_from, date_to = _d.get(period, (today, today))
     date_from_str = date_from.strftime("%Y-%m-%d")
     date_to_str   = date_to.strftime("%Y-%m-%d")
-    st.caption(f"📅 {period}：{date_from_str} ～ {date_to_str}")
+    st.caption(f"📅 {date_from_str} ～ {date_to_str}")
 
-    # 更新按鈕 + 自動計算
+    # 更新按鈕：只有按了才重新計算
     _lb_cache_key = f"_lb_{period}_{st.session_state.group_id}"
-    _need_update  = st.session_state.get('_lb_dirty', False) or _lb_cache_key not in st.session_state
+    _need_update  = _lb_cache_key not in st.session_state
 
     if st.button("🔄 更新排行榜", use_container_width=True, key="lb_refresh") or _need_update:
         try:
@@ -407,7 +398,6 @@ with st.sidebar:
                     member_stats.append((m, len(m_logs[m_logs["結果"] == "✅"]), len(m_logs)))
                 member_stats.sort(key=lambda x: x[1], reverse=True)
                 st.session_state[_lb_cache_key] = member_stats
-                st.session_state['_lb_dirty'] = False
             else:
                 st.session_state[_lb_cache_key] = []
         except Exception as e:
