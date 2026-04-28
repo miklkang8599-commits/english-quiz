@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.267 - 任務列表50頁+老師預選版)
+# 🧩 英文全能練習系統 (V2.9.268 - 老師Tab排第一版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.267
+# 📌 版本編號 (VERSION): 2.9.268
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.267"
+VERSION = "2.9.268"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1679,14 +1679,15 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
         else:
             teachers = sorted(df_a2['_teacher'].unique().tolist()) if '_teacher' in df_a2.columns else []
 
-            # 依老師建立 Tab，預設選目前登入老師
+            # 依老師建立 Tab，登入老師排第一
             current_teacher = st.session_state.get('user_name', '')
+            if current_teacher in teachers:
+                teachers = [current_teacher] + [t for t in teachers if t != current_teacher]
+
             if len(teachers) == 1:
                 teacher_tabs = [st.container()]
                 teacher_map  = {teachers[0]: teacher_tabs[0]}
             else:
-                # 若登入老師有任務，預設選該老師的 tab
-                default_tab_idx = teachers.index(current_teacher) if current_teacher in teachers else 0
                 teacher_tabs = st.tabs(teachers)
                 teacher_map  = {t: teacher_tabs[i] for i, t in enumerate(teachers)}
 
