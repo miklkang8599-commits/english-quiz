@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.277 - 今日報告答題數修復版)
+# 🧩 英文全能練習系統 (V2.9.278 - 今日報告統計修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.277
+# 📌 版本編號 (VERSION): 2.9.278
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.277"
+VERSION = "2.9.278"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3138,6 +3138,9 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 stu_ans = stu_l[~stu_l['結果'].str.contains('📖', na=False)]
                 if stu_ans.empty:
                     continue
+                # 依時間排序，確保後面的記錄是最新的
+                if '時間' in stu_ans.columns:
+                    stu_ans = stu_ans.sort_values('時間').copy()
 
                 # 依任務分組
                 task_groups = {}
@@ -3173,11 +3176,16 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                             st.markdown(f"**▌ {tname_short}**")
                             # 今日此任務答題筆數
                             today_task_cnt = len(rows)
-                            # 取每題最後一次作答（最終結果）
+                            # 取每題最後一次作答（已依時間排序，後面的是最新）
                             by_qid = {}
                             for row in rows:
                                 qid = str(row.get('題目ID',''))
-                                by_qid[qid] = row  # 後面的覆蓋前面（已依時間排序）
+                                by_qid[qid] = row  # 後覆蓋前 = 最新一次
+                            # 今日此任務：總作答筆數 / 唯一題目數 / 其中正確/錯誤
+                            today_task_cnt = len(rows)
+                            unique_cnt  = len(by_qid)
+                            final_ok    = sum(1 for r in by_qid.values() if str(r.get('結果','')) == '✅')
+                            final_err   = sum(1 for r in by_qid.values() if str(r.get('結果','')) == '❌')
                             # 依題型統計（最終結果）
                             type_stats = {}
                             for qid, row in by_qid.items():
@@ -3191,7 +3199,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                                 elif res == '❌':
                                     type_stats[qt]['wrong'] += 1
                             # 顯示今日答題數 + 各題型最終結果
-                            st.caption(f"今日此任務共作答 {today_task_cnt} 筆　共 {len(by_qid)} 道不同題目")
+                            st.caption(f"今日作答 {today_task_cnt} 筆　共 {unique_cnt} 道題　最終 ✅{final_ok} ❌{final_err}")
                             cols_t5 = st.columns(len(type_stats)) if type_stats else []
                             for ci, (qt, stat) in enumerate(type_stats.items()):
                                 acc = f"{int(stat['correct']/stat['unique']*100)}%" if stat['unique'] else "—"
