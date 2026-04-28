@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.278 - 今日報告統計修復版)
+# 🧩 英文全能練習系統 (V2.9.279 - 今日錯題統計版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.278
+# 📌 版本編號 (VERSION): 2.9.279
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.278"
+VERSION = "2.9.279"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3176,30 +3176,42 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                             st.markdown(f"**▌ {tname_short}**")
                             # 今日此任務答題筆數
                             today_task_cnt = len(rows)
-                            # 取每題最後一次作答（已依時間排序，後面的是最新）
+                            # 今日此任務統計
+                            today_task_cnt = len(rows)  # 今日作答總筆數
+                            # 有答過的唯一題目
+                            all_qids_today = set(str(r.get('題目ID','')) for r in rows)
+                            # 有任何一筆❌的題目（不論最後有沒有答對）
+                            err_qids = set(str(r.get('題目ID','')) for r in rows if str(r.get('結果','')) == '❌')
+                            unique_cnt = len(all_qids_today)
+                            err_cnt    = len(err_qids)
+
+                            # 取每題最後一次作答（已依時間排序）
                             by_qid = {}
                             for row in rows:
                                 qid = str(row.get('題目ID',''))
-                                by_qid[qid] = row  # 後覆蓋前 = 最新一次
-                            # 今日此任務：總作答筆數 / 唯一題目數 / 其中正確/錯誤
-                            today_task_cnt = len(rows)
-                            unique_cnt  = len(by_qid)
-                            final_ok    = sum(1 for r in by_qid.values() if str(r.get('結果','')) == '✅')
-                            final_err   = sum(1 for r in by_qid.values() if str(r.get('結果','')) == '❌')
+                                by_qid[qid] = row
+                            final_ok  = sum(1 for r in by_qid.values() if str(r.get('結果','')) == '✅')
+                            final_err = sum(1 for r in by_qid.values() if str(r.get('結果','')) == '❌')
+
                             # 依題型統計（最終結果）
                             type_stats = {}
                             for qid, row in by_qid.items():
                                 qt = _qtype_t5(qid)
                                 if qt not in type_stats:
-                                    type_stats[qt] = {'unique':0, 'correct':0, 'wrong':0}
+                                    type_stats[qt] = {'unique':0, 'correct':0, 'wrong':0, 'err_today':0}
                                 res = str(row.get('結果',''))
                                 type_stats[qt]['unique'] += 1
-                                if res == '✅':
-                                    type_stats[qt]['correct'] += 1
-                                elif res == '❌':
-                                    type_stats[qt]['wrong'] += 1
-                            # 顯示今日答題數 + 各題型最終結果
-                            st.caption(f"今日作答 {today_task_cnt} 筆　共 {unique_cnt} 道題　最終 ✅{final_ok} ❌{final_err}")
+                                if res == '✅': type_stats[qt]['correct'] += 1
+                                elif res == '❌': type_stats[qt]['wrong'] += 1
+                                # 今天有沒有錯過（不論最終）
+                                if qid in err_qids:
+                                    type_stats[qt]['err_today'] += 1
+
+                            # 顯示摘要
+                            _sc1, _sc2, _sc3 = st.columns(3)
+                            _sc1.metric("今日答題數", f"{unique_cnt} 題", f"共 {today_task_cnt} 筆")
+                            _sc2.metric("今日有錯題數", f"{err_cnt} 題", "（今日有過❌）")
+                            _sc3.metric("最終結果", f"✅{final_ok} ❌{final_err}")
                             cols_t5 = st.columns(len(type_stats)) if type_stats else []
                             for ci, (qt, stat) in enumerate(type_stats.items()):
                                 acc = f"{int(stat['correct']/stat['unique']*100)}%" if stat['unique'] else "—"
