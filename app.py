@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.279 - 今日錯題統計版)
+# 🧩 英文全能練習系統 (V2.9.280 - 聽力任務載入修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.279
+# 📌 版本編號 (VERSION): 2.9.280
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.279"
+VERSION = "2.9.280"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3595,15 +3595,6 @@ if not st.session_state.quiz_loaded:
                                     import random as _rand_lp_final
                                     _rand_lp_final.shuffle(lp_recs2)
                                     records = lp_recs2
-                            # 聽力句子重組（純聽力任務路徑）
-                            if not df_ls.empty:
-                                dls_lp = df_ls.copy()
-                                dls_lp['題目ID'] = dls_lp.apply(_get_ls_qid, axis=1)
-                                dls_lp['_type'] = 'listen_sent'
-                                rls_lp = dls_lp[dls_lp['題目ID'].isin(pending_ids)].copy()
-                                if not rls_lp.empty:
-                                    rls_lp['_ls_words'] = rls_lp['聽力重組英文答案'].apply(_ls_split_words)
-                                    records = records + rls_lp.to_dict('records')
                                     # 預載第一題音檔
                                     if records:
                                         _f1 = records[min(_start_idx_fwd, len(records)-1)]
@@ -3634,6 +3625,8 @@ if not st.session_state.quiz_loaded:
                                         "ans": [], "used_history": [], "shuf": [], "show_analysis": False
                                     })
                                     st.rerun()
+                                else:
+                                    st.error("❌ 找不到任務題目（已全部完成或題目不存在）")
 
                         elif is_ls_task:
                             if not df_ls.empty:
