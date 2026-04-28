@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.276 - 今日報告函式修復版)
+# 🧩 英文全能練習系統 (V2.9.277 - 今日報告答題數修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.276
+# 📌 版本編號 (VERSION): 2.9.277
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.276"
+VERSION = "2.9.277"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3166,29 +3166,39 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     if stu not in report_data:
                         continue
                     task_groups = report_data[stu]
-                    with st.expander(f"👤 **{stu}**　共 {len(task_groups)} 個任務有答題", expanded=True):
+                    # 計算今日總答題筆數
+                    today_total = sum(len(rows) for rows in task_groups.values())
+                    with st.expander(f"👤 **{stu}**　今日答題 {today_total} 筆　共 {len(task_groups)} 個任務", expanded=True):
                         for tname_short, rows in task_groups.items():
                             st.markdown(f"**▌ {tname_short}**")
-                            # 依題型統計
-                            type_stats = {}
+                            # 今日此任務答題筆數
+                            today_task_cnt = len(rows)
+                            # 取每題最後一次作答（最終結果）
+                            by_qid = {}
                             for row in rows:
-                                qt = _qtype_t5(str(row.get('題目ID','')))
+                                qid = str(row.get('題目ID',''))
+                                by_qid[qid] = row  # 後面的覆蓋前面（已依時間排序）
+                            # 依題型統計（最終結果）
+                            type_stats = {}
+                            for qid, row in by_qid.items():
+                                qt = _qtype_t5(qid)
                                 if qt not in type_stats:
-                                    type_stats[qt] = {'total':0, 'correct':0, 'wrong':0}
+                                    type_stats[qt] = {'unique':0, 'correct':0, 'wrong':0}
                                 res = str(row.get('結果',''))
-                                type_stats[qt]['total'] += 1
+                                type_stats[qt]['unique'] += 1
                                 if res == '✅':
                                     type_stats[qt]['correct'] += 1
                                 elif res == '❌':
                                     type_stats[qt]['wrong'] += 1
-                            # 顯示各題型統計
+                            # 顯示今日答題數 + 各題型最終結果
+                            st.caption(f"今日此任務共作答 {today_task_cnt} 筆　共 {len(by_qid)} 道不同題目")
                             cols_t5 = st.columns(len(type_stats)) if type_stats else []
                             for ci, (qt, stat) in enumerate(type_stats.items()):
-                                acc = f"{int(stat['correct']/stat['total']*100)}%" if stat['total'] else "—"
+                                acc = f"{int(stat['correct']/stat['unique']*100)}%" if stat['unique'] else "—"
                                 cols_t5[ci].metric(
                                     qt,
                                     f"✅{stat['correct']}/❌{stat['wrong']}",
-                                    f"正確率 {acc}"
+                                    f"共{stat['unique']}題 正確率{acc}"
                                 )
                             st.divider()
 
