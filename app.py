@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.282 - KK符號去括號版)
+# 🧩 英文全能練習系統 (V2.9.283 - 單選排序+錯題重考版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.282
+# 📌 版本編號 (VERSION): 2.9.283
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.282"
+VERSION = "2.9.283"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3737,12 +3737,25 @@ if not st.session_state.quiz_loaded:
                             )
                             pending_q = df_q2[df_q2['題目ID'].isin(pending_ids)].copy()
                             if not pending_q.empty:
-                                # 清除所有舊的字母池
+                                # 依句編號排序（不隨機）
+                                if '句編號' in pending_q.columns:
+                                    pending_q['_sn'] = pd.to_numeric(pending_q['句編號'], errors='coerce').fillna(0)
+                                    pending_q = pending_q.sort_values('_sn').drop(columns=['_sn'])
+                                records = pending_q.to_dict('records')
+                                # 錯題加到末尾重考（答錯過但還沒答對的題）
+                                if not df_l.empty and '題目ID' in df_l.columns:
+                                    _stu_l = df_l[df_l['姓名'] == st.session_state.user_name]
+                                    _wrong = set(_stu_l[_stu_l['結果']=='❌']['題目ID'].tolist()) & pending_ids
+                                    _ok    = set(_stu_l[_stu_l['結果']=='✅']['題目ID'].tolist())
+                                    _retry = [q for q in sorted(_wrong) if q not in _ok]
+                                    if _retry:
+                                        _retry_recs = df_q2[df_q2['題目ID'].isin(_retry)].to_dict('records')
+                                        records = records + _retry_recs
                                 for _k in [k for k in list(st.session_state.keys()) if k.startswith("vocab_pool_") or k.startswith("vocab_ans_") or k.startswith("vocab_used_")]:
                                     del st.session_state[_k]
                                 st.session_state.update({
-                                    "quiz_list": pending_q.to_dict('records'),
-                                    "q_idx": min(_start_idx_fwd, len(pending_q)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key,
+                                    "quiz_list": records,
+                                    "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key,
                                     "ans": [], "used_history": [], "shuf": [], "show_analysis": False
                                 })
                                 st.rerun()
