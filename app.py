@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.270 - 聽力句子重組題型版)
+# 🧩 英文全能練習系統 (V2.9.271 - summary欄位修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.270
+# 📌 版本編號 (VERSION): 2.9.271
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.270"
+VERSION = "2.9.271"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1360,13 +1360,13 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
 
         _summary = st.session_state.get('_t1_summary')
         if _summary:
-            _summary_cols = st.columns(6)
+            _summary_cols = st.columns(7)
             _icons = ["✏️ 重組","🔵 單選","🎤 朗讀","🔤 拼單字","📖 閱讀","🎧 聽力音標","🎧 聽力重組"]
             _keys  = ["重組","單選","朗讀","拼單字","閱讀","聽力音標","聽力重組"]
             for _ci, (_lbl, _k) in enumerate(zip(_icons, _keys)):
                 _summary_cols[_ci].metric(_lbl, f"{_summary.get(_k, 0)} 題")
             total_q = sum(_summary.values())
-            st.info(f"📊 本次任務合計：**{total_q} 題**　（重組 {_summary['重組']} ＋ 單選 {_summary['單選']} ＋ 朗讀 {_summary['朗讀']} ＋ 拼單字 {_summary['拼單字']} ＋ 閱讀單句 {_summary['閱讀']} ＋ 聽力音標 {_summary['聽力']}）")
+            st.info(f"📊 本次任務合計：**{total_q} 題**　（重組 {_summary.get('重組',0)} ＋ 單選 {_summary.get('單選',0)} ＋ 朗讀 {_summary.get('朗讀',0)} ＋ 拼單字 {_summary.get('拼單字',0)} ＋ 閱讀單句 {_summary.get('閱讀',0)} ＋ 聽力音標 {_summary.get('聽力音標',0)} ＋ 聽力重組 {_summary.get('聽力重組',0)}）")
         else:
             st.caption("← 點「計算題數」確認出題範圍")
 
