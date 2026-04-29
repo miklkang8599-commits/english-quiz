@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.285 - 朗讀自動評分循環修復版)
+# 🧩 英文全能練習系統 (V2.9.286 - 單選選項重排題目版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.285
+# 📌 版本編號 (VERSION): 2.9.286
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.285"
+VERSION = "2.9.286"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -4925,28 +4925,18 @@ if st.session_state.quiz_loaded:
 
 
     elif is_mcq:
-        # 題目標題（用 HTML 保留原始空格）
-        mcq_q = str(q.get('單選題目') or q.get('中文題目') or '【無資料】')
-        st.markdown(
-            f"<div style='font-size:1.1rem; font-weight:600; padding:8px 0; white-space:pre-wrap;'>"
-            f"題目：{mcq_q}</div>",
-            unsafe_allow_html=True
-        )
+        mcq_q   = str(q.get('單選題目') or q.get('中文題目') or '【無資料】')
         ans_key = str(q.get("單選答案") or "").strip()
-
-        # 答對後鎖定按鈕，只顯示下一題
         already_answered = st.session_state.get('show_analysis', False)
 
-        # 從題目文字自動解析選項（格式：...  (A) xxx  (B) xxx  (C) xxx  (D) xxx）
-        mcq_full = str(q.get('單選題目') or q.get('中文題目') or '')
+        # 解析選項（從獨立欄位或題目文字）
+        mcq_full    = str(q.get('單選題目') or q.get('中文題目') or '')
         parsed_opts = {}
         for opt in ["A", "B", "C", "D"]:
-            # 先嘗試獨立欄位
             col_val = str(q.get(f"選項{opt}") or "").strip()
             if col_val and col_val not in ('nan', ''):
                 parsed_opts[opt] = col_val
             else:
-                # 從題目文字解析，找 (A)...(B) 之間的內容
                 next_opts = [o for o in ["A","B","C","D"] if o > opt]
                 if next_opts:
                     pattern = rf'\({opt}\)\s*(.*?)\s*\({next_opts[0]}\)'
@@ -4956,23 +4946,46 @@ if st.session_state.quiz_loaded:
                 parsed_opts[opt] = m.group(1).strip() if m else ""
 
         cols = st.columns(4)
-        # 選項隨機排列（每題進入時固定，換題後重新洗牌）
+        # 建立顯示用的打亂選項（每題進入固定，換題重洗）
         _mcq_order_key = f"mcq_order_{st.session_state.q_idx}"
         if _mcq_order_key not in st.session_state:
             import random as _rmc
-            _order = ["A","B","C","D"]
-            _rmc.shuffle(_order)
-            st.session_state[_mcq_order_key] = _order
+            _orig_order = [o for o in ["A","B","C","D"] if parsed_opts.get(o,"")]
+            _rmc.shuffle(_orig_order)
+            st.session_state[_mcq_order_key] = _orig_order
         mcq_order = st.session_state[_mcq_order_key]
-        for i, opt in enumerate(mcq_order):
-            opt_text  = parsed_opts.get(opt, "")
-            btn_label = f"({opt}) {opt_text}" if opt_text else opt
-            if cols[i].button(btn_label, key=f"mcq_{opt}",
+
+        # 建立「顯示標籤→原始選項」對照
+        _display_labels = ["A","B","C","D"]
+        _disp_to_orig   = {_display_labels[i]: mcq_order[i] for i in range(len(mcq_order))}
+        # 找出正確答案對應的顯示標籤和文字
+        _correct_display = next((d for d, o in _disp_to_orig.items() if o.upper() == ans_key.upper()), ans_key)
+        _correct_text    = parsed_opts.get(ans_key.upper(), "")
+
+        # 重建題目文字（把原始選項部分換成打亂後的順序顯示）
+        # 先取題目本文（去掉選項部分）
+        _q_body = re.split(r'\s*\(A\)', mcq_full)[0].strip()
+        _new_opts_str = "　".join([f"({_display_labels[i]}) {parsed_opts.get(mcq_order[i],'')}" for i in range(len(mcq_order))])
+        _display_q = f"{_q_body}　{_new_opts_str}" if _q_body else mcq_full
+
+        # 顯示打亂選項後的題目
+        st.markdown(
+            f"<div style='font-size:1.1rem; font-weight:600; padding:8px 0; white-space:pre-wrap;'>"
+            f"題目：{_display_q}</div>",
+            unsafe_allow_html=True
+        )
+
+        for i, orig_opt in enumerate(mcq_order):
+            disp_label = _display_labels[i]
+            opt_text   = parsed_opts.get(orig_opt, "")
+            btn_label  = f"({disp_label}) {opt_text}" if opt_text else disp_label
+            if cols[i].button(btn_label, key=f"mcq_{disp_label}",
                               use_container_width=True,
                               disabled=already_answered):
-                is_ok = (opt.upper() == ans_key.upper())
+                is_ok = (orig_opt.upper() == ans_key.upper())
+                _err_msg = f"❌ 錯誤！正確答案：({_correct_display}) {_correct_text}"
                 st.session_state.update({
-                    "current_res": "✅ 正確！" if is_ok else f"❌ 錯誤！正確答案：{ans_key}",
+                    "current_res": "✅ 正確！" if is_ok else _err_msg,
                     "show_analysis": True
                 })
                 # 先寫入再 rerun，確保寫入完成
