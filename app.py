@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.286 - 單選選項重排題目版)
+# 🧩 英文全能練習系統 (V2.9.287 - 選項移至題目下方版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.286
+# 📌 版本編號 (VERSION): 2.9.287
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.286"
+VERSION = "2.9.287"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -4945,6 +4945,14 @@ if st.session_state.quiz_loaded:
                 m = re.search(pattern, mcq_full, re.DOTALL)
                 parsed_opts[opt] = m.group(1).strip() if m else ""
 
+        # 只顯示題目本文（不含選項），選項另外顯示在下方
+        _q_body = re.split(r'\s*\(A\)', mcq_full)[0].strip()
+        st.markdown(
+            f"<div style='font-size:1.1rem; font-weight:600; padding:8px 0; white-space:pre-wrap;'>"
+            f"題目：{_q_body}</div>",
+            unsafe_allow_html=True
+        )
+
         cols = st.columns(4)
         # 建立顯示用的打亂選項（每題進入固定，換題重洗）
         _mcq_order_key = f"mcq_order_{st.session_state.q_idx}"
@@ -4958,28 +4966,16 @@ if st.session_state.quiz_loaded:
         # 建立「顯示標籤→原始選項」對照
         _display_labels = ["A","B","C","D"]
         _disp_to_orig   = {_display_labels[i]: mcq_order[i] for i in range(len(mcq_order))}
-        # 找出正確答案對應的顯示標籤和文字
         _correct_display = next((d for d, o in _disp_to_orig.items() if o.upper() == ans_key.upper()), ans_key)
         _correct_text    = parsed_opts.get(ans_key.upper(), "")
 
-        # 重建題目文字（把原始選項部分換成打亂後的順序顯示）
-        # 先取題目本文（去掉選項部分）
-        _q_body = re.split(r'\s*\(A\)', mcq_full)[0].strip()
-        _new_opts_str = "　".join([f"({_display_labels[i]}) {parsed_opts.get(mcq_order[i],'')}" for i in range(len(mcq_order))])
-        _display_q = f"{_q_body}　{_new_opts_str}" if _q_body else mcq_full
-
-        # 顯示打亂選項後的題目
-        st.markdown(
-            f"<div style='font-size:1.1rem; font-weight:600; padding:8px 0; white-space:pre-wrap;'>"
-            f"題目：{_display_q}</div>",
-            unsafe_allow_html=True
-        )
-
+        # 顯示選項在題目下方（2欄）
+        _opt_cols = st.columns(2)
         for i, orig_opt in enumerate(mcq_order):
             disp_label = _display_labels[i]
             opt_text   = parsed_opts.get(orig_opt, "")
             btn_label  = f"({disp_label}) {opt_text}" if opt_text else disp_label
-            if cols[i].button(btn_label, key=f"mcq_{disp_label}",
+            if _opt_cols[i % 2].button(btn_label, key=f"mcq_{disp_label}",
                               use_container_width=True,
                               disabled=already_answered):
                 is_ok = (orig_opt.upper() == ans_key.upper())
