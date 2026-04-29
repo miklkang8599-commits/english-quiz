@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.283 - 單選排序+錯題重考版)
+# 🧩 英文全能練習系統 (V2.9.284 - 選項隨機+朗讀自動評分版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.283
+# 📌 版本編號 (VERSION): 2.9.284
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.283"
+VERSION = "2.9.284"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -4576,10 +4576,17 @@ if st.session_state.quiz_loaded:
         # 顯示題目
         st.markdown(f"**{rm_question}**")
 
-        # 選項按鈕 A-D
+        # 選項按鈕 A-D（隨機排列）
         _rm_answered = st.session_state.get('show_analysis', False)
+        _rm_order_key = f"rm_order_{st.session_state.q_idx}"
+        if _rm_order_key not in st.session_state:
+            import random as _rrm
+            _rm_ord = ["A","B","C","D"]
+            _rrm.shuffle(_rm_ord)
+            st.session_state[_rm_order_key] = _rm_ord
+        rm_order = st.session_state[_rm_order_key]
         rm_cols = st.columns(2)
-        for _i, _opt in enumerate(["A", "B", "C", "D"]):
+        for _i, _opt in enumerate(rm_order):
             _opt_text = str(q.get(f"選項{_opt}") or "").strip()
             if _opt_text:
                 _btn_label = f"({_opt}) {_opt_text}"
@@ -4646,7 +4653,7 @@ if st.session_state.quiz_loaded:
                     st.audio(io.BytesIO(base64.b64decode(tts_std)), format="audio/mpeg")
 
             if st.session_state.get('show_analysis') and is_reading:
-                st.caption("👇 如想提高成績，可重新錄音再送出評分")
+                st.caption("👇 如想提高成績，可重新錄音（系統自動評分）")
             else:
                 st.caption("👇 點擊下方按鈕開始錄音")
 
@@ -4663,8 +4670,8 @@ if st.session_state.quiz_loaded:
         audio_data = st.audio_input("🎙️ 錄音", key=f"audio_{st.session_state.q_idx}")
 
         if audio_data:
-            if st.button("✅ 送出評分", type="primary", use_container_width=True):
-                with st.spinner("🔄 評分中，請稍候..."):
+            # 有錄音自動評分，不需要按鈕
+            with st.spinner("🔄 評分中，請稍候..."):
                     try:
                         import openai
                         openai.api_key = st.secrets["OPENAI_API_KEY"]
@@ -4942,7 +4949,15 @@ if st.session_state.quiz_loaded:
                 parsed_opts[opt] = m.group(1).strip() if m else ""
 
         cols = st.columns(4)
-        for i, opt in enumerate(["A", "B", "C", "D"]):
+        # 選項隨機排列（每題進入時固定，換題後重新洗牌）
+        _mcq_order_key = f"mcq_order_{st.session_state.q_idx}"
+        if _mcq_order_key not in st.session_state:
+            import random as _rmc
+            _order = ["A","B","C","D"]
+            _rmc.shuffle(_order)
+            st.session_state[_mcq_order_key] = _order
+        mcq_order = st.session_state[_mcq_order_key]
+        for i, opt in enumerate(mcq_order):
             opt_text  = parsed_opts.get(opt, "")
             btn_label = f"({opt}) {opt_text}" if opt_text else opt
             if cols[i].button(btn_label, key=f"mcq_{opt}",
@@ -5053,6 +5068,9 @@ if st.session_state.quiz_loaded:
             "tts_student": None, "tts_standard": None, "stt_text_shown": "",
             "vocab_start_time": None, "vocab_q_idx": None
         })
+        # 清除選項順序快取
+        for _ok in [f"mcq_order_{q_idx}", f"rm_order_{q_idx}"]:
+            st.session_state.pop(_ok, None)
         # 清除該題目的所有 vocab pool（含新格式 vocab_pool_{q_idx}_{extra}）
         for k in list(st.session_state.keys()):
             if k.startswith(f"vocab_pool_{q_idx}") or k.startswith(f"ls_tts_{q_idx}") or k in [
