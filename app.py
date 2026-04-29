@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.287 - 選項移至題目下方版)
+# 🧩 英文全能練習系統 (V2.9.288 - 錯題即時重考版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.287
+# 📌 版本編號 (VERSION): 2.9.288
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.287"
+VERSION = "2.9.288"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3742,15 +3742,6 @@ if not st.session_state.quiz_loaded:
                                     pending_q['_sn'] = pd.to_numeric(pending_q['句編號'], errors='coerce').fillna(0)
                                     pending_q = pending_q.sort_values('_sn').drop(columns=['_sn'])
                                 records = pending_q.to_dict('records')
-                                # 錯題加到末尾重考（答錯過但還沒答對的題）
-                                if not df_l.empty and '題目ID' in df_l.columns:
-                                    _stu_l = df_l[df_l['姓名'] == st.session_state.user_name]
-                                    _wrong = set(_stu_l[_stu_l['結果']=='❌']['題目ID'].tolist()) & pending_ids
-                                    _ok    = set(_stu_l[_stu_l['結果']=='✅']['題目ID'].tolist())
-                                    _retry = [q for q in sorted(_wrong) if q not in _ok]
-                                    if _retry:
-                                        _retry_recs = df_q2[df_q2['題目ID'].isin(_retry)].to_dict('records')
-                                        records = records + _retry_recs
                                 for _k in [k for k in list(st.session_state.keys()) if k.startswith("vocab_pool_") or k.startswith("vocab_ans_") or k.startswith("vocab_used_")]:
                                     del st.session_state[_k]
                                 st.session_state.update({
@@ -4984,6 +4975,19 @@ if st.session_state.quiz_loaded:
                     "current_res": "✅ 正確！" if is_ok else _err_msg,
                     "show_analysis": True
                 })
+                # 答錯：把此題加到 quiz_list 末尾重考（避免重複加）
+                if not is_ok:
+                    _qid_now = q.get('題目ID','')
+                    _quiz    = st.session_state.get('quiz_list', [])
+                    _already_appended = any(
+                        r.get('題目ID') == _qid_now and r.get('_retry', False)
+                        for r in _quiz
+                    )
+                    if not _already_appended and _qid_now:
+                        _retry_q = dict(q)
+                        _retry_q['_retry'] = True
+                        _quiz.append(_retry_q)
+                        st.session_state['quiz_list'] = _quiz
                 # 先寫入再 rerun，確保寫入完成
                 write_ok = False
                 write_err = ""
