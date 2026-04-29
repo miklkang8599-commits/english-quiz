@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.284 - 選項隨機+朗讀自動評分版)
+# 🧩 英文全能練習系統 (V2.9.285 - 朗讀自動評分循環修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.284
+# 📌 版本編號 (VERSION): 2.9.285
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.284"
+VERSION = "2.9.285"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -4670,8 +4670,15 @@ if st.session_state.quiz_loaded:
         audio_data = st.audio_input("🎙️ 錄音", key=f"audio_{st.session_state.q_idx}")
 
         if audio_data:
-            # 有錄音自動評分，不需要按鈕
-            with st.spinner("🔄 評分中，請稍候..."):
+            _scored_key = f"audio_scored_{st.session_state.q_idx}"
+            try:
+                _audio_hash = hash(audio_data.getvalue()[:200])
+            except:
+                _audio_hash = id(audio_data)
+            if st.session_state.get(_scored_key) != _audio_hash:
+                # 新的錄音，自動評分
+                st.session_state[_scored_key] = _audio_hash
+                with st.spinner("🔄 評分中，請稍候..."):
                     try:
                         import openai
                         openai.api_key = st.secrets["OPENAI_API_KEY"]
@@ -5068,8 +5075,8 @@ if st.session_state.quiz_loaded:
             "tts_student": None, "tts_standard": None, "stt_text_shown": "",
             "vocab_start_time": None, "vocab_q_idx": None
         })
-        # 清除選項順序快取
-        for _ok in [f"mcq_order_{q_idx}", f"rm_order_{q_idx}"]:
+        # 清除選項順序快取和錄音評分快取
+        for _ok in [f"mcq_order_{q_idx}", f"rm_order_{q_idx}", f"audio_scored_{q_idx}"]:
             st.session_state.pop(_ok, None)
         # 清除該題目的所有 vocab pool（含新格式 vocab_pool_{q_idx}_{extra}）
         for k in list(st.session_state.keys()):
