@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.289 - 朗讀忽略標點版)
+# 🧩 英文全能練習系統 (V2.9.290 - 聽力重組數字修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.289
+# 📌 版本編號 (VERSION): 2.9.290
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.289"
+VERSION = "2.9.290"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -144,9 +144,9 @@ def _get_ls_qid(row):
     return f"LS_{row.get('版本','')}_{row.get('年度','')}_{row.get('冊編號','')}_{row.get('單元','')}_{row.get('課編號','')}_{row.get('句編號','')}"
 
 def _ls_split_words(sentence):
-    """將英文句子拆成單字清單（去除標點，保留大小寫）"""
+    """將英文句子拆成單字清單（保留數字、字母、縮寫）"""
     import re as _re_ls
-    words = _re_ls.findall(r"[A-Za-z']+(?:-[A-Za-z']+)*", sentence)
+    words = _re_ls.findall(r"[A-Za-z0-9]+(?:['\-][A-Za-z0-9]+)*", sentence)
     return words
 
 def _get_lp_qid(row):
