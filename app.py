@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.288 - 錯題即時重考版)
+# 🧩 英文全能練習系統 (V2.9.289 - 朗讀忽略標點版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.288
+# 📌 版本編號 (VERSION): 2.9.289
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.288"
+VERSION = "2.9.289"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -4682,6 +4682,9 @@ if st.session_state.quiz_loaded:
                             language="en"
                         )
                         stt_text = transcript.text.strip()
+                        # 去除標點再比對，避免影響評分
+                        read_text_clean = re.sub(r'[.,?!:;\'\"()\-]', '', read_text).strip()
+                        stt_text_clean  = re.sub(r'[.,?!:;\'\"()\-]', '', stt_text).strip()
 
                         # Step 2：GPT-4o-mini 評分
                         client = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
@@ -4692,8 +4695,9 @@ if st.session_state.quiz_loaded:
                                 "role": "user",
                                 "content": (
                                     f"You are an English pronunciation evaluator for students.\n"
-                                    f"Standard sentence: \"{read_text}\"\n"
-                                    f"Student said (transcribed): \"{stt_text}\"\n"
+                                    f"Standard sentence: \"{read_text_clean}\"\n"
+                                    f"Student said (transcribed): \"{stt_text_clean}\"\n"
+                                    f"Ignore punctuation differences when comparing. "
                                     f"Score accuracy and completeness from 0 to 100. "
                                     f"Reply with ONLY a single integer, nothing else."
                                 )
