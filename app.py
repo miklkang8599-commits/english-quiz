@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.296 - 重組比對debug版)
+# 🧩 英文全能練習系統 (V2.9.297 - 重組debug展開版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.296
+# 📌 版本編號 (VERSION): 2.9.297
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.296"
+VERSION = "2.9.297"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -5071,9 +5071,12 @@ if st.session_state.quiz_loaded:
             _stu_clean = clean_string_for_compare(_stu_str)
             _ans_clean = clean_string_for_compare(_ans_str)
             is_ok = _stu_clean == _ans_clean
-            # debug
-            st.caption(f"🔍 學生：{_stu_clean[:40]}")
-            st.caption(f"🔍 答案：{_ans_clean[:40]}")
+            # 存 debug 供顯示
+            st.session_state['_reorder_debug'] = {
+                'stu': _stu_clean,
+                'ans': _ans_clean,
+                'ok':  is_ok
+            }
             st.session_state.update({
                 "current_res": "✅ 正確！" if is_ok else f"❌ 錯誤！正確答案：{ans_key}",
                 "show_analysis": True
@@ -5092,6 +5095,12 @@ if st.session_state.quiz_loaded:
 
     if st.session_state.get('show_analysis') and not is_reading and not is_reading_mcq and not is_listen_phon and not is_listen_sent:
         st.warning(st.session_state.current_res)
+        # debug：重組比對內容（答錯時顯示）
+        _dbg = st.session_state.get('_reorder_debug')
+        if _dbg and not _dbg.get('ok'):
+            with st.expander("🔍 比對內容（除錯用）"):
+                st.text(f"學生：{_dbg['stu']}")
+                st.text(f"答案：{_dbg['ans']}")
         # 單選題：答題後一律顯示解析
         if is_mcq:
             mcq_analysis = str(q.get('解析') or q.get('單選解析') or '').strip()
