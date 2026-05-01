@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.295 - 重組shuf初始化修復版)
+# 🧩 英文全能練習系統 (V2.9.296 - 重組比對debug版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.295
+# 📌 版本編號 (VERSION): 2.9.296
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.295"
+VERSION = "2.9.296"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -5066,7 +5066,14 @@ if st.session_state.quiz_loaded:
 
         if len(st.session_state.ans) == len(tk) and not st.session_state.show_analysis:
             # 全部選完自動對答
-            is_ok = clean_string_for_compare("".join(st.session_state.ans)) == clean_string_for_compare(ans_key)
+            _stu_str = "".join(st.session_state.ans)
+            _ans_str = ans_key
+            _stu_clean = clean_string_for_compare(_stu_str)
+            _ans_clean = clean_string_for_compare(_ans_str)
+            is_ok = _stu_clean == _ans_clean
+            # debug
+            st.caption(f"🔍 學生：{_stu_clean[:40]}")
+            st.caption(f"🔍 答案：{_ans_clean[:40]}")
             st.session_state.update({
                 "current_res": "✅ 正確！" if is_ok else f"❌ 錯誤！正確答案：{ans_key}",
                 "show_analysis": True
