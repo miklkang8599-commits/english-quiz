@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.297 - 重組debug展開版)
+# 🧩 英文全能練習系統 (V2.9.298 - 比對空白修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.297
+# 📌 版本編號 (VERSION): 2.9.298
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.297"
+VERSION = "2.9.298"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -45,9 +45,11 @@ def standardize(v):
 
 def clean_string_for_compare(s):
     """標點忽略比對邏輯 (含括號相容)"""
-    s = s.lower().replace(" ", "").replace("\u2018", "'").replace("\u2019", "'")
-    s = re.sub(r'[.,?!:;()]', '', s)
-    return s.strip()
+    s = str(s)
+    s = s.replace("\u2018", "'").replace("\u2019", "'")  # 彎引號→直引號
+    s = re.sub(r'\s+', '', s)          # 去除所有空白（含全形空格、換行、Tab）
+    s = re.sub(r'[.,?!:;()\-]', '', s) # 去除標點
+    return s.lower().strip()
 
 def show_version_caption():
     """全域版號顯示組件"""
@@ -5066,17 +5068,7 @@ if st.session_state.quiz_loaded:
 
         if len(st.session_state.ans) == len(tk) and not st.session_state.show_analysis:
             # 全部選完自動對答
-            _stu_str = "".join(st.session_state.ans)
-            _ans_str = ans_key
-            _stu_clean = clean_string_for_compare(_stu_str)
-            _ans_clean = clean_string_for_compare(_ans_str)
-            is_ok = _stu_clean == _ans_clean
-            # 存 debug 供顯示
-            st.session_state['_reorder_debug'] = {
-                'stu': _stu_clean,
-                'ans': _ans_clean,
-                'ok':  is_ok
-            }
+            is_ok = clean_string_for_compare("".join(st.session_state.ans)) == clean_string_for_compare(ans_key)
             st.session_state.update({
                 "current_res": "✅ 正確！" if is_ok else f"❌ 錯誤！正確答案：{ans_key}",
                 "show_analysis": True
@@ -5095,12 +5087,6 @@ if st.session_state.quiz_loaded:
 
     if st.session_state.get('show_analysis') and not is_reading and not is_reading_mcq and not is_listen_phon and not is_listen_sent:
         st.warning(st.session_state.current_res)
-        # debug：重組比對內容（答錯時顯示）
-        _dbg = st.session_state.get('_reorder_debug')
-        if _dbg and not _dbg.get('ok'):
-            with st.expander("🔍 比對內容（除錯用）"):
-                st.text(f"學生：{_dbg['stu']}")
-                st.text(f"答案：{_dbg['ans']}")
         # 單選題：答題後一律顯示解析
         if is_mcq:
             mcq_analysis = str(q.get('解析') or q.get('單選解析') or '').strip()
