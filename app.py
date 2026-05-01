@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.294 - 彎引號縮寫修復版)
+# 🧩 英文全能練習系統 (V2.9.295 - 重組shuf初始化修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.294
+# 📌 版本編號 (VERSION): 2.9.295
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.294"
+VERSION = "2.9.295"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -5045,8 +5045,12 @@ if st.session_state.quiz_loaded:
         # 單字切分：數字+字母+縮寫視為一字，標點不列入
         # he's / I'm / it's / What's → 一個按鍵；90 → 一個按鍵；逗號句號 → 不顯示
         tk = re.findall(r"[A-Za-z0-9]+(?:['\u2018\u2019][A-Za-z0-9]+)*", ans_key)
-        # 若 shuf 不存在或長度不符（舊版拆法殘留），重新初始化
-        if not st.session_state.get('shuf') or len(st.session_state.shuf) != len(tk):
+        # 只在 shuf 不存在時初始化（不在答題途中強制重算）
+        if not st.session_state.get('shuf'):
+            st.session_state.shuf = tk.copy()
+            random.shuffle(st.session_state.shuf)
+        # shuf 和 tk 不一致時（題目不同），才重算
+        elif set(st.session_state.shuf) != set(tk):
             st.session_state.shuf = tk.copy()
             st.session_state.ans  = []
             st.session_state.used_history = []
