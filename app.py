@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.292 - 統一拆字邏輯版)
+# 🧩 英文全能練習系統 (V2.9.293 - 縮寫拆字修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.292
+# 📌 版本編號 (VERSION): 2.9.293
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.292"
+VERSION = "2.9.293"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -146,7 +146,7 @@ def _get_ls_qid(row):
 def _ls_split_words(sentence):
     """將英文句子拆成單字清單（保留數字、字母、縮寫）"""
     import re as _re_ls
-    words = _re_ls.findall(r"[A-Za-z0-9]+(?:'[A-Za-z]+)*", sentence)
+    words = _re_ls.findall(r"[A-Za-z0-9]+(?:'[A-Za-z0-9]+)*", sentence)
     return words
 
 def _get_lp_qid(row):
@@ -5043,10 +5043,13 @@ if st.session_state.quiz_loaded:
             st.rerun()
 
         # 單字切分：數字+字母+縮寫視為一字，標點不列入
-        # he's / I'm / it's → 一個按鍵；90 → 一個按鍵；逗號句號 → 不顯示
-        tk = re.findall(r"[A-Za-z0-9]+(?:'[A-Za-z]+)*", ans_key)
-        if not st.session_state.get('shuf'):
+        # he's / I'm / it's / What's → 一個按鍵；90 → 一個按鍵；逗號句號 → 不顯示
+        tk = re.findall(r"[A-Za-z0-9]+(?:'[A-Za-z0-9]+)*", ans_key)
+        # 若 shuf 不存在或長度不符（舊版拆法殘留），重新初始化
+        if not st.session_state.get('shuf') or len(st.session_state.shuf) != len(tk):
             st.session_state.shuf = tk.copy()
+            st.session_state.ans  = []
+            st.session_state.used_history = []
             random.shuffle(st.session_state.shuf)
 
         bs = st.columns(3)
