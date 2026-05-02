@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.300 - 題目講解篩選form版)
+# 🧩 英文全能練習系統 (V2.9.301 - 題目講解全篩選form版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.300
+# 📌 版本編號 (VERSION): 2.9.301
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.300"
+VERSION = "2.9.301"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -2110,7 +2110,6 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 import re as _re5
                 rev_task_ids    = None
                 rev_task_id_key = ""
-                task_stu_default = students_in_group
                 task_names = ["（不限）"]
                 df_a_rev   = pd.DataFrame()
                 if not df_a.empty and '任務名稱' in df_a.columns:
@@ -2131,10 +2130,17 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     default=students_in_group, key=f"rev_students_{tab_key}"
                 )
 
+                # 顯示範圍（放在 form 內）
+                scope = st.radio(
+                    "顯示範圍",
+                    ["📚 全部題目", "✏️ 已經答題", "❌ 只看錯題", "❓ 只看未作答"],
+                    horizontal=True, key=f"rev_scope_{tab_key}"
+                )
+
                 submitted = st.form_submit_button("🔍 套用篩選", use_container_width=True, type="primary")
 
-            # 計算篩選結果（form 外面）
-            rev_group     = group_map.get(sel_label, all_groups_t4[0] if all_groups_t4 else "")
+            # form 外計算篩選結果
+            rev_group = group_map.get(sel_label, all_groups_t4[0] if all_groups_t4 else "")
             students_in_group = sorted(df_s[df_s['分組'] == rev_group]['姓名'].tolist())
             target_students = rev_students if rev_students else students_in_group
 
@@ -2143,8 +2149,6 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 if not task_row.empty:
                     ids_str  = str(task_row.iloc[0].get('題目ID清單', '') or '')
                     rev_task_ids = set(q.strip() for q in ids_str.split(',') if q.strip() and q.strip() != 'nan')
-                    task_stu_str = str(task_row.iloc[0].get('指派學生', '') or '')
-                    task_stus    = [s.strip() for s in task_stu_str.split(',') if s.strip()]
                     rev_task_id_key = str(task_row.iloc[0].get('任務編號','') or '')
                     if not rev_task_id_key:
                         import re as _re_rtid
@@ -2152,7 +2156,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                         if _m: rev_task_id_key = 'T' + _m.group(1)
                     st.info(f"📋 共 {len(rev_task_ids)} 題")
 
-            return rev_group, target_students, rev_task_ids, rev_task_id_key
+            return rev_group, target_students, rev_task_ids, rev_task_id_key, scope
 
         # ── 共用：顯示範圍篩選 ───────────────────────────────────────────
         def _rev_scope_filter(tab_key):
@@ -2178,8 +2182,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             return df_scope
         # ── Tab1: 單選講解 ────────────────────────────────────────────────
         with rev4_tab1:
-            rev_group_mcq, target_stus_mcq, task_ids_mcq, rev_tid_mcq = _rev_common_filters("mcq")
-            scope_mcq = _rev_scope_filter("mcq")
+            rev_group_mcq, target_stus_mcq, task_ids_mcq, rev_tid_mcq, scope_mcq = _rev_common_filters("mcq")
 
             if task_ids_mcq is not None:
                 df_mcq2 = df_mcq.copy() if not df_mcq.empty else pd.DataFrame()
@@ -2269,8 +2272,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
 
         # ── Tab2: 重組講解 ────────────────────────────────────────────────
         with rev4_tab2:
-            rev_group_q, target_stus_q, task_ids_q, rev_tid_q = _rev_common_filters("reorder")
-            scope_q = _rev_scope_filter("reorder")
+            rev_group_q, target_stus_q, task_ids_q, rev_tid_q, scope_q = _rev_common_filters("reorder")
 
             if task_ids_q is not None:
                 df_q2 = df_q.copy()
@@ -2346,8 +2348,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
 
         # ── Tab3: 閱讀單句講解 ────────────────────────────────────────────
         with rev4_tab3:
-            rev_group_rm, target_stus_rm, task_ids_rm, rev_tid_rm = _rev_common_filters("rm")
-            scope_rm = _rev_scope_filter("rm")
+            rev_group_rm, target_stus_rm, task_ids_rm, rev_tid_rm, scope_rm = _rev_common_filters("rm")
 
             if task_ids_rm is not None:
                 df_rm2 = df_rm.copy() if not df_rm.empty else pd.DataFrame()
