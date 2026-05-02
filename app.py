@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.303 - 移除單選題範圍篩選版)
+# 🧩 英文全能練習系統 (V2.9.304 - 題目講解全任務下拉版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.303
+# 📌 版本編號 (VERSION): 2.9.304
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.303"
+VERSION = "2.9.304"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -2106,31 +2106,27 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 rev_group = group_map.get(sel_label, all_groups_t4[0] if all_groups_t4 else "")
                 students_in_group = sorted(df_s[df_s['分組'] == rev_group]['姓名'].tolist())
 
-                # 任務篩選
+                # 任務篩選：列出所有任務（不限班級）
                 import re as _re5
                 rev_task_ids    = None
                 rev_task_id_key = ""
-                task_names = ["（不限）"]
-                df_a_rev   = pd.DataFrame()
+                df_a_rev        = pd.DataFrame()
+                task_names      = ["（不限）"]
                 if not df_a.empty and '任務名稱' in df_a.columns:
                     df_a_rev = df_a[df_a.get('狀態', pd.Series(dtype=str)).fillna('') != '已刪除'].copy()
                     df_a_rev = df_a_rev[df_a_rev['任務名稱'].apply(
                         lambda n: bool(_re5.search(r'\[T\d+\]', str(n)))
                     )]
-                    if not df_a_rev.empty and '對象班級' in df_a_rev.columns:
-                        df_a_rev = df_a_rev[df_a_rev['對象班級'].apply(
-                            lambda v: rev_group in [g.strip() for g in str(v).split(',')]
-                        )]
                     task_names = ["（不限）"] + _sort_task_names(df_a_rev['任務名稱'].tolist())
 
-                sel_task = st.selectbox("📋 依任務篩選（選填）", task_names, key=f"rev_task_{tab_key}")
+                sel_task = st.selectbox("📋 選擇任務", task_names, key=f"rev_task_{tab_key}")
 
                 rev_students = st.multiselect(
                     "👤 學生（預設全選）", options=students_in_group,
                     default=students_in_group, key=f"rev_students_{tab_key}"
                 )
 
-                # 顯示範圍（放在 form 內）
+                # 顯示範圍
                 scope = st.radio(
                     "顯示範圍",
                     ["📚 全部題目", "✏️ 已經答題", "❌ 只看錯題", "❓ 只看未作答"],
@@ -2139,7 +2135,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
 
                 submitted = st.form_submit_button("🔍 套用篩選", use_container_width=True, type="primary")
 
-            # form 外計算篩選結果
+            # form 外計算
             rev_group = group_map.get(sel_label, all_groups_t4[0] if all_groups_t4 else "")
             students_in_group = sorted(df_s[df_s['分組'] == rev_group]['姓名'].tolist())
             target_students = rev_students if rev_students else students_in_group
