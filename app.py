@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.302 - 講解篩選scope修復版)
+# 🧩 英文全能練習系統 (V2.9.303 - 移除單選題範圍篩選版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.302
+# 📌 版本編號 (VERSION): 2.9.303
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.302"
+VERSION = "2.9.303"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -2192,20 +2192,8 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 else:
                     df_rev_mcq = pd.DataFrame()
             else:
-                st.markdown("**⚙️ 單選題範圍**")
-                mc2 = st.columns(5)
-                mv2 = mc2[0].selectbox("版本", sorted(df_mcq['版本'].unique()) if not df_mcq.empty else [], key="rev_mc_v")
-                mu2_src = df_mcq[df_mcq['版本']==mv2] if not df_mcq.empty else pd.DataFrame()
-                mu2 = mc2[1].selectbox("單元", sorted(mu2_src['單元'].unique()) if not mu2_src.empty else [], key="rev_mc_u")
-                my2_src = mu2_src[mu2_src['單元']==mu2] if not mu2_src.empty else pd.DataFrame()
-                my2 = mc2[2].selectbox("年度", sorted(my2_src['年度'].unique()) if not my2_src.empty else [], key="rev_mc_y")
-                mb2_src = my2_src[my2_src['年度']==my2] if not my2_src.empty else pd.DataFrame()
-                mb2 = mc2[3].selectbox("冊編號", sorted(mb2_src['冊編號'].unique()) if not mb2_src.empty else [], key="rev_mc_b")
-                ml2_src = mb2_src[mb2_src['冊編號']==mb2] if not mb2_src.empty else pd.DataFrame()
-                ml2 = mc2[4].selectbox("課編號", sorted(ml2_src['課編號'].unique()) if not ml2_src.empty else [], key="rev_mc_l")
-                df_rev_mcq = ml2_src[ml2_src['課編號']==ml2].copy() if not ml2_src.empty else pd.DataFrame()
-                if not df_rev_mcq.empty:
-                    df_rev_mcq['題目ID'] = df_rev_mcq.apply(lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1)
+                st.info("請先選擇任務後套用篩選，即可顯示單選題講解。")
+                df_rev_mcq = pd.DataFrame()
 
             if df_rev_mcq.empty:
                 st.info("此範圍尚無單選題。")
