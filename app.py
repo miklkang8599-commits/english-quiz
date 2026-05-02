@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.305 - 題目講解移除題型TAB版)
+# 🧩 英文全能練習系統 (V2.9.306 - 題目講解統一篩選版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.305
+# 📌 版本編號 (VERSION): 2.9.306
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.305"
+VERSION = "2.9.306"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -2091,14 +2091,79 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
     with t3:
         st.subheader("📖 題目講解")
 
-        st.markdown("### 🔵 單選題")
-        rev_group_mcq, target_stus_mcq, task_ids_mcq, rev_tid_mcq, scope_mcq = _rev_common_filters("mcq")
+        # ── 篩選條件（全部包在 form，按套用才執行）──────────────────────────
+        all_groups_t4 = sorted(df_s[~df_s['分組'].isin(['ADMIN','TEACHER'])]['分組'].unique())
+        import re as _re_t4
 
-        if task_ids_mcq is not None:
+        with st.form("rev_filter_form"):
+            _fc1, _fc2 = st.columns(2)
+            sel_grp_t4 = _fc1.selectbox("👥 班級/分組",
+                [_group_label(g) for g in all_groups_t4], key="rev_grp_t4")
+            rev_group_t4 = next((g for g in all_groups_t4 if _group_label(g) == sel_grp_t4), all_groups_t4[0] if all_groups_t4 else "")
+            students_t4  = sorted(df_s[df_s['分組'] == rev_group_t4]['姓名'].tolist())
+
+            # 全部任務下拉
+            _all_tasks_t4 = ["（不限）"]
+            _df_a_t4      = pd.DataFrame()
+            if not df_a.empty and '任務名稱' in df_a.columns:
+                _df_a_t4 = df_a[df_a.get('狀態', pd.Series(dtype=str)).fillna('') != '已刪除'].copy()
+                _df_a_t4 = _df_a_t4[_df_a_t4['任務名稱'].apply(lambda n: bool(_re_t4.search(r'\[T\d+\]', str(n))))]
+                _all_tasks_t4 = ["（不限）"] + _sort_task_names(_df_a_t4['任務名稱'].tolist())
+
+            sel_task_t4 = _fc2.selectbox("📋 選擇任務", _all_tasks_t4, key="rev_task_t4")
+
+            sel_stus_t4 = st.multiselect("👤 學生（預設全選）",
+                options=students_t4, default=students_t4, key="rev_stus_t4")
+
+            scope_t4 = st.radio("顯示範圍",
+                ["📚 全部題目", "✏️ 已經答題", "❌ 只看錯題", "❓ 只看未作答"],
+                horizontal=True, key="rev_scope_t4")
+
+            st.form_submit_button("🔍 套用篩選", use_container_width=True, type="primary")
+
+        # ── 計算篩選結果 ────────────────────────────────────────────────────
+        target_stus_t4 = sel_stus_t4 if sel_stus_t4 else students_t4
+        task_ids_t4    = None
+        rev_tid_t4     = ""
+
+        if sel_task_t4 != "（不限）" and not _df_a_t4.empty:
+            _tr = _df_a_t4[_df_a_t4['任務名稱'] == sel_task_t4]
+            if not _tr.empty:
+                _ids_str  = str(_tr.iloc[0].get('題目ID清單','') or '')
+                task_ids_t4 = set(q.strip() for q in _ids_str.split(',') if q.strip() and q.strip() != 'nan')
+                rev_tid_t4  = str(_tr.iloc[0].get('任務編號','') or '')
+                if not rev_tid_t4:
+                    _m = _re_t4.search(r'\[T(\d+)\]', sel_task_t4)
+                    if _m: rev_tid_t4 = 'T' + _m.group(1)
+                st.info(f"📋 此任務共 {len(task_ids_t4)} 題")
+
+        # logs 篩選
+        all_logs_t4 = df_l[df_l['姓名'].isin(target_stus_t4)].copy() if not df_l.empty else pd.DataFrame()
+        if rev_tid_t4 and not all_logs_t4.empty and '任務名稱' in all_logs_t4.columns:
+            _fl = all_logs_t4[all_logs_t4['任務名稱'].fillna('') == rev_tid_t4]
+            if not _fl.empty: all_logs_t4 = _fl
+
+        def _apply_scope_t4(df_q_in, logs_in):
+            if df_q_in.empty or '題目ID' not in df_q_in.columns:
+                return df_q_in
+            answered = set(logs_in['題目ID'].tolist()) if not logs_in.empty and '題目ID' in logs_in.columns else set()
+            wrong    = set(logs_in[logs_in['結果']=='❌']['題目ID'].tolist()) if not logs_in.empty and '結果' in logs_in.columns else set()
+            ok       = set(logs_in[logs_in['結果']=='✅']['題目ID'].tolist()) if not logs_in.empty and '結果' in logs_in.columns else set()
+            if scope_t4 == "✏️ 已經答題":
+                return df_q_in[df_q_in['題目ID'].isin(answered)]
+            elif scope_t4 == "❌ 只看錯題":
+                return df_q_in[df_q_in['題目ID'].isin(wrong)]
+            elif scope_t4 == "❓ 只看未作答":
+                return df_q_in[~df_q_in['題目ID'].isin(answered)]
+            return df_q_in
+
+
+
+        if task_ids_t4 is not None:
             df_mcq2 = df_mcq.copy() if not df_mcq.empty else pd.DataFrame()
             if not df_mcq2.empty:
                 df_mcq2['題目ID'] = df_mcq2.apply(lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1)
-                df_rev_mcq = df_mcq2[df_mcq2['題目ID'].isin(task_ids_mcq)].copy()
+                df_rev_mcq = df_mcq2[df_mcq2['題目ID'].isin(task_ids_t4)].copy()
             else:
                 df_rev_mcq = pd.DataFrame()
         else:
@@ -2108,13 +2173,13 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
         if df_rev_mcq.empty:
             st.info("此範圍尚無單選題。")
         else:
-            mcq_logs = df_l[df_l['姓名'].isin(target_stus_mcq)].copy() if not df_l.empty else pd.DataFrame()
-            if rev_tid_mcq and not mcq_logs.empty and '任務名稱' in mcq_logs.columns:
-                _fl = mcq_logs[mcq_logs['任務名稱'].fillna('') == rev_tid_mcq]
+            mcq_logs = df_l[df_l['姓名'].isin(target_stus_t4)].copy() if not df_l.empty else pd.DataFrame()
+            if rev_tid_t4 and not mcq_logs.empty and '任務名稱' in mcq_logs.columns:
+                _fl = mcq_logs[mcq_logs['任務名稱'].fillna('') == rev_tid_t4]
                 if not _fl.empty: mcq_logs = _fl
-            df_rev_mcq = _apply_scope(df_rev_mcq, scope_mcq, mcq_logs)
+            df_rev_mcq = _apply_scope_t4(df_rev_mcq, all_logs_t4)
             st.markdown(f"**共 {len(df_rev_mcq)} 題**")
-            _rev_summary = f"👥 {_group_label(rev_group_mcq)}／{len(target_stus_mcq)} 位　🔍 {scope_mcq}"
+            _rev_summary = f"👥 {_group_label(rev_group_t4)}／{len(target_stus_t4)} 位　🔍 {scope_t4}"
             st.info(_rev_summary)
             PAGE_SIZE = 20
             total_rev = len(df_rev_mcq)
@@ -2147,7 +2212,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     st.markdown(f"<div style='color:green;padding:4px 0;'>✅ 正確答案：{q_ans}</div>", unsafe_allow_html=True)
                     if q_analysis: st.info(f"📝 解析：{q_analysis}")
                     st.divider()
-                    for stu in target_stus_mcq:
+                    for stu in target_stus_t4:
                         stu_rows = mcq_logs[(mcq_logs['姓名']==stu) & (mcq_logs['題目ID']==qid) & (~mcq_logs['結果'].str.contains('📖',na=False))] if not mcq_logs.empty else pd.DataFrame()
                         stu_rev  = mcq_logs[(mcq_logs['姓名']==stu) & (mcq_logs['題目ID']==qid) & (mcq_logs['結果'].str.contains('📖',na=False))] if not mcq_logs.empty else pd.DataFrame()
                         if stu_rows.empty:
@@ -2164,19 +2229,18 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     btn_key = f"rev_done_mcq_{_qi}_{qid}"
                     if st.button("📖 講解完成，寫入紀錄", key=btn_key, type="primary", use_container_width=True):
                         now_str = get_now().strftime("%Y-%m-%d %H:%M:%S")
-                        rows_log = [{"時間": now_str, "姓名": stu, "分組": rev_group_mcq, "題目ID": qid, "結果": "📖 講解", "學生答案": ""} for stu in target_stus_mcq]
+                        rows_log = [{"時間": now_str, "姓名": stu, "分組": rev_group_t4, "題目ID": qid, "結果": "📖 講解", "學生答案": ""} for stu in target_stus_t4]
                         if append_to_sheet("logs", pd.DataFrame(rows_log)):
-                            st.success(f"✅ 已為 {len(target_stus_mcq)} 位學生寫入講解紀錄！")
+                            st.success(f"✅ 已為 {len(target_stus_t4)} 位學生寫入講解紀錄！")
 
         # ── Tab2: 重組講解 ────────────────────────────────────────────────
         st.divider()
         st.markdown("### ✏️ 重組題")
-        rev_group_q, target_stus_q, task_ids_q, rev_tid_q, scope_q = _rev_common_filters("reorder")
-
-        if task_ids_q is not None:
+        
+        if task_ids_t4 is not None:
             df_q2 = df_q.copy()
             df_q2['題目ID'] = df_q2.apply(lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1)
-            df_rev_q2 = df_q2[df_q2['題目ID'].isin(task_ids_q)].copy()
+            df_rev_q2 = df_q2[df_q2['題目ID'].isin(task_ids_t4)].copy()
         else:
             st.markdown("**⚙️ 重組題範圍**")
             rc2 = st.columns(5)
@@ -2196,13 +2260,13 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
         if df_rev_q2.empty:
             st.info("此範圍尚無重組題。")
         else:
-            q_logs = df_l[df_l['姓名'].isin(target_stus_q)].copy() if not df_l.empty else pd.DataFrame()
-            if rev_tid_q and not q_logs.empty and '任務名稱' in q_logs.columns:
-                _fl = q_logs[q_logs['任務名稱'].fillna('') == rev_tid_q]
+            q_logs = df_l[df_l['姓名'].isin(target_stus_t4)].copy() if not df_l.empty else pd.DataFrame()
+            if rev_tid_t4 and not q_logs.empty and '任務名稱' in q_logs.columns:
+                _fl = q_logs[q_logs['任務名稱'].fillna('') == rev_tid_t4]
                 if not _fl.empty: q_logs = _fl
-            df_rev_q2 = _apply_scope(df_rev_q2, scope_q, q_logs)
+            df_rev_q2 = _apply_scope_t4(df_rev_q2, all_logs_t4)
             st.markdown(f"**共 {len(df_rev_q2)} 題**")
-            st.info(f"👥 {_group_label(rev_group_q)}／{len(target_stus_q)} 位　🔍 {scope_q}")
+            st.info(f"👥 {_group_label(rev_group_t4)}／{len(target_stus_t4)} 位　🔍 {scope_t4}")
             PAGE_SIZE = 20
             total_rev = len(df_rev_q2)
             total_pages = max(1, (total_rev + PAGE_SIZE - 1) // PAGE_SIZE)
@@ -2227,7 +2291,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     st.markdown(f"<div style='font-size:1.1rem;font-weight:600;padding:8px 0;'>{q_title}</div>", unsafe_allow_html=True)
                     st.markdown(f"<div style='color:green;padding:4px 0;'>✅ {q_ans}</div>", unsafe_allow_html=True)
                     st.divider()
-                    for stu in target_stus_q:
+                    for stu in target_stus_t4:
                         stu_rows = q_logs[(q_logs['姓名']==stu) & (q_logs['題目ID']==qid) & (~q_logs['結果'].str.contains('📖',na=False))] if not q_logs.empty else pd.DataFrame()
                         stu_rev  = q_logs[(q_logs['姓名']==stu) & (q_logs['題目ID']==qid) & (q_logs['結果'].str.contains('📖',na=False))] if not q_logs.empty else pd.DataFrame()
                         if stu_rows.empty:
@@ -2241,20 +2305,19 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     btn_key = f"rev_done_q_{_qi}_{qid}"
                     if st.button("📖 講解完成，寫入紀錄", key=btn_key, type="primary", use_container_width=True):
                         now_str = get_now().strftime("%Y-%m-%d %H:%M:%S")
-                        rows_log = [{"時間": now_str, "姓名": stu, "分組": rev_group_q, "題目ID": qid, "結果": "📖 講解", "學生答案": ""} for stu in target_stus_q]
+                        rows_log = [{"時間": now_str, "姓名": stu, "分組": rev_group_t4, "題目ID": qid, "結果": "📖 講解", "學生答案": ""} for stu in target_stus_t4]
                         if append_to_sheet("logs", pd.DataFrame(rows_log)):
-                            st.success(f"✅ 已為 {len(target_stus_q)} 位學生寫入講解紀錄！")
+                            st.success(f"✅ 已為 {len(target_stus_t4)} 位學生寫入講解紀錄！")
 
         # ── Tab3: 閱讀單句講解 ────────────────────────────────────────────
         st.divider()
         st.markdown("### 📖 閱讀單句")
-        rev_group_rm, target_stus_rm, task_ids_rm, rev_tid_rm, scope_rm = _rev_common_filters("rm")
-
-        if task_ids_rm is not None:
+        
+        if task_ids_t4 is not None:
             df_rm2 = df_rm.copy() if not df_rm.empty else pd.DataFrame()
             if not df_rm2.empty:
                 df_rm2['題目ID'] = df_rm2.apply(lambda r: f"RM_{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1)
-                df_rev_rm = df_rm2[df_rm2['題目ID'].isin(task_ids_rm)].copy()
+                df_rev_rm = df_rm2[df_rm2['題目ID'].isin(task_ids_t4)].copy()
             else:
                 df_rev_rm = pd.DataFrame()
         else:
@@ -2277,13 +2340,13 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     df_rev_rm['題目ID'] = df_rev_rm.apply(lambda r: f"RM_{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1)
 
         if not df_rev_rm.empty:
-            rm_logs = df_l[df_l['姓名'].isin(target_stus_rm)].copy() if not df_l.empty else pd.DataFrame()
-            if rev_tid_rm and not rm_logs.empty and '任務名稱' in rm_logs.columns:
-                _fl = rm_logs[rm_logs['任務名稱'].fillna('') == rev_tid_rm]
+            rm_logs = df_l[df_l['姓名'].isin(target_stus_t4)].copy() if not df_l.empty else pd.DataFrame()
+            if rev_tid_t4 and not rm_logs.empty and '任務名稱' in rm_logs.columns:
+                _fl = rm_logs[rm_logs['任務名稱'].fillna('') == rev_tid_t4]
                 if not _fl.empty: rm_logs = _fl
-            df_rev_rm = _apply_scope(df_rev_rm, scope_rm, rm_logs)
+            df_rev_rm = _apply_scope_t4(df_rev_rm, all_logs_t4)
             st.markdown(f"**共 {len(df_rev_rm)} 題**")
-            st.info(f"👥 {_group_label(rev_group_rm)}／{len(target_stus_rm)} 位　🔍 {scope_rm}")
+            st.info(f"👥 {_group_label(rev_group_t4)}／{len(target_stus_t4)} 位　🔍 {scope_t4}")
             PAGE_SIZE = 20
             total_rev = len(df_rev_rm)
             total_pages = max(1, (total_rev + PAGE_SIZE - 1) // PAGE_SIZE)
@@ -2314,7 +2377,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     st.markdown(f"<div style='color:green;padding:4px 0;'>✅ 正確答案：{correct}</div>", unsafe_allow_html=True)
                     if analysis: st.info(f"📝 {analysis}")
                     st.divider()
-                    for stu in target_stus_rm:
+                    for stu in target_stus_t4:
                         stu_rows = rm_logs[(rm_logs['姓名']==stu)&(rm_logs['題目ID']==qid)&(~rm_logs['結果'].str.contains('📖',na=False))] if not rm_logs.empty else pd.DataFrame()
                         if stu_rows.empty:
                             st.markdown(f"　👤 **{stu}**：尚未作答")
@@ -2324,20 +2387,19 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     btn_key = f"rev_done_rm_{_qi}_{qid}"
                     if st.button("📖 講解完成，寫入紀錄", key=btn_key, type="primary", use_container_width=True):
                         now_str = get_now().strftime("%Y-%m-%d %H:%M:%S")
-                        rows_log = [{"時間": now_str, "姓名": stu, "分組": rev_group_rm, "題目ID": qid, "結果": "📖 講解", "學生答案": ""} for stu in target_stus_rm]
+                        rows_log = [{"時間": now_str, "姓名": stu, "分組": rev_group_t4, "題目ID": qid, "結果": "📖 講解", "學生答案": ""} for stu in target_stus_t4]
                         if append_to_sheet("logs", pd.DataFrame(rows_log)):
-                            st.success(f"✅ 已為 {len(target_stus_rm)} 位學生寫入講解紀錄！")
+                            st.success(f"✅ 已為 {len(target_stus_t4)} 位學生寫入講解紀錄！")
 
         # ── 朗讀講解 ──────────────────────────────────────────────────────
         st.divider()
         st.markdown("### 🎤 朗讀")
-        rev_group_r, target_stus_r, task_ids_r, rev_tid_r, scope_r = _rev_common_filters("reading")
-
-        if task_ids_r is not None:
+        
+        if task_ids_t4 is not None:
             df_r2 = df_r.copy() if not df_r.empty else pd.DataFrame()
             if not df_r2.empty:
                 df_r2['題目ID'] = df_r2.apply(lambda r: f"R_{r['版本']}_{r['年度']}_{r['冊編號']}_{r.get('單元','')}_{r['課編號']}_{r['句編號']}", axis=1)
-                df_rev_r = df_r2[df_r2['題目ID'].isin(task_ids_r)].copy()
+                df_rev_r = df_r2[df_r2['題目ID'].isin(task_ids_t4)].copy()
             else:
                 df_rev_r = pd.DataFrame()
         else:
@@ -2360,13 +2422,13 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     df_rev_r['題目ID'] = df_rev_r.apply(lambda r: f"R_{r['版本']}_{r['年度']}_{r['冊編號']}_{r.get('單元','')}_{r['課編號']}_{r['句編號']}", axis=1)
 
         if not df_rev_r.empty:
-            r_logs = df_l[df_l['姓名'].isin(target_stus_r)].copy() if not df_l.empty else pd.DataFrame()
-            if rev_tid_r and not r_logs.empty and '任務名稱' in r_logs.columns:
-                _fl = r_logs[r_logs['任務名稱'].fillna('') == rev_tid_r]
+            r_logs = df_l[df_l['姓名'].isin(target_stus_t4)].copy() if not df_l.empty else pd.DataFrame()
+            if rev_tid_t4 and not r_logs.empty and '任務名稱' in r_logs.columns:
+                _fl = r_logs[r_logs['任務名稱'].fillna('') == rev_tid_t4]
                 if not _fl.empty: r_logs = _fl
-            df_rev_r = _apply_scope(df_rev_r, scope_r, r_logs)
+            df_rev_r = _apply_scope_t4(df_rev_r, all_logs_t4)
             st.markdown(f"**共 {len(df_rev_r)} 題**")
-            st.info(f"👥 {_group_label(rev_group_r)}／{len(target_stus_r)} 位")
+            st.info(f"👥 {_group_label(rev_group_t4)}／{len(target_stus_t4)} 位")
             PAGE_SIZE = 20
             total_pages = max(1, (len(df_rev_r) + PAGE_SIZE - 1) // PAGE_SIZE)
             if total_pages > 1:
@@ -2387,7 +2449,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 with st.expander(label, expanded=True):
                     st.markdown(f"<div style='font-size:1.2rem;font-weight:600;padding:8px 0;'>{read_text}</div>", unsafe_allow_html=True)
                     st.divider()
-                    for stu in target_stus_r:
+                    for stu in target_stus_t4:
                         stu_rows = r_logs[(r_logs['姓名']==stu)&(r_logs['題目ID']==qid)&(r_logs['結果']=='🎤 朗讀')] if not r_logs.empty else pd.DataFrame()
                         if stu_rows.empty:
                             st.markdown(f"　👤 **{stu}**：尚未朗讀")
@@ -2397,20 +2459,19 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     btn_key = f"rev_done_r_{_qi}_{qid}"
                     if st.button("📖 講解完成，寫入紀錄", key=btn_key, type="primary", use_container_width=True):
                         now_str = get_now().strftime("%Y-%m-%d %H:%M:%S")
-                        rows_log = [{"時間": now_str, "姓名": stu, "分組": rev_group_r, "題目ID": qid, "結果": "📖 講解", "學生答案": ""} for stu in target_stus_r]
+                        rows_log = [{"時間": now_str, "姓名": stu, "分組": rev_group_t4, "題目ID": qid, "結果": "📖 講解", "學生答案": ""} for stu in target_stus_t4]
                         if append_to_sheet("logs", pd.DataFrame(rows_log)):
-                            st.success(f"✅ 已為 {len(target_stus_r)} 位學生寫入講解紀錄！")
+                            st.success(f"✅ 已為 {len(target_stus_t4)} 位學生寫入講解紀錄！")
 
         # ── Tab5: 拼單字講解 ──────────────────────────────────────────────
         st.divider()
         st.markdown("### 🔤 拼單字")
-        rev_group_v, target_stus_v, task_ids_v, rev_tid_v, scope_v = _rev_common_filters("vocab")
-
-        if task_ids_v is not None:
+        
+        if task_ids_t4 is not None:
             df_v2 = df_v.copy() if not df_v.empty else pd.DataFrame()
             if not df_v2.empty:
                 df_v2['題目ID'] = df_v2.apply(lambda r: f"V_{r['版本']}_{r['年度']}_{r['冊編號']}_{r.get('單元','')}_{r['課編號']}_{r['句編號']}", axis=1)
-                df_rev_v = df_v2[df_v2['題目ID'].isin(task_ids_v)].copy()
+                df_rev_v = df_v2[df_v2['題目ID'].isin(task_ids_t4)].copy()
             else:
                 df_rev_v = pd.DataFrame()
         else:
@@ -2432,13 +2493,13 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     df_rev_v['題目ID'] = df_rev_v.apply(lambda r: f"V_{r['版本']}_{r['年度']}_{r['冊編號']}_{r.get('單元','')}_{r['課編號']}_{r['句編號']}", axis=1)
 
         if not df_rev_v.empty:
-            v_logs = df_l[df_l['姓名'].isin(target_stus_v)].copy() if not df_l.empty else pd.DataFrame()
-            if rev_tid_v and not v_logs.empty and '任務名稱' in v_logs.columns:
-                _fl = v_logs[v_logs['任務名稱'].fillna('') == rev_tid_v]
+            v_logs = df_l[df_l['姓名'].isin(target_stus_t4)].copy() if not df_l.empty else pd.DataFrame()
+            if rev_tid_t4 and not v_logs.empty and '任務名稱' in v_logs.columns:
+                _fl = v_logs[v_logs['任務名稱'].fillna('') == rev_tid_t4]
                 if not _fl.empty: v_logs = _fl
-            df_rev_v = _apply_scope(df_rev_v, scope_v, v_logs)
+            df_rev_v = _apply_scope_t4(df_rev_v, all_logs_t4)
             st.markdown(f"**共 {len(df_rev_v)} 題**")
-            st.info(f"👥 {_group_label(rev_group_v)}／{len(target_stus_v)} 位")
+            st.info(f"👥 {_group_label(rev_group_t4)}／{len(target_stus_t4)} 位")
             PAGE_SIZE = 20
             total_pages = max(1, (len(df_rev_v) + PAGE_SIZE - 1) // PAGE_SIZE)
             if total_pages > 1:
@@ -2461,7 +2522,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     st.markdown(f"<div style='font-size:1.1rem;font-weight:600;'>{meaning}</div>", unsafe_allow_html=True)
                     st.markdown(f"<div style='color:green;'>✅ {word}</div>", unsafe_allow_html=True)
                     st.divider()
-                    for stu in target_stus_v:
+                    for stu in target_stus_t4:
                         stu_rows = v_logs[(v_logs['姓名']==stu)&(v_logs['題目ID']==qid)&(~v_logs['結果'].str.contains('📖',na=False))] if not v_logs.empty else pd.DataFrame()
                         if stu_rows.empty:
                             st.markdown(f"　👤 **{stu}**：尚未作答")
@@ -2471,9 +2532,9 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     btn_key = f"rev_done_v_{_qi}_{qid}"
                     if st.button("📖 講解完成，寫入紀錄", key=btn_key, type="primary", use_container_width=True):
                         now_str = get_now().strftime("%Y-%m-%d %H:%M:%S")
-                        rows_log = [{"時間": now_str, "姓名": stu, "分組": rev_group_v, "題目ID": qid, "結果": "📖 講解", "學生答案": ""} for stu in target_stus_v]
+                        rows_log = [{"時間": now_str, "姓名": stu, "分組": rev_group_t4, "題目ID": qid, "結果": "📖 講解", "學生答案": ""} for stu in target_stus_t4]
                         if append_to_sheet("logs", pd.DataFrame(rows_log)):
-                            st.success(f"✅ 已為 {len(target_stus_v)} 位學生寫入講解紀錄！")
+                            st.success(f"✅ 已為 {len(target_stus_t4)} 位學生寫入講解紀錄！")
         st.divider()
     st.stop()
 
