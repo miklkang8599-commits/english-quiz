@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.301 - 題目講解全篩選form版)
+# 🧩 英文全能練習系統 (V2.9.302 - 講解篩選scope修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.301
+# 📌 版本編號 (VERSION): 2.9.302
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.301"
+VERSION = "2.9.302"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -2430,7 +2430,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
 
         # ── 朗讀講解 ──────────────────────────────────────────────────────
         with rev4_tab4:
-            rev_group_r, target_stus_r, task_ids_r, rev_tid_r = _rev_common_filters("reading")
+            rev_group_r, target_stus_r, task_ids_r, rev_tid_r, scope_r = _rev_common_filters("reading")
 
             if task_ids_r is not None:
                 df_r2 = df_r.copy() if not df_r.empty else pd.DataFrame()
@@ -2463,7 +2463,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 if rev_tid_r and not r_logs.empty and '任務名稱' in r_logs.columns:
                     _fl = r_logs[r_logs['任務名稱'].fillna('') == rev_tid_r]
                     if not _fl.empty: r_logs = _fl
-                df_rev_r = _apply_scope(df_rev_r, _rev_scope_filter("reading_s"), r_logs)
+                df_rev_r = _apply_scope(df_rev_r, scope_r, r_logs)
                 st.markdown(f"**共 {len(df_rev_r)} 題**")
                 st.info(f"👥 {_group_label(rev_group_r)}／{len(target_stus_r)} 位")
                 PAGE_SIZE = 20
@@ -2502,7 +2502,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
 
         # ── Tab5: 拼單字講解 ──────────────────────────────────────────────
         with rev4_tab5:
-            rev_group_v, target_stus_v, task_ids_v, rev_tid_v = _rev_common_filters("vocab")
+            rev_group_v, target_stus_v, task_ids_v, rev_tid_v, scope_v = _rev_common_filters("vocab")
 
             if task_ids_v is not None:
                 df_v2 = df_v.copy() if not df_v.empty else pd.DataFrame()
@@ -2534,7 +2534,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 if rev_tid_v and not v_logs.empty and '任務名稱' in v_logs.columns:
                     _fl = v_logs[v_logs['任務名稱'].fillna('') == rev_tid_v]
                     if not _fl.empty: v_logs = _fl
-                df_rev_v = _apply_scope(df_rev_v, _rev_scope_filter("vocab_s"), v_logs)
+                df_rev_v = _apply_scope(df_rev_v, scope_v, v_logs)
                 st.markdown(f"**共 {len(df_rev_v)} 題**")
                 st.info(f"👥 {_group_label(rev_group_v)}／{len(target_stus_v)} 位")
                 PAGE_SIZE = 20
