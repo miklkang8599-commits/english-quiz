@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.299 - 移除數據監控今日報告版)
+# 🧩 英文全能練習系統 (V2.9.300 - 題目講解篩選form版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.299
+# 📌 版本編號 (VERSION): 2.9.300
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.299"
+VERSION = "2.9.300"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -2100,53 +2100,58 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             all_groups_t4 = sorted(df_s[~df_s['分組'].isin(['ADMIN','TEACHER'])]['分組'].unique())
             group_labels  = [_group_label(g) for g in all_groups_t4]
             group_map     = {_group_label(g): g for g in all_groups_t4}
-            sel_label     = st.selectbox("👥 班級/分組", group_labels, key=f"rev_group_{tab_key}")
-            rev_group     = group_map.get(sel_label, all_groups_t4[0] if all_groups_t4 else "")
-            students_in_group = sorted(df_s[df_s['分組'] == rev_group]['姓名'].tolist())
 
-            # 任務篩選：只顯示新格式任務
-            import re as _re5
-            rev_task_ids    = None
-            rev_task_id_key = ""
-            task_stu_default = students_in_group
-            if not df_a.empty and '任務名稱' in df_a.columns:
-                df_a_rev = df_a[df_a.get('狀態', pd.Series(dtype=str)).fillna('') != '已刪除'].copy()
-                # 只保留新格式任務
-                df_a_rev = df_a_rev[df_a_rev['任務名稱'].apply(
-                    lambda n: bool(_re5.search(r'\[T\d+\]', str(n)))
-                )]
-                if not df_a_rev.empty and '對象班級' in df_a_rev.columns:
-                    df_a_rev = df_a_rev[df_a_rev['對象班級'].apply(
-                        lambda v: rev_group in [g.strip() for g in str(v).split(',')]
+            with st.form(key=f"rev_form_{tab_key}"):
+                sel_label = st.selectbox("👥 班級/分組", group_labels, key=f"rev_group_{tab_key}")
+                rev_group = group_map.get(sel_label, all_groups_t4[0] if all_groups_t4 else "")
+                students_in_group = sorted(df_s[df_s['分組'] == rev_group]['姓名'].tolist())
+
+                # 任務篩選
+                import re as _re5
+                rev_task_ids    = None
+                rev_task_id_key = ""
+                task_stu_default = students_in_group
+                task_names = ["（不限）"]
+                df_a_rev   = pd.DataFrame()
+                if not df_a.empty and '任務名稱' in df_a.columns:
+                    df_a_rev = df_a[df_a.get('狀態', pd.Series(dtype=str)).fillna('') != '已刪除'].copy()
+                    df_a_rev = df_a_rev[df_a_rev['任務名稱'].apply(
+                        lambda n: bool(_re5.search(r'\[T\d+\]', str(n)))
                     )]
-                task_names = ["（不限）"] + _sort_task_names(df_a_rev['任務名稱'].tolist())
+                    if not df_a_rev.empty and '對象班級' in df_a_rev.columns:
+                        df_a_rev = df_a_rev[df_a_rev['對象班級'].apply(
+                            lambda v: rev_group in [g.strip() for g in str(v).split(',')]
+                        )]
+                    task_names = ["（不限）"] + _sort_task_names(df_a_rev['任務名稱'].tolist())
 
                 sel_task = st.selectbox("📋 依任務篩選（選填）", task_names, key=f"rev_task_{tab_key}")
 
-                if sel_task != "（不限）" and not df_a_rev.empty:
-                    task_row = df_a_rev[df_a_rev['任務名稱'] == sel_task]
-                    if not task_row.empty:
-                        ids_str  = str(task_row.iloc[0].get('題目ID清單', '') or '')
-                        rev_task_ids = set(q.strip() for q in ids_str.split(',') if q.strip() and q.strip() != 'nan')
-                        task_stu_str = str(task_row.iloc[0].get('指派學生', '') or '')
-                        task_stus    = [s.strip() for s in task_stu_str.split(',') if s.strip()]
-                        valid_stus   = [s for s in task_stus if s in students_in_group]
-                        task_stu_default = valid_stus if valid_stus else students_in_group
-                        # 取任務編號，用來篩選 logs
-                        rev_task_id_key = str(task_row.iloc[0].get('任務編號','') or '')
-                        if not rev_task_id_key:
-                            import re as _re_rtid
-                            _m = _re_rtid.search(r'\[T(\d+)\]', sel_task)
-                            if _m: rev_task_id_key = 'T' + _m.group(1)
-                        st.info(f"📋 共 {len(rev_task_ids)} 題")
-            else:
-                rev_task_id_key = ""
+                rev_students = st.multiselect(
+                    "👤 學生（預設全選）", options=students_in_group,
+                    default=students_in_group, key=f"rev_students_{tab_key}"
+                )
 
-            rev_students = st.multiselect(
-                "👤 學生（預設全選）", options=students_in_group,
-                default=task_stu_default, key=f"rev_students_{tab_key}"
-            )
+                submitted = st.form_submit_button("🔍 套用篩選", use_container_width=True, type="primary")
+
+            # 計算篩選結果（form 外面）
+            rev_group     = group_map.get(sel_label, all_groups_t4[0] if all_groups_t4 else "")
+            students_in_group = sorted(df_s[df_s['分組'] == rev_group]['姓名'].tolist())
             target_students = rev_students if rev_students else students_in_group
+
+            if sel_task != "（不限）" and not df_a_rev.empty:
+                task_row = df_a_rev[df_a_rev['任務名稱'] == sel_task]
+                if not task_row.empty:
+                    ids_str  = str(task_row.iloc[0].get('題目ID清單', '') or '')
+                    rev_task_ids = set(q.strip() for q in ids_str.split(',') if q.strip() and q.strip() != 'nan')
+                    task_stu_str = str(task_row.iloc[0].get('指派學生', '') or '')
+                    task_stus    = [s.strip() for s in task_stu_str.split(',') if s.strip()]
+                    rev_task_id_key = str(task_row.iloc[0].get('任務編號','') or '')
+                    if not rev_task_id_key:
+                        import re as _re_rtid
+                        _m = _re_rtid.search(r'\[T(\d+)\]', sel_task)
+                        if _m: rev_task_id_key = 'T' + _m.group(1)
+                    st.info(f"📋 共 {len(rev_task_ids)} 題")
+
             return rev_group, target_students, rev_task_ids, rev_task_id_key
 
         # ── 共用：顯示範圍篩選 ───────────────────────────────────────────
