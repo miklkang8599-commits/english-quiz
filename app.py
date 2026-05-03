@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.312 - 快取嵌套修復版)
+# 🧩 英文全能練習系統 (V2.9.313 - logs函式補回版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.312
+# 📌 版本編號 (VERSION): 2.9.313
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.312"
+VERSION = "2.9.313"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -240,6 +240,33 @@ def load_assignments():
         return pd.DataFrame()
     except Exception as e:
         st.session_state['_load_error'] = str(e)
+        return pd.DataFrame()
+
+@st.cache_data(ttl=60)
+def _load_logs_cached():
+    """logs 資料，60秒快取，只撈必要欄位"""
+    try:
+        sb       = get_supabase()
+        all_logs = []
+        page     = 0
+        while True:
+            res = sb.table("logs").select(
+                "created_at,name,group_id,question_id,result,student_answer,score,task_name"
+            ).order("created_at", desc=False) \
+             .range(page * 1000, (page + 1) * 1000 - 1) \
+             .execute()
+            if not res.data:
+                break
+            all_logs.extend(res.data)
+            if len(res.data) < 1000:
+                break
+            page += 1
+        if all_logs:
+            df_l = pd.DataFrame(all_logs)
+            df_l = _to_cn(df_l, LOGS_COLS)
+            return df_l
+        return pd.DataFrame()
+    except:
         return pd.DataFrame()
 
 def load_dynamic_data():
