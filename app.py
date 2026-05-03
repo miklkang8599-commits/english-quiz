@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.310 - 題目講解rev_group修復版)
+# 🧩 英文全能練習系統 (V2.9.311 - 三功能獨立更新版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.310
+# 📌 版本編號 (VERSION): 2.9.311
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.310"
+VERSION = "2.9.311"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -227,26 +227,27 @@ def _to_en_assign(row: dict) -> dict:
 # 動態資料讀取（Supabase）- 移除快取，每次 rerun 直接讀最新
 # ==============================================================================
 @st.cache_data(ttl=30)
-def load_dynamic_data():
-    """assignments 30秒快取，logs 走獨立快取函式"""
+def load_assignments():
+    """只載入 assignments，ttl=30 秒"""
     try:
-        sb    = get_supabase()
-        res_a = sb.table("assignments").select("*").execute()
-        if res_a.data:
-            df_a = pd.DataFrame(res_a.data)
-            df_a = _to_cn(df_a, ASSIGN_COLS)
-            df_a = df_a.drop(columns=["id"], errors="ignore")
-        else:
-            df_a = pd.DataFrame()
-        df_l = _load_logs_cached()
-        return df_a, df_l
+        sb  = get_supabase()
+        res = sb.table("assignments").select("*").execute()
+        if res.data:
+            df = pd.DataFrame(res.data)
+            df = _to_cn(df, ASSIGN_COLS)
+            df = df.drop(columns=["id"], errors="ignore")
+            return df
+        return pd.DataFrame()
     except Exception as e:
-        st.warning(f"⚠️ Supabase 讀取失敗：{e}")
-        return pd.DataFrame(), pd.DataFrame()
+        st.session_state['_load_error'] = str(e)
+        return pd.DataFrame()
 
-@st.cache_data(ttl=60)
-def _load_logs_cached():
-    """logs 資料，60秒快取，只撈必要欄位"""
+@st.cache_data(ttl=30)
+def load_dynamic_data():
+    """assignments + logs（相容舊版呼叫）"""
+    df_a = load_assignments()
+    df_l = _load_logs_cached()
+    return df_a, df_l
     try:
         sb       = get_supabase()
         all_logs = []
@@ -906,6 +907,16 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
     t1, t2, t3 = st.tabs(["📋 指派任務", "📋 學生名單", "📖 題目講解"])
 
     with t1:
+        # 指派任務獨立更新鍵（只更新 assignments）
+        _t1_col1, _t1_col2 = st.columns([5, 1])
+        _t1_col1.caption(f"任務資料：{len(df_a)} 筆")
+        if _t1_col2.button("🔄", key="t1_refresh", help="更新任務資料"):
+            load_assignments.clear()
+            load_dynamic_data.clear()
+            st.session_state['_a2_cache_stale'] = True
+            st.rerun()
+        # 重新取得最新 df_a（可能剛更新）
+        df_a = load_assignments()
         # 發布成功後清空表單（在 widget 渲染前執行）
         if st.session_state.pop('t1_clear_form', False):
             for k in [
@@ -2090,6 +2101,14 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
     # --------------------------------------------------------------------------
     with t3:
         st.subheader("📖 題目講解")
+        # 題目講解獨立更新鍵（需要 assignments + logs）
+        _t3_col1, _t3_col2 = st.columns([5, 1])
+        _t3_col1.caption(f"答題記錄：{len(df_l)} 筆")
+        if _t3_col2.button("🔄", key="t3_refresh", help="更新答題記錄"):
+            _load_logs_cached.clear()
+            load_dynamic_data.clear()
+            st.rerun()
+        df_l = _load_logs_cached()
 
         # ── 篩選條件 ─────────────────────────────────────────────────────────
         import re as _re_t4
