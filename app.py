@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.307 - 題目講解簡化篩選版)
+# 🧩 英文全能練習系統 (V2.9.308 - 題目講解班級篩選修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.307
+# 📌 版本編號 (VERSION): 2.9.308
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.307"
+VERSION = "2.9.308"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -2096,6 +2096,10 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
         all_students_t4 = sorted(df_s[~df_s['分組'].isin(['ADMIN','TEACHER'])]['姓名'].tolist()) if not df_s.empty and '姓名' in df_s.columns else []
 
         with st.form("rev_filter_form"):
+            _fc1, _fc2 = st.columns(2)
+            all_groups_t4 = sorted(df_s[~df_s['分組'].isin(['ADMIN','TEACHER'])]['分組'].unique()) if not df_s.empty else []
+            sel_grp_t4 = _fc1.selectbox("👥 班級/分組", ["（不限）"] + [_group_label(g) for g in all_groups_t4], key="rev_grp_t4")
+
             _all_tasks_t4 = ["（不限）"]
             _df_a_t4      = pd.DataFrame()
             if not df_a.empty and '任務名稱' in df_a.columns:
@@ -2103,8 +2107,8 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 _df_a_t4 = _df_a_t4[_df_a_t4['任務名稱'].apply(lambda n: bool(_re_t4.search(r'\[T\d+\]', str(n))))]
                 _all_tasks_t4 = ["（不限）"] + _sort_task_names(_df_a_t4['任務名稱'].tolist())
 
-            sel_task_t4 = st.selectbox("📋 選擇任務", _all_tasks_t4, key="rev_task_t4")
-            sel_stus_t4 = st.multiselect("👤 學生（可多選，空白=全部）",
+            sel_task_t4 = _fc2.selectbox("📋 選擇任務", _all_tasks_t4, key="rev_task_t4")
+            sel_stus_t4 = st.multiselect("👤 學生（空白=全部）",
                 options=all_students_t4, default=[], key="rev_stus_t4")
             scope_t4 = st.radio("顯示範圍",
                 ["📚 全部題目", "✏️ 已經答題", "❌ 只看錯題", "❓ 只看未作答"],
