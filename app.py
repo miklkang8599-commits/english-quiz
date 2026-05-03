@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.314 - 班級學生預設修復版)
+# 🧩 英文全能練習系統 (V2.9.315 - 題目講解無任務不顯示版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.314
+# 📌 版本編號 (VERSION): 2.9.315
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.314"
+VERSION = "2.9.315"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -2285,20 +2285,8 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             df_q2['題目ID'] = df_q2.apply(lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1)
             df_rev_q2 = df_q2[df_q2['題目ID'].isin(task_ids_t4)].copy()
         else:
-            st.markdown("**⚙️ 重組題範圍**")
-            rc2 = st.columns(5)
-            rv2 = rc2[0].selectbox("版本", sorted(df_q['版本'].unique()) if not df_q.empty else [], key="rev_q_v")
-            ru2_src = df_q[df_q['版本']==rv2] if not df_q.empty else pd.DataFrame()
-            ru2 = rc2[1].selectbox("單元", sorted(ru2_src['單元'].unique()) if not ru2_src.empty else [], key="rev_q_u")
-            ry2_src = ru2_src[ru2_src['單元']==ru2]
-            ry2 = rc2[2].selectbox("年度", sorted(ry2_src['年度'].unique()) if not ry2_src.empty else [], key="rev_q_y")
-            rb2_src = ry2_src[ry2_src['年度']==ry2]
-            rb2 = rc2[3].selectbox("冊編號", sorted(rb2_src['冊編號'].unique()) if not rb2_src.empty else [], key="rev_q_b")
-            rl2_src = rb2_src[rb2_src['冊編號']==rb2]
-            rl2 = rc2[4].selectbox("課編號", sorted(rl2_src['課編號'].unique()) if not rl2_src.empty else [], key="rev_q_l")
-            df_rev_q2 = rl2_src[rl2_src['課編號']==rl2].copy() if not rl2_src.empty else pd.DataFrame()
-            if not df_rev_q2.empty:
-                df_rev_q2['題目ID'] = df_rev_q2.apply(lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1)
+            st.info("請先選擇任務後套用篩選，即可顯示重組題講解。")
+            df_rev_q2 = pd.DataFrame()
 
         if df_rev_q2.empty:
             st.info("此範圍尚無重組題。")
@@ -2364,24 +2352,8 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             else:
                 df_rev_rm = pd.DataFrame()
         else:
-            if df_rm.empty:
-                st.info("閱讀單句工作表尚無資料。")
-                df_rev_rm = pd.DataFrame()
-            else:
-                rm2 = st.columns(5)
-                rmv2 = rm2[0].selectbox("版本", sorted(df_rm['版本'].unique()), key="rev_rm_v")
-                rmu2_src = df_rm[df_rm['版本']==rmv2]
-                rmu2 = rm2[1].selectbox("單元", sorted(rmu2_src['單元'].unique()) if '單元' in rmu2_src.columns else [], key="rev_rm_u")
-                rmy2_src = rmu2_src[rmu2_src['單元']==rmu2] if '單元' in rmu2_src.columns else rmu2_src
-                rmy2 = rm2[2].selectbox("年度", sorted(rmy2_src['年度'].unique()), key="rev_rm_y")
-                rmb2_src = rmy2_src[rmy2_src['年度']==rmy2]
-                rmb2 = rm2[3].selectbox("冊編號", sorted(rmb2_src['冊編號'].unique()), key="rev_rm_b")
-                rml2_src = rmb2_src[rmb2_src['冊編號']==rmb2]
-                rml2 = rm2[4].selectbox("課編號", sorted(rml2_src['課編號'].unique()), key="rev_rm_l")
-                df_rev_rm = rml2_src[rml2_src['課編號']==rml2].copy() if not rml2_src.empty else pd.DataFrame()
-                if not df_rev_rm.empty:
-                    df_rev_rm['題目ID'] = df_rev_rm.apply(lambda r: f"RM_{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1)
-
+            st.info("請先選擇任務後套用篩選，即可顯示閱讀單句題講解。")
+            df_rev_rm = pd.DataFrame()
         if not df_rev_rm.empty:
             rm_logs = df_l[df_l['姓名'].isin(target_stus_t4)].copy() if not df_l.empty else pd.DataFrame()
             if rev_tid_t4 and not rm_logs.empty and '任務名稱' in rm_logs.columns:
@@ -2443,26 +2415,9 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             if not df_r2.empty:
                 df_r2['題目ID'] = df_r2.apply(lambda r: f"R_{r['版本']}_{r['年度']}_{r['冊編號']}_{r.get('單元','')}_{r['課編號']}_{r['句編號']}", axis=1)
                 df_rev_r = df_r2[df_r2['題目ID'].isin(task_ids_t4)].copy()
-            else:
-                df_rev_r = pd.DataFrame()
         else:
-            if df_r.empty:
-                st.info("朗讀工作表尚無資料。")
-                df_rev_r = pd.DataFrame()
-            else:
-                rr2 = st.columns(5)
-                rrv2 = rr2[0].selectbox("版本", sorted(df_r['版本'].unique()), key="rev_r_v")
-                rru2_src = df_r[df_r['版本']==rrv2]
-                rru2 = rr2[1].selectbox("單元", sorted(rru2_src['單元'].unique()) if '單元' in rru2_src.columns else [], key="rev_r_u")
-                rry2_src = rru2_src[rru2_src['單元']==rru2] if '單元' in rru2_src.columns else rru2_src
-                rry2 = rr2[2].selectbox("年度", sorted(rry2_src['年度'].unique()), key="rev_r_y")
-                rrb2_src = rry2_src[rry2_src['年度']==rry2]
-                rrb2 = rr2[3].selectbox("冊編號", sorted(rrb2_src['冊編號'].unique()), key="rev_r_b")
-                rrl2_src = rrb2_src[rrb2_src['冊編號']==rrb2]
-                rrl2 = rr2[4].selectbox("課編號", sorted(rrl2_src['課編號'].unique()), key="rev_r_l")
-                df_rev_r = rrl2_src[rrl2_src['課編號']==rrl2].copy() if not rrl2_src.empty else pd.DataFrame()
-                if not df_rev_r.empty:
-                    df_rev_r['題目ID'] = df_rev_r.apply(lambda r: f"R_{r['版本']}_{r['年度']}_{r['冊編號']}_{r.get('單元','')}_{r['課編號']}_{r['句編號']}", axis=1)
+            st.info("請先選擇任務後套用篩選，即可顯示朗讀題講解。")
+            df_rev_r = pd.DataFrame()
 
         if not df_rev_r.empty:
             r_logs = df_l[df_l['姓名'].isin(target_stus_t4)].copy() if not df_l.empty else pd.DataFrame()
@@ -2515,25 +2470,9 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             if not df_v2.empty:
                 df_v2['題目ID'] = df_v2.apply(lambda r: f"V_{r['版本']}_{r['年度']}_{r['冊編號']}_{r.get('單元','')}_{r['課編號']}_{r['句編號']}", axis=1)
                 df_rev_v = df_v2[df_v2['題目ID'].isin(task_ids_t4)].copy()
-            else:
-                df_rev_v = pd.DataFrame()
         else:
-            if df_v.empty:
-                st.info("拼單字工作表尚無資料。")
-                df_rev_v = pd.DataFrame()
-            else:
-                vv2 = st.columns(5)
-                vvv2 = vv2[0].selectbox("版本", sorted(df_v['版本'].unique()), key="rev_v_v")
-                vvu2_src = df_v[df_v['版本']==vvv2]
-                vvy2_src = vvu2_src
-                vvy2 = vv2[2].selectbox("年度", sorted(vvy2_src['年度'].unique()), key="rev_v_y")
-                vvb2_src = vvy2_src[vvy2_src['年度']==vvy2]
-                vvb2 = vv2[3].selectbox("冊編號", sorted(vvb2_src['冊編號'].unique()), key="rev_v_b")
-                vvl2_src = vvb2_src[vvb2_src['冊編號']==vvb2]
-                vvl2 = vv2[4].selectbox("課編號", sorted(vvl2_src['課編號'].unique()), key="rev_v_l")
-                df_rev_v = vvl2_src[vvl2_src['課編號']==vvl2].copy() if not vvl2_src.empty else pd.DataFrame()
-                if not df_rev_v.empty:
-                    df_rev_v['題目ID'] = df_rev_v.apply(lambda r: f"V_{r['版本']}_{r['年度']}_{r['冊編號']}_{r.get('單元','')}_{r['課編號']}_{r['句編號']}", axis=1)
+            st.info("請先選擇任務後套用篩選，即可顯示拼單字題講解。")
+            df_rev_v = pd.DataFrame()
 
         if not df_rev_v.empty:
             v_logs = df_l[df_l['姓名'].isin(target_stus_t4)].copy() if not df_l.empty else pd.DataFrame()
