@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.308 - 題目講解班級篩選修復版)
+# 🧩 英文全能練習系統 (V2.9.309 - 題目講解變數修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.308
+# 📌 版本編號 (VERSION): 2.9.309
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.308"
+VERSION = "2.9.309"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -2115,7 +2115,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 horizontal=True, key="rev_scope_t4")
             st.form_submit_button("🔍 套用篩選", use_container_width=True, type="primary")
 
-        target_stus_t4 = sel_stus_t4 if sel_stus_t4 else students_t4
+        target_stus_t4 = sel_stus_t4 if sel_stus_t4 else all_students_t4
         task_ids_t4    = None
         rev_tid_t4     = ""
 
