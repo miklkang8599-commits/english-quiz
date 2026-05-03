@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.317 - 題目講解翻頁不rerun版)
+# 🧩 英文全能練習系統 (V2.9.318 - 題目講解一次顯示全部版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.317
+# 📌 版本編號 (VERSION): 2.9.318
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.317"
+VERSION = "2.9.318"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -2252,17 +2252,9 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             st.markdown(f"**共 {len(df_rev_mcq)} 題**")
             _rev_summary = f"👥 {_group_label(rev_group_t4)}／{len(target_stus_t4)} 位　🔍 {scope_t4}"
             st.info(_rev_summary)
-            PAGE_SIZE = 20
             total_rev = len(df_rev_mcq)
-            total_pages = max(1, (total_rev + PAGE_SIZE - 1) // PAGE_SIZE)
-            if total_pages > 1:
-                pg1, pg2, pg3 = st.columns([1,3,1])
-                cur_page = st.number_input("頁碼", min_value=1, max_value=total_pages, value=st.session_state.get('rev_page_mcq', 0)+1, key="rev_page_inp_mcq", label_visibility="collapsed") - 1
-                st.session_state['rev_page_mcq'] = int(cur_page)
-                pg2.caption(f"第 {int(cur_page)+1}/{total_pages} 頁（共 {total_rev} 題）")
-                df_rev_page = df_rev_mcq.iloc[cur_page*PAGE_SIZE:(cur_page+1)*PAGE_SIZE]
-            else:
-                df_rev_page = df_rev_mcq
+            st.caption(f"共 {total_rev} 題")
+            df_rev_page = df_rev_mcq
 
             for _qi, (_, qrow) in enumerate(df_rev_page.iterrows()):
                 qid     = qrow.get('題目ID','')
@@ -2323,17 +2315,9 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             df_rev_q2 = _apply_scope_t4(df_rev_q2, all_logs_t4)
             st.markdown(f"**共 {len(df_rev_q2)} 題**")
             st.info(f"👥 {_group_label(rev_group_t4)}／{len(target_stus_t4)} 位　🔍 {scope_t4}")
-            PAGE_SIZE = 20
             total_rev = len(df_rev_q2)
-            total_pages = max(1, (total_rev + PAGE_SIZE - 1) // PAGE_SIZE)
-            if total_pages > 1:
-                pg1, pg2, pg3 = st.columns([1,3,1])
-                cur_page = st.number_input("頁碼", min_value=1, max_value=total_pages, value=st.session_state.get('rev_page_q', 0)+1, key="rev_page_inp_q", label_visibility="collapsed") - 1
-                st.session_state['rev_page_q'] = int(cur_page)
-                pg2.caption(f"第 {int(cur_page)+1}/{total_pages} 頁（共 {total_rev} 題）")
-                df_rev_page = df_rev_q2.iloc[cur_page*PAGE_SIZE:(cur_page+1)*PAGE_SIZE]
-            else:
-                df_rev_page = df_rev_q2
+            st.caption(f"共 {total_rev} 題")
+            df_rev_page = df_rev_q2
 
             for _qi, (_, qrow) in enumerate(df_rev_page.iterrows()):
                 qid     = qrow.get('題目ID','')
@@ -2384,17 +2368,9 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             df_rev_rm = _apply_scope_t4(df_rev_rm, all_logs_t4)
             st.markdown(f"**共 {len(df_rev_rm)} 題**")
             st.info(f"👥 {_group_label(rev_group_t4)}／{len(target_stus_t4)} 位　🔍 {scope_t4}")
-            PAGE_SIZE = 20
             total_rev = len(df_rev_rm)
-            total_pages = max(1, (total_rev + PAGE_SIZE - 1) // PAGE_SIZE)
-            if total_pages > 1:
-                pg1, pg2, pg3 = st.columns([1,3,1])
-                cur_page = st.number_input("頁碼", min_value=1, max_value=total_pages, value=st.session_state.get('rev_page_rm', 0)+1, key="rev_page_inp_rm", label_visibility="collapsed") - 1
-                st.session_state['rev_page_rm'] = int(cur_page)
-                pg2.caption(f"第 {int(cur_page)+1}/{total_pages} 頁（共 {total_rev} 題）")
-                df_rev_page = df_rev_rm.iloc[cur_page*PAGE_SIZE:(cur_page+1)*PAGE_SIZE]
-            else:
-                df_rev_page = df_rev_rm
+            st.caption(f"共 {total_rev} 題")
+            df_rev_page = df_rev_rm
 
             for _qi, (_, qrow) in enumerate(df_rev_page.iterrows()):
                 qid      = qrow.get('題目ID','')
@@ -2446,16 +2422,8 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             df_rev_r = _apply_scope_t4(df_rev_r, all_logs_t4)
             st.markdown(f"**共 {len(df_rev_r)} 題**")
             st.info(f"👥 {_group_label(rev_group_t4)}／{len(target_stus_t4)} 位")
-            PAGE_SIZE = 20
-            total_pages = max(1, (len(df_rev_r) + PAGE_SIZE - 1) // PAGE_SIZE)
-            if total_pages > 1:
-                pg1, pg2, pg3 = st.columns([1,3,1])
-                cur_page = st.number_input("頁碼", min_value=1, max_value=total_pages, value=st.session_state.get('rev_page_r', 0)+1, key="rev_page_inp_r", label_visibility="collapsed") - 1
-                st.session_state['rev_page_r'] = int(cur_page)
-                pg2.caption(f"第 {int(cur_page)+1}/{total_pages} 頁（共 {total_rev} 題）")
-                df_rev_page = df_rev_r.iloc[cur_page*PAGE_SIZE:(cur_page+1)*PAGE_SIZE]
-            else:
-                df_rev_page = df_rev_r
+            st.caption(f"共 {len(df_rev_r)} 題")
+            df_rev_page = df_rev_r
             for _qi, (_, qrow) in enumerate(df_rev_page.iterrows()):
                 qid       = qrow.get('題目ID','')
                 read_text = str(qrow.get('朗讀句子') or qrow.get('英文句子') or '').strip()
@@ -2498,16 +2466,8 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             df_rev_v = _apply_scope_t4(df_rev_v, all_logs_t4)
             st.markdown(f"**共 {len(df_rev_v)} 題**")
             st.info(f"👥 {_group_label(rev_group_t4)}／{len(target_stus_t4)} 位")
-            PAGE_SIZE = 20
-            total_pages = max(1, (len(df_rev_v) + PAGE_SIZE - 1) // PAGE_SIZE)
-            if total_pages > 1:
-                pg1, pg2, pg3 = st.columns([1,3,1])
-                cur_page = st.number_input("頁碼", min_value=1, max_value=total_pages, value=st.session_state.get('rev_page_v', 0)+1, key="rev_page_inp_v", label_visibility="collapsed") - 1
-                st.session_state['rev_page_v'] = int(cur_page)
-                pg2.caption(f"第 {int(cur_page)+1}/{total_pages} 頁（共 {total_rev} 題）")
-                df_rev_page = df_rev_v.iloc[cur_page*PAGE_SIZE:(cur_page+1)*PAGE_SIZE]
-            else:
-                df_rev_page = df_rev_v
+            st.caption(f"共 {len(df_rev_v)} 題")
+            df_rev_page = df_rev_v
             for _qi, (_, qrow) in enumerate(df_rev_page.iterrows()):
                 qid     = qrow.get('題目ID','')
                 word    = str(qrow.get('英文單字') or '').strip()
