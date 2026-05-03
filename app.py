@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.322 - 集合任務歸屬老師版)
+# 🧩 英文全能練習系統 (V2.9.323 - 集合任務clear修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.322
+# 📌 版本編號 (VERSION): 2.9.323
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.322"
+VERSION = "2.9.323"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -938,7 +938,6 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
         _t1_col1.caption(f"任務資料：{len(df_a)} 筆")
         if _t1_col2.button("🔄", key="t1_refresh", help="更新任務資料"):
             load_assignments.clear()
-            load_dynamic_data.clear()
             st.session_state['_a2_cache_stale'] = True
             st.rerun()
         # 重新取得最新 df_a（可能剛更新）
@@ -1746,7 +1745,6 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                                 })
                                 _sb_comb.table("assignments").insert(_comb_row).execute()
                                 load_assignments.clear()
-                                load_dynamic_data.clear()
                                 st.session_state['_a2_cache_stale'] = True
                                 st.session_state['_publish_success'] = f"🎉 集合任務發布成功！\n任務序號：**{comb_task_id}**\n任務名稱：**{auto_name}**\n共 {len(filtered_qids)} 題，已指派給 {len(final_comb_stus)} 位學生。"
                                 st.balloons()
@@ -2161,7 +2159,6 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
         _t3_col1.caption(f"答題記錄：{len(df_l)} 筆")
         if _t3_col2.button("🔄", key="t3_refresh", help="更新答題記錄"):
             _load_logs_cached.clear()
-            load_dynamic_data.clear()
             st.rerun()
         df_l = _load_logs_cached()
 
