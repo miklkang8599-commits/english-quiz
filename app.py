@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.316 - 題目講解session快取版)
+# 🧩 英文全能練習系統 (V2.9.317 - 題目講解翻頁不rerun版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.316
+# 📌 版本編號 (VERSION): 2.9.317
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.316"
+VERSION = "2.9.317"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -2257,12 +2257,9 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             total_pages = max(1, (total_rev + PAGE_SIZE - 1) // PAGE_SIZE)
             if total_pages > 1:
                 pg1, pg2, pg3 = st.columns([1,3,1])
-                cur_page = st.session_state.get('rev_page_mcq', 0)
-                if pg1.button("◀", key="rev_prev_mcq", disabled=cur_page==0):
-                    st.session_state['rev_page_mcq'] = cur_page - 1; st.rerun()
-                pg2.caption(f"第 {cur_page+1}/{total_pages} 頁（共 {total_rev} 題）")
-                if pg3.button("▶", key="rev_next_mcq", disabled=cur_page>=total_pages-1):
-                    st.session_state['rev_page_mcq'] = cur_page + 1; st.rerun()
+                cur_page = st.number_input("頁碼", min_value=1, max_value=total_pages, value=st.session_state.get('rev_page_mcq', 0)+1, key="rev_page_inp_mcq", label_visibility="collapsed") - 1
+                st.session_state['rev_page_mcq'] = int(cur_page)
+                pg2.caption(f"第 {int(cur_page)+1}/{total_pages} 頁（共 {total_rev} 題）")
                 df_rev_page = df_rev_mcq.iloc[cur_page*PAGE_SIZE:(cur_page+1)*PAGE_SIZE]
             else:
                 df_rev_page = df_rev_mcq
@@ -2331,12 +2328,9 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             total_pages = max(1, (total_rev + PAGE_SIZE - 1) // PAGE_SIZE)
             if total_pages > 1:
                 pg1, pg2, pg3 = st.columns([1,3,1])
-                cur_page = st.session_state.get('rev_page_q', 0)
-                if pg1.button("◀", key="rev_prev_q", disabled=cur_page==0):
-                    st.session_state['rev_page_q'] = cur_page - 1; st.rerun()
-                pg2.caption(f"第 {cur_page+1}/{total_pages} 頁（共 {total_rev} 題）")
-                if pg3.button("▶", key="rev_next_q", disabled=cur_page>=total_pages-1):
-                    st.session_state['rev_page_q'] = cur_page + 1; st.rerun()
+                cur_page = st.number_input("頁碼", min_value=1, max_value=total_pages, value=st.session_state.get('rev_page_q', 0)+1, key="rev_page_inp_q", label_visibility="collapsed") - 1
+                st.session_state['rev_page_q'] = int(cur_page)
+                pg2.caption(f"第 {int(cur_page)+1}/{total_pages} 頁（共 {total_rev} 題）")
                 df_rev_page = df_rev_q2.iloc[cur_page*PAGE_SIZE:(cur_page+1)*PAGE_SIZE]
             else:
                 df_rev_page = df_rev_q2
@@ -2395,12 +2389,9 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             total_pages = max(1, (total_rev + PAGE_SIZE - 1) // PAGE_SIZE)
             if total_pages > 1:
                 pg1, pg2, pg3 = st.columns([1,3,1])
-                cur_page = st.session_state.get('rev_page_rm', 0)
-                if pg1.button("◀", key="rev_prev_rm", disabled=cur_page==0):
-                    st.session_state['rev_page_rm'] = cur_page - 1; st.rerun()
-                pg2.caption(f"第 {cur_page+1}/{total_pages} 頁（共 {total_rev} 題）")
-                if pg3.button("▶", key="rev_next_rm", disabled=cur_page>=total_pages-1):
-                    st.session_state['rev_page_rm'] = cur_page + 1; st.rerun()
+                cur_page = st.number_input("頁碼", min_value=1, max_value=total_pages, value=st.session_state.get('rev_page_rm', 0)+1, key="rev_page_inp_rm", label_visibility="collapsed") - 1
+                st.session_state['rev_page_rm'] = int(cur_page)
+                pg2.caption(f"第 {int(cur_page)+1}/{total_pages} 頁（共 {total_rev} 題）")
                 df_rev_page = df_rev_rm.iloc[cur_page*PAGE_SIZE:(cur_page+1)*PAGE_SIZE]
             else:
                 df_rev_page = df_rev_rm
@@ -2459,12 +2450,9 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             total_pages = max(1, (len(df_rev_r) + PAGE_SIZE - 1) // PAGE_SIZE)
             if total_pages > 1:
                 pg1, pg2, pg3 = st.columns([1,3,1])
-                cur_page = st.session_state.get('rev_page_r', 0)
-                if pg1.button("◀", key="rev_prev_r", disabled=cur_page==0):
-                    st.session_state['rev_page_r'] = cur_page - 1; st.rerun()
-                pg2.caption(f"第 {cur_page+1}/{total_pages} 頁（共 {len(df_rev_r)} 題）")
-                if pg3.button("▶", key="rev_next_r", disabled=cur_page>=total_pages-1):
-                    st.session_state['rev_page_r'] = cur_page + 1; st.rerun()
+                cur_page = st.number_input("頁碼", min_value=1, max_value=total_pages, value=st.session_state.get('rev_page_r', 0)+1, key="rev_page_inp_r", label_visibility="collapsed") - 1
+                st.session_state['rev_page_r'] = int(cur_page)
+                pg2.caption(f"第 {int(cur_page)+1}/{total_pages} 頁（共 {total_rev} 題）")
                 df_rev_page = df_rev_r.iloc[cur_page*PAGE_SIZE:(cur_page+1)*PAGE_SIZE]
             else:
                 df_rev_page = df_rev_r
@@ -2514,12 +2502,9 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             total_pages = max(1, (len(df_rev_v) + PAGE_SIZE - 1) // PAGE_SIZE)
             if total_pages > 1:
                 pg1, pg2, pg3 = st.columns([1,3,1])
-                cur_page = st.session_state.get('rev_page_v', 0)
-                if pg1.button("◀", key="rev_prev_v", disabled=cur_page==0):
-                    st.session_state['rev_page_v'] = cur_page - 1; st.rerun()
-                pg2.caption(f"第 {cur_page+1}/{total_pages} 頁（共 {len(df_rev_v)} 題）")
-                if pg3.button("▶", key="rev_next_v", disabled=cur_page>=total_pages-1):
-                    st.session_state['rev_page_v'] = cur_page + 1; st.rerun()
+                cur_page = st.number_input("頁碼", min_value=1, max_value=total_pages, value=st.session_state.get('rev_page_v', 0)+1, key="rev_page_inp_v", label_visibility="collapsed") - 1
+                st.session_state['rev_page_v'] = int(cur_page)
+                pg2.caption(f"第 {int(cur_page)+1}/{total_pages} 頁（共 {total_rev} 題）")
                 df_rev_page = df_rev_v.iloc[cur_page*PAGE_SIZE:(cur_page+1)*PAGE_SIZE]
             else:
                 df_rev_page = df_rev_v
