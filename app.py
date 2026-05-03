@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.309 - 題目講解變數修復版)
+# 🧩 英文全能練習系統 (V2.9.310 - 題目講解rev_group修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.309
+# 📌 版本編號 (VERSION): 2.9.310
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.309"
+VERSION = "2.9.310"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -2118,6 +2118,9 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
         target_stus_t4 = sel_stus_t4 if sel_stus_t4 else all_students_t4
         task_ids_t4    = None
         rev_tid_t4     = ""
+        # 取得班級值（供後續寫入 log 用）
+        _grp_map_t4  = {_group_label(g): g for g in (sorted(df_s[~df_s['分組'].isin(['ADMIN','TEACHER'])]['分組'].unique()) if not df_s.empty else [])}
+        rev_group_t4 = _grp_map_t4.get(sel_grp_t4, "")
 
         if sel_task_t4 != "（不限）" and not _df_a_t4.empty:
             _tr = _df_a_t4[_df_a_t4['任務名稱'] == sel_task_t4]
