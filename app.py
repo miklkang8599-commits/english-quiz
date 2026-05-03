@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.320 - 單選記錄原始+顯示選項版)
+# 🧩 英文全能練習系統 (V2.9.322 - 集合任務歸屬老師版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.320
+# 📌 版本編號 (VERSION): 2.9.322
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.320"
+VERSION = "2.9.322"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1701,8 +1701,11 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                             _existing2 = [str(r.get('任務編號','') or '') for _, r in df_a.iterrows()] if not df_a.empty else []
                             _today_cnt2 = sum(1 for _e in _existing2 if _e.startswith(_today_prefix2))
                             comb_task_id = f"T{_today_str2}{_today_cnt2+1:03d}"
-                            raw_name = comb_task_name.strip() or f"集合任務 {','.join(target_comb_groups)} {st.session_state.user_name} {get_now().strftime('%Y-%m-%d_%H:%M')} {comb_date_start}~{comb_date_end}"
-                            auto_name = f"[{comb_task_id}] {raw_name}"
+                            _teacher_name = st.session_state.user_name
+                            _publish_time = get_now().strftime("%Y-%m-%d_%H:%M")
+                            _groups_label = ','.join(target_comb_groups)
+                            _raw_name = comb_task_name.strip() or f"集合任務-{len(filtered_qids)}題-{_groups_label}-{_teacher_name}-{_publish_time}-{comb_date_start}~{comb_date_end}"
+                            auto_name = f"[{comb_task_id}] {_raw_name}"
                             new_comb_task = pd.DataFrame([{
                                 "建立時間":   get_now().strftime("%Y-%m-%d %H:%M:%S"),
                                 "任務名稱":   auto_name,
@@ -1721,13 +1724,39 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                                 "狀態":       "進行中",
                                 "類型":       "一般"
                             }])
-                            if append_to_sheet("assignments", new_comb_task):
-                                st.success(f"✅ 集合任務已發布！共 {len(filtered_qids)} 題，指派給 {len(final_comb_stus)} 位學生")
+                            try:
+                                _sb_comb = get_supabase()
+                                _comb_row = _to_en_assign({
+                                    "建立時間":   get_now().strftime("%Y-%m-%d %H:%M:%S"),
+                                    "任務名稱":   auto_name,
+                                    "任務編號":   comb_task_id,
+                                    "對象班級":   ",".join(target_comb_groups),
+                                    "指派學生":   ",".join(final_comb_stus),
+                                    "指派人數":   len(final_comb_stus),
+                                    "內容":       "",
+                                    "任務說明":   f"集合自：{', '.join(sel_src_tasks[:3])}{'...' if len(sel_src_tasks)>3 else ''}",
+                                    "單字設定":   "",
+                                    "題目數":     len(filtered_qids),
+                                    "題目ID清單": ",".join(sorted(filtered_qids)),
+                                    "開始日期":   str(comb_date_start),
+                                    "結束日期":   str(comb_date_end),
+                                    "參考學生":   ",".join(ref_stus),
+                                    "狀態":       "進行中",
+                                    "類型":       "一般"
+                                })
+                                _sb_comb.table("assignments").insert(_comb_row).execute()
+                                load_assignments.clear()
+                                load_dynamic_data.clear()
+                                st.session_state['_a2_cache_stale'] = True
+                                st.session_state['_publish_success'] = f"🎉 集合任務發布成功！\n任務序號：**{comb_task_id}**\n任務名稱：**{auto_name}**\n共 {len(filtered_qids)} 題，已指派給 {len(final_comb_stus)} 位學生。"
+                                st.balloons()
                                 for _k in ['combine_src_tasks','combine_scope','combine_ref_group',
                                            'combine_date_start','combine_date_end','comb_task_name',
                                            'combine_target_groups','combine_stus']:
                                     st.session_state.pop(_k, None)
                                 st.rerun()
+                            except Exception as _e_comb:
+                                st.error(f"❌ 發布失敗：{_e_comb}")
 
         # ══════════════════════════════════════════════════════════════════
         # 區塊三：任務列表
@@ -1736,7 +1765,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
         st.subheader("📋 任務列表")
 
         # ── 任務列表（處理結果快取在 session_state，避免每次 rerun 重跑）──
-        _a2_cache_key = f"_df_a2_processed_{len(df_a)}"
+        _a2_cache_key = f"_df_a2_processed_{len(df_a)}_{id(df_a)}"
         if _a2_cache_key not in st.session_state or st.session_state.get('_a2_cache_stale', False):
             df_a2 = df_a[df_a.get('狀態', pd.Series(dtype=str)).fillna('') != '已刪除'].copy() if not df_a.empty else pd.DataFrame()
             if not df_a2.empty and '建立時間' in df_a2.columns:
