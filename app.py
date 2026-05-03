@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.315 - 題目講解無任務不顯示版)
+# 🧩 英文全能練習系統 (V2.9.316 - 題目講解session快取版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.315
+# 📌 版本編號 (VERSION): 2.9.316
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.315"
+VERSION = "2.9.316"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -2160,45 +2160,73 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 horizontal=True, key="rev_scope_t4")
             st.form_submit_button("🔍 套用篩選", use_container_width=True, type="primary")
 
-        # 取得班級值（供後續寫入 log 用）
-        _grp_map_t4  = {_group_label(g): g for g in (sorted(df_s[~df_s['分組'].isin(['ADMIN','TEACHER'])]['分組'].unique()) if not df_s.empty else [])}
-        rev_group_t4 = _grp_map_t4.get(sel_grp_t4, "")
-        # 空白=當前班級全部學生（未選班級則為所有學生）
+
+        # 取得班級值
+        _grp_map_t4   = {_group_label(g): g for g in (sorted(df_s[~df_s['分組'].isin(['ADMIN','TEACHER'])]['分組'].unique()) if not df_s.empty else [])}
+        rev_group_t4  = _grp_map_t4.get(sel_grp_t4, "")
         _default_stus = sorted(df_s[df_s['分組'] == rev_group_t4]['姓名'].tolist()) if rev_group_t4 else all_students_t4
         target_stus_t4 = sel_stus_t4 if sel_stus_t4 else _default_stus
-        task_ids_t4    = None
-        rev_tid_t4     = ""
+        task_ids_t4   = None
+        rev_tid_t4    = ""
 
         if sel_task_t4 != "（不限）" and not _df_a_t4.empty:
             _tr = _df_a_t4[_df_a_t4['任務名稱'] == sel_task_t4]
             if not _tr.empty:
-                _ids_str  = str(_tr.iloc[0].get('題目ID清單','') or '')
+                _ids_str    = str(_tr.iloc[0].get('題目ID清單','') or '')
                 task_ids_t4 = set(q.strip() for q in _ids_str.split(',') if q.strip() and q.strip() != 'nan')
                 rev_tid_t4  = str(_tr.iloc[0].get('任務編號','') or '')
                 if not rev_tid_t4:
-                    _m = _re_t4.search(r'\[T(\d+)\]', sel_task_t4)
+                    _m = _re_t4.search(r'\[T\d+\]', sel_task_t4)
                     if _m: rev_tid_t4 = 'T' + _m.group(1)
                 st.info(f"📋 此任務共 {len(task_ids_t4)} 題")
 
-        # logs 篩選
-        all_logs_t4 = df_l[df_l['姓名'].isin(target_stus_t4)].copy() if not df_l.empty else pd.DataFrame()
-        if rev_tid_t4 and not all_logs_t4.empty and '任務名稱' in all_logs_t4.columns:
-            _fl = all_logs_t4[all_logs_t4['任務名稱'].fillna('') == rev_tid_t4]
-            if not _fl.empty: all_logs_t4 = _fl
+        # 快取 key：篩選條件組合
+        _t4_key = f"_t4_{sel_task_t4}_{rev_group_t4}_{','.join(sorted(target_stus_t4))}_{scope_t4}"
 
-        def _apply_scope_t4(df_q_in, logs_in):
-            if df_q_in.empty or '題目ID' not in df_q_in.columns:
-                return df_q_in
-            answered = set(logs_in['題目ID'].tolist()) if not logs_in.empty and '題目ID' in logs_in.columns else set()
-            wrong    = set(logs_in[logs_in['結果']=='❌']['題目ID'].tolist()) if not logs_in.empty and '結果' in logs_in.columns else set()
-            ok       = set(logs_in[logs_in['結果']=='✅']['題目ID'].tolist()) if not logs_in.empty and '結果' in logs_in.columns else set()
-            if scope_t4 == "✏️ 已經答題":
-                return df_q_in[df_q_in['題目ID'].isin(answered)]
-            elif scope_t4 == "❌ 只看錯題":
-                return df_q_in[df_q_in['題目ID'].isin(wrong)]
-            elif scope_t4 == "❓ 只看未作答":
-                return df_q_in[~df_q_in['題目ID'].isin(answered)]
-            return df_q_in
+        if _t4_key not in st.session_state:
+            def _apply_scope_t4_inner(df_in, logs_in):
+                if df_in.empty or '題目ID' not in df_in.columns: return df_in
+                answered = set(logs_in['題目ID'].tolist()) if not logs_in.empty and '題目ID' in logs_in.columns else set()
+                wrong    = set(logs_in[logs_in['結果']=='❌']['題目ID'].tolist()) if not logs_in.empty else set()
+                if scope_t4 == "✏️ 已經答題":   return df_in[df_in['題目ID'].isin(answered)]
+                elif scope_t4 == "❌ 只看錯題":  return df_in[df_in['題目ID'].isin(wrong)]
+                elif scope_t4 == "❓ 只看未作答": return df_in[~df_in['題目ID'].isin(answered)]
+                return df_in
+
+            _all_logs = df_l[df_l['姓名'].isin(target_stus_t4)].copy() if not df_l.empty else pd.DataFrame()
+            if rev_tid_t4 and not _all_logs.empty and '任務名稱' in _all_logs.columns:
+                _fl = _all_logs[_all_logs['任務名稱'].fillna('') == rev_tid_t4]
+                if not _fl.empty: _all_logs = _fl
+
+            def _qid(r, prefix=""): return f"{prefix}{r['版本']}_{r['年度']}_{r['冊編號']}_{r.get('單元','')}_{r['課編號']}_{r['句編號']}"
+
+            with st.spinner("🔄 計算中，請稍候..."):
+                def _get(df_src, pfx=""):
+                    if task_ids_t4 is None or df_src.empty: return pd.DataFrame()
+                    d = df_src.copy()
+                    d['題目ID'] = d.apply(lambda r: _qid(r, pfx), axis=1)
+                    return _apply_scope_t4_inner(d[d['題目ID'].isin(task_ids_t4)].copy(), _all_logs)
+                _mcq2 = df_mcq.copy(); _mcq2['題目ID'] = _mcq2.apply(lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1)
+                _rev_mcq = _apply_scope_t4_inner(_mcq2[_mcq2['題目ID'].isin(task_ids_t4)].copy() if task_ids_t4 else pd.DataFrame(), _all_logs)
+                _rev_q   = _get(df_q)
+                _rev_rm  = _get(df_rm, "RM_")
+                _rev_r   = _get(df_r,  "R_")
+                _rev_v   = _get(df_v,  "V_")
+
+            st.session_state[_t4_key] = {
+                'mcq': _rev_mcq, 'q': _rev_q, 'rm': _rev_rm, 'r': _rev_r, 'v': _rev_v, 'logs': _all_logs
+            }
+
+        _cached      = st.session_state[_t4_key]
+        df_rev_mcq   = _cached['mcq']
+        df_rev_q2    = _cached['q']
+        df_rev_rm    = _cached['rm']
+        df_rev_r     = _cached['r']
+        df_rev_v     = _cached['v']
+        all_logs_t4  = _cached['logs']
+
+        def _apply_scope_t4(df_in, logs_in): return df_in  # 已套用
+
 
 
 
