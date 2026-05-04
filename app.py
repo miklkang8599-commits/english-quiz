@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.326 - 登入頁快速載入版)
+# 🧩 英文全能練習系統 (V2.9.327 - 分層載入速度優化版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.326
+# 📌 版本編號 (VERSION): 2.9.327
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.326"
+VERSION = "2.9.327"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -78,42 +78,59 @@ def load_students_only():
     except:
         return pd.DataFrame()
 
-def load_static_data():
+@st.cache_data(ttl=600)
+def load_core_data():
+    """高優先級：重組 + 單選（答題最常用）"""
     try:
-        df_q  = conn.read(worksheet="重組", ttl=600).fillna("").astype(str).replace(r'\.0$', '', regex=True)
-        try:
-            df_mcq = conn.read(worksheet="單選", ttl=600).fillna("").astype(str).replace(r'\.0$', '', regex=True)
-        except:
-            df_mcq = pd.DataFrame()
-        df_s  = conn.read(worksheet="students",  ttl=600).fillna("").astype(str).replace(r'\.0$', '', regex=True)
-        try:
-            df_r = conn.read(worksheet="朗讀", ttl=600).fillna("").astype(str).replace(r'\.0$', '', regex=True)
-        except:
-            df_r = pd.DataFrame()
-        try:
-            df_v = conn.read(worksheet="拼單字", ttl=600).fillna("").astype(str).replace(r'\.0$', '', regex=True)
-        except:
-            df_v = pd.DataFrame()
-        try:
-            df_rm = conn.read(worksheet="閱讀單句", ttl=600).fillna("").astype(str).replace(r'\.0$', '', regex=True)
-            df_rm['_type'] = 'reading_mcq'
-        except:
-            df_rm = pd.DataFrame()
-        try:
-            df_lp = conn.read(worksheet="聽力音標", ttl=600).fillna("").astype(str).replace(r'\.0$', '', regex=True)
-            if 'KK符號' in df_lp.columns:
-                df_lp['KK符號'] = df_lp['KK符號'].str.strip().str.strip('[]').str.strip()
-        except:
-            df_lp = pd.DataFrame()
-        try:
-            df_ls = conn.read(worksheet="聽力句子重組", ttl=600).fillna("").astype(str).replace(r'\.0$', '', regex=True)
-        except:
-            df_ls = pd.DataFrame()
-        return df_q, df_s, df_r, df_v, df_rm, df_mcq, df_lp, df_ls
-    except Exception as e:
-        import streamlit as _st
-        _st.session_state['_load_error'] = str(e)
-        return None, None, pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+        df_q = conn.read(worksheet="重組", ttl=600).fillna("").astype(str).replace(r'\.0$', '', regex=True)
+    except:
+        df_q = pd.DataFrame()
+    try:
+        df_mcq = conn.read(worksheet="單選", ttl=600).fillna("").astype(str).replace(r'\.0$', '', regex=True)
+    except:
+        df_mcq = pd.DataFrame()
+    df_s = load_students_only()
+    return df_q, df_s, df_mcq
+
+@st.cache_data(ttl=600)
+def load_extended_data():
+    """中優先級：朗讀 + 拼單字 + 閱讀單句"""
+    try:
+        df_r = conn.read(worksheet="朗讀", ttl=600).fillna("").astype(str).replace(r'\.0$', '', regex=True)
+    except:
+        df_r = pd.DataFrame()
+    try:
+        df_v = conn.read(worksheet="拼單字", ttl=600).fillna("").astype(str).replace(r'\.0$', '', regex=True)
+    except:
+        df_v = pd.DataFrame()
+    try:
+        df_rm = conn.read(worksheet="閱讀單句", ttl=600).fillna("").astype(str).replace(r'\.0$', '', regex=True)
+        df_rm['_type'] = 'reading_mcq'
+    except:
+        df_rm = pd.DataFrame()
+    return df_r, df_v, df_rm
+
+@st.cache_data(ttl=600)
+def load_listening_data():
+    """低優先級：聽力音標 + 聽力句子重組"""
+    try:
+        df_lp = conn.read(worksheet="聽力音標", ttl=600).fillna("").astype(str).replace(r'\.0$', '', regex=True)
+        if 'KK符號' in df_lp.columns:
+            df_lp['KK符號'] = df_lp['KK符號'].str.strip().str.strip('[]').str.strip()
+    except:
+        df_lp = pd.DataFrame()
+    try:
+        df_ls = conn.read(worksheet="聽力句子重組", ttl=600).fillna("").astype(str).replace(r'\.0$', '', regex=True)
+    except:
+        df_ls = pd.DataFrame()
+    return df_lp, df_ls
+
+def load_static_data():
+    """整合全部（相容舊版呼叫）"""
+    df_q, df_s, df_mcq      = load_core_data()
+    df_r, df_v, df_rm        = load_extended_data()
+    df_lp, df_ls             = load_listening_data()
+    return df_q, df_s, df_r, df_v, df_rm, df_mcq, df_lp, df_ls
 
 # ==============================================================================
 # Supabase 客戶端
@@ -370,14 +387,21 @@ if not st.session_state.get('logged_in', False):
         show_version_caption()
     st.stop()
 
-# 載入資料（登入後）
-df_q, df_s, df_r, df_v, df_rm, df_mcq, df_lp, df_ls = load_static_data()
+# 載入資料（登入後）- 分層載入，減少 API 限速
+# 第一層：core（重組+單選+學生），最重要
+df_q, df_s, df_mcq = load_core_data()
+# 第二層：extended（朗讀+拼單字+閱讀）
+df_r, df_v, df_rm = load_extended_data()
+# 第三層：listening（聽力音標+聽力重組）
+df_lp, df_ls = load_listening_data()
 df_a, df_l = load_dynamic_data()
 
 if df_q is None or df_s is None:
     # 立即清快取重試一次
-    load_static_data.clear()
-    df_q, df_s, df_r, df_v, df_rm, df_mcq, df_lp, df_ls = load_static_data()
+    load_core_data.clear(); load_extended_data.clear(); load_listening_data.clear()
+    df_q, df_s, df_mcq = load_core_data()
+df_r, df_v, df_rm = load_extended_data()
+df_lp, df_ls = load_listening_data()
 
 if df_q is None or df_s is None:
     st.error("⚠️ 題庫讀取失敗，請按下方按鈕重試。")
@@ -387,7 +411,7 @@ if df_q is None or df_s is None:
         with st.expander("🔍 錯誤詳情（給老師看）"):
             st.code(err)
     if st.button("🔄 重新載入", type="primary", use_container_width=True):
-        load_static_data.clear()
+        load_core_data.clear(); load_extended_data.clear(); load_listening_data.clear()
         st.rerun()
     st.stop()
 
@@ -918,7 +942,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
     hc1, hc2, hc3 = st.columns([3, 1, 1])
     hc1.markdown("## 🟢 導師中心")
     if hc2.button("🔄 更新資料", use_container_width=True, key="admin_refresh"):
-        load_static_data.clear()
+        load_core_data.clear(); load_extended_data.clear(); load_listening_data.clear()
         st.cache_data.clear()
         st.rerun()
     if hc3.button("🧪 測試寫入", use_container_width=True, key="test_write"):
