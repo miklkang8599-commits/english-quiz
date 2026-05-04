@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.323 - 集合任務clear修復版)
+# 🧩 英文全能練習系統 (V2.9.324 - 單選重複題修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.323
+# 📌 版本編號 (VERSION): 2.9.324
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.323"
+VERSION = "2.9.324"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1970,7 +1970,9 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                                 st.markdown("**🖨️ 下載 PDF**")
         
                                 def _get_task_questions(qids):
-                                    df_q2 = pd.concat([df_q, df_mcq], ignore_index=True).drop_duplicates() if not df_mcq.empty else df_q.copy()
+                                    df_q2 = pd.concat([df_q, df_mcq], ignore_index=True) if not df_mcq.empty else df_q.copy()
+                                    df_q2['題目ID'] = df_q2.apply(lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1)
+                                    df_q2 = df_q2.drop_duplicates(subset='題目ID', keep='last')
                                     df_q2['題目ID'] = df_q2.apply(
                                         lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1
                                     )
@@ -2693,7 +2695,9 @@ if not st.session_state.quiz_loaded:
                                 st.rerun()
                         else:
                             _all_dfs = []
-                            df_q2 = pd.concat([df_q, df_mcq], ignore_index=True).drop_duplicates() if not df_mcq.empty else df_q.copy()
+                            df_q2 = pd.concat([df_q, df_mcq], ignore_index=True) if not df_mcq.empty else df_q.copy()
+                            df_q2['題目ID'] = df_q2.apply(lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1)
+                            df_q2 = df_q2.drop_duplicates(subset='題目ID', keep='last')
                             df_q2['題目ID'] = df_q2.apply(lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1)
                             rq = df_q2[df_q2['題目ID'].isin(q_ids_set)].copy()
                             if not rq.empty: _all_dfs.append(rq)
@@ -2941,7 +2945,9 @@ if not st.session_state.quiz_loaded:
                                     st.rerun()
 
                         elif is_mixed_task:
-                            df_q2 = pd.concat([df_q, df_mcq], ignore_index=True).drop_duplicates() if not df_mcq.empty else df_q.copy()
+                            df_q2 = pd.concat([df_q, df_mcq], ignore_index=True) if not df_mcq.empty else df_q.copy()
+                            df_q2['題目ID'] = df_q2.apply(lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1)
+                            df_q2 = df_q2.drop_duplicates(subset='題目ID', keep='last')
                             df_q2['題目ID'] = df_q2.apply(
                                 lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1
                             )
@@ -3023,7 +3029,9 @@ if not st.session_state.quiz_loaded:
 
                         elif can_preload or q_ids_all:
                             # 直接從 df_q 取出未完成題目載入（優先用題目ID清單）
-                            df_q2 = pd.concat([df_q, df_mcq], ignore_index=True).drop_duplicates() if not df_mcq.empty else df_q.copy()
+                            df_q2 = pd.concat([df_q, df_mcq], ignore_index=True) if not df_mcq.empty else df_q.copy()
+                            df_q2['題目ID'] = df_q2.apply(lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1)
+                            df_q2 = df_q2.drop_duplicates(subset='題目ID', keep='last')
                             df_q2['題目ID'] = df_q2.apply(
                                 lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1
                             )
