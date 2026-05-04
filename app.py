@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.324 - 單選重複題修復版)
+# 🧩 英文全能練習系統 (V2.9.325 - 單選重複寫入修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.324
+# 📌 版本編號 (VERSION): 2.9.325
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.324"
+VERSION = "2.9.325"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -4273,6 +4273,12 @@ if st.session_state.quiz_loaded:
             if _opt_cols[i % 2].button(btn_label, key=f"mcq_{disp_label}",
                               use_container_width=True,
                               disabled=already_answered):
+                # 防止重複寫入（同一題同一次只寫一次）
+                _mcq_written_key = f"mcq_written_{st.session_state.q_idx}"
+                if st.session_state.get(_mcq_written_key):
+                    st.rerun()
+                    break
+                st.session_state[_mcq_written_key] = True
                 is_ok = (orig_opt.upper() == ans_key.upper())
                 _err_msg = f"❌ 錯誤！正確答案：({_correct_display}) {_correct_text}"
                 st.session_state.update({
@@ -4400,7 +4406,7 @@ if st.session_state.quiz_loaded:
             "vocab_start_time": None, "vocab_q_idx": None
         })
         # 清除選項順序快取和錄音評分快取
-        for _ok in [f"mcq_order_{q_idx}", f"rm_order_{q_idx}", f"audio_scored_{q_idx}"]:
+        for _ok in [f"mcq_order_{q_idx}", f"rm_order_{q_idx}", f"audio_scored_{q_idx}", f"mcq_written_{q_idx}"]:
             st.session_state.pop(_ok, None)
         # 清除該題目的所有 vocab pool（含新格式 vocab_pool_{q_idx}_{extra}）
         for k in list(st.session_state.keys()):
