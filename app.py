@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.328 - 單選題目欄位偵錯版)
+# 🧩 英文全能練習系統 (V2.9.330 - is_mcq判斷修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.328
+# 📌 版本編號 (VERSION): 2.9.330
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.328"
+VERSION = "2.9.330"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3628,12 +3628,19 @@ if st.session_state.quiz_loaded:
     answered_c = st.session_state.get('answered_count', 0)
     st.markdown(f"### 🔴 練習中 (第 {st.session_state.q_idx + 1} / {total_q} 題　｜　已作答 {answered_c} 題)")
     q = st.session_state.quiz_list[st.session_state.q_idx]
-    is_mcq         = "單選" in q.get("單元", "")
-    is_reading     = q.get("_type") == "reading" or "朗讀" in q.get("單元", "")
-    is_vocab       = q.get("_type") == "vocab"
-    is_reading_mcq = q.get("_type") == "reading_mcq"
-    is_listen_phon = q.get("_type") == "listen_phon"
-    is_listen_sent = q.get("_type") == "listen_sent"
+    # 判斷題型：優先用 _type，其次看欄位，最後看單元名稱
+    _qtype         = q.get("_type", "")
+    _has_mcq_ans   = bool(str(q.get("單選答案") or "").strip())
+    _has_mcq_field = any(str(q.get(f"選項{o}") or "").strip() for o in ["A","B","C","D"])
+    is_mcq         = _qtype == "mcq" or _has_mcq_ans or _has_mcq_field or "單選" in q.get("單元", "")
+    is_reading     = _qtype == "reading" or "朗讀" in q.get("單元", "")
+    is_vocab       = _qtype == "vocab"
+    is_reading_mcq = _qtype == "reading_mcq"
+    is_listen_phon = _qtype == "listen_phon"
+    is_listen_sent = _qtype == "listen_sent"
+    # 避免 is_mcq 和其他類型衝突
+    if is_reading or is_vocab or is_reading_mcq or is_listen_phon or is_listen_sent:
+        is_mcq = False
 
     # 題目標題
     if is_listen_sent:
@@ -4255,11 +4262,6 @@ if st.session_state.quiz_loaded:
         mcq_q   = str(q.get('單選題目') or q.get('中文題目') or '【無資料】')
         ans_key = str(q.get("單選答案") or "").strip()
         already_answered = st.session_state.get('show_analysis', False)
-
-        # 偵錯：如果題目顯示無資料，顯示全部欄位讓老師確認
-        if mcq_q == '【無資料】':
-            with st.expander("🔍 欄位偵錯（題目無資料時顯示）"):
-                st.write({k: v for k, v in q.items() if not k.startswith('_')})
 
         # 解析選項（從獨立欄位或題目文字）
         mcq_full    = str(q.get('單選題目') or q.get('中文題目') or '')
