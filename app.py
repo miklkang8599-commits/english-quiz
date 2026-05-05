@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.327 - 分層載入速度優化版)
+# 🧩 英文全能練習系統 (V2.9.328 - 單選題目欄位偵錯版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.327
+# 📌 版本編號 (VERSION): 2.9.328
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.327"
+VERSION = "2.9.328"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -4255,6 +4255,11 @@ if st.session_state.quiz_loaded:
         mcq_q   = str(q.get('單選題目') or q.get('中文題目') or '【無資料】')
         ans_key = str(q.get("單選答案") or "").strip()
         already_answered = st.session_state.get('show_analysis', False)
+
+        # 偵錯：如果題目顯示無資料，顯示全部欄位讓老師確認
+        if mcq_q == '【無資料】':
+            with st.expander("🔍 欄位偵錯（題目無資料時顯示）"):
+                st.write({k: v for k, v in q.items() if not k.startswith('_')})
 
         # 解析選項（從獨立欄位或題目文字）
         mcq_full    = str(q.get('單選題目') or q.get('中文題目') or '')
