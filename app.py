@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.331 - 選項每次進任務重洗版)
+# 🧩 英文全能練習系統 (V2.9.332 - 練習模式版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.331
+# 📌 版本編號 (VERSION): 2.9.332
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.331"
+VERSION = "2.9.332"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -2705,6 +2705,9 @@ if not st.session_state.quiz_loaded:
                     )
                     if _rc1.button("🔁 再次練習", key=f"retry_task_{_task_idx}", use_container_width=True, type="primary"):
                         _start_idx = max(0, int(retry_start) - 1)
+                        if not hasattr(st.session_state, "_is_practice_defined"):
+                            _is_practice = _is_practice if "_is_practice" in dir() else False
+
                         if is_reading_task:
                             df_r2 = df_r.copy()
                             if '題目ID' not in df_r2.columns:
@@ -2721,7 +2724,7 @@ if not st.session_state.quiz_loaded:
                                 st.session_state.update({
                                     "quiz_list": records,
                                     "q_idx": min(_start_idx, len(records)-1),
-                                    "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key,
+                                    "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key, "practice_mode": _is_practice,
                                     "ans": [], "used_history": [], "shuf": [], "show_analysis": False
                                 })
                                 st.rerun()
@@ -2790,7 +2793,7 @@ if not st.session_state.quiz_loaded:
                                 st.session_state.update({
                                     "quiz_list": records,
                                     "q_idx": min(_start_idx, len(records)-1),
-                                    "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key,
+                                    "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key, "practice_mode": _is_practice,
                                     "ans": [], "used_history": [], "shuf": [], "show_analysis": False
                                 })
                                 st.rerun()
@@ -2800,24 +2803,27 @@ if not st.session_state.quiz_loaded:
                     can_preload  = len(parts) == 5
                     remaining    = task_q_count - done_cnt
 
-                    # 兩個選項
+                    # 三個選項（含練習模式）
                     _mode = st.radio(
                         "練習方式",
-                        ["📌 繼續未完成部分", "🔢 從第幾題開始"],
+                        ["📌 繼續未完成部分", "🔢 從第幾題開始", "🏋️ 練習模式"],
                         horizontal=True,
                         key=f"start_mode_{_task_idx}"
                     )
-                    if _mode == "🔢 從第幾題開始":
+                    if _mode in ("🔢 從第幾題開始", "🏋️ 練習模式"):
                         _start_from = st.number_input(
                             "從第幾題（依任務原始題號）",
                             min_value=1, max_value=task_q_count, value=1,
                             key=f"start_from_{_task_idx}"
                         )
+                        if _mode == "🏋️ 練習模式":
+                            st.caption("🏋️ 練習模式：可回上一題，作答紀錄標記為「練習」不列入正式記錄")
                     else:
                         _start_from = 1
 
+                    _is_practice = (_mode == "🏋️ 練習模式")
                     btn_key = f"start_task_{_task_idx}_{task_name[:20]}"
-                    label   = "📌 繼續未完成部分" if _mode == "📌 繼續未完成部分" else f"🔢 從第 {_start_from} 題開始"
+                    label   = "📌 繼續未完成部分" if _mode == "📌 繼續未完成部分" else (f"🏋️ 練習模式 從第 {_start_from} 題" if _is_practice else f"🔢 從第 {_start_from} 題開始")
 
                     if st.button(f"🚀 {label}", key=btn_key, type="primary", use_container_width=True):
                         if _mode == "📌 繼續未完成部分":
@@ -2827,7 +2833,10 @@ if not st.session_state.quiz_loaded:
                                 pending_ids = q_ids_all
                         else:
                             _start_idx_fwd = max(0, int(_start_from) - 1)
-                            pending_ids = q_ids_all  # 全部題目按原始順序
+                            pending_ids = q_ids_all
+
+                        if not hasattr(st.session_state, "_is_practice_defined"):
+                            _is_practice = _is_practice if "_is_practice" in dir() else False
 
                         if is_reading_task:
                             df_r2 = df_r.copy()
@@ -2845,7 +2854,7 @@ if not st.session_state.quiz_loaded:
                                     del st.session_state[_k]
                                 st.session_state.update({
                                     "quiz_list": records,
-                                    "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key,
+                                    "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key, "practice_mode": _is_practice,
                                     "ans": [], "used_history": [], "shuf": [], "show_analysis": False
                                 })
                                 st.rerun()
@@ -2877,7 +2886,7 @@ if not st.session_state.quiz_loaded:
                                     del st.session_state[_k]
                                 st.session_state.update({
                                     "quiz_list": records,
-                                    "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key,
+                                    "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key, "practice_mode": _is_practice,
                                     "ans": [], "used_history": [], "shuf": [], "show_analysis": False
                                 })
                                 st.rerun()
@@ -2898,7 +2907,7 @@ if not st.session_state.quiz_loaded:
                                     del st.session_state[_k]
                                 st.session_state.update({
                                     "quiz_list": records,
-                                    "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key,
+                                    "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key, "practice_mode": _is_practice,
                                     "ans": [], "used_history": [], "shuf": [], "show_analysis": False
                                 })
                                 st.rerun()
@@ -2951,7 +2960,7 @@ if not st.session_state.quiz_loaded:
                                         del st.session_state[_k]
                                     st.session_state.update({
                                         "quiz_list": records,
-                                        "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key,
+                                        "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key, "practice_mode": _is_practice,
                                         "ans": [], "used_history": [], "shuf": [], "show_analysis": False
                                     })
                                     st.rerun()
@@ -2971,7 +2980,7 @@ if not st.session_state.quiz_loaded:
                                         del st.session_state[_k]
                                     st.session_state.update({
                                         "quiz_list": records,
-                                        "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key,
+                                        "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key, "practice_mode": _is_practice,
                                         "ans": [], "used_history": [], "shuf": [], "show_analysis": False
                                     })
                                     st.rerun()
@@ -3054,7 +3063,7 @@ if not st.session_state.quiz_loaded:
                                     del st.session_state[_k]
                                 st.session_state.update({
                                     "quiz_list": pending.to_dict('records'),
-                                    "q_idx": min(_start_idx_fwd, len(pending)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key,
+                                    "q_idx": min(_start_idx_fwd, len(pending)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key, "practice_mode": _is_practice,
                                     "ans": [], "used_history": [], "shuf": [], "show_analysis": False
                                 })
                                 st.rerun()
@@ -3078,7 +3087,7 @@ if not st.session_state.quiz_loaded:
                                     del st.session_state[_k]
                                 st.session_state.update({
                                     "quiz_list": records,
-                                    "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key,
+                                    "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key, "practice_mode": _is_practice,
                                     "ans": [], "used_history": [], "shuf": [], "show_analysis": False
                                 })
                                 st.rerun()
@@ -3625,8 +3634,10 @@ if st.session_state.quiz_loaded:
         st.session_state['answered_count'] = 0
 
     total_q   = len(st.session_state.quiz_list)
-    answered_c = st.session_state.get('answered_count', 0)
-    st.markdown(f"### 🔴 練習中 (第 {st.session_state.q_idx + 1} / {total_q} 題　｜　已作答 {answered_c} 題)")
+    answered_c    = st.session_state.get('answered_count', 0)
+    _practice_mode = st.session_state.get('practice_mode', False)
+    _mode_label   = "🏋️ 練習模式" if _practice_mode else ""
+    st.markdown(f"### 🔴 練習中 (第 {st.session_state.q_idx + 1} / {total_q} 題　｜　已作答 {answered_c} 題) {_mode_label}")
     q = st.session_state.quiz_list[st.session_state.q_idx]
     # 判斷題型：優先用 _type，其次看欄位，最後看單元名稱
     _qtype         = q.get("_type", "")
@@ -3936,7 +3947,7 @@ if st.session_state.quiz_loaded:
                             "姓名":    st.session_state.user_name,
                             "分組":    st.session_state.group_id,
                             "題目ID":  q.get('題目ID', 'N/A'),
-                            "結果":    "✅" if _is_ok else "❌",
+                            "結果":    "練習" if st.session_state.get("practice_mode") else ("✅" if _is_ok else "❌"),
                             "學生答案": _opt,
                             "分數":    "",
                             "任務名稱": st.session_state.get("current_task_name", "")
@@ -4207,7 +4218,7 @@ if st.session_state.quiz_loaded:
                 if len(current_ans) >= len(_clean_vocab(word)) and not st.session_state.get("show_analysis"):
                     is_ok = _clean_vocab("".join(current_ans)) == _clean_vocab(word)
                     st.session_state.update({"current_res": "✅ 正確！" if is_ok else f"❌ 錯誤！正確答案：{word}", "show_analysis": True})
-                    append_to_sheet("logs", pd.DataFrame([{"時間": get_now().strftime("%Y-%m-%d %H:%M:%S"), "姓名": st.session_state.user_name, "分組": st.session_state.group_id, "題目ID": q.get("題目ID","N/A"), "結果": "✅" if is_ok else "❌", "學生答案": "".join(current_ans), "任務名稱": st.session_state.get("current_task_name","")}]))
+                    append_to_sheet("logs", pd.DataFrame([{"時間": get_now().strftime("%Y-%m-%d %H:%M:%S"), "姓名": st.session_state.user_name, "分組": st.session_state.group_id, "題目ID": q.get("題目ID","N/A"), "結果": "練習" if st.session_state.get("practice_mode") else ("✅" if is_ok else "❌"), "學生答案": "".join(current_ans), "任務名稱": st.session_state.get("current_task_name","")}]))
                     st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
                     st.rerun()
 
@@ -4231,7 +4242,7 @@ if st.session_state.quiz_loaded:
                     if st.button("✅ 檢查答案", type="primary", use_container_width=True, key=f"kb_check_{st.session_state.q_idx}"):
                         is_ok = _clean_vocab(kb_current) == _clean_vocab(word)
                         st.session_state.update({"current_res": "✅ 正確！" if is_ok else f"❌ 錯誤！正確答案：{word}", "show_analysis": True})
-                        append_to_sheet("logs", pd.DataFrame([{"時間": get_now().strftime("%Y-%m-%d %H:%M:%S"), "姓名": st.session_state.user_name, "分組": st.session_state.group_id, "題目ID": q.get("題目ID","N/A"), "結果": "✅" if is_ok else "❌", "學生答案": kb_current, "任務名稱": st.session_state.get("current_task_name","")}]))
+                        append_to_sheet("logs", pd.DataFrame([{"時間": get_now().strftime("%Y-%m-%d %H:%M:%S"), "姓名": st.session_state.user_name, "分組": st.session_state.group_id, "題目ID": q.get("題目ID","N/A"), "結果": "練習" if st.session_state.get("practice_mode") else ("✅" if is_ok else "❌"), "學生答案": kb_current, "任務名稱": st.session_state.get("current_task_name","")}]))
                         st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
                         st.rerun()
 
@@ -4348,7 +4359,7 @@ if st.session_state.quiz_loaded:
                         "姓名":    st.session_state.user_name,
                         "分組":    st.session_state.group_id,
                         "題目ID":  q.get('題目ID', 'N/A'),
-                        "結果":    "✅" if is_ok else "❌",
+                        "結果":    "練習" if st.session_state.get("practice_mode") else ("✅" if is_ok else "❌"),
                         "學生答案": f"原始({orig_opt})→顯示({disp_label}) {parsed_opts.get(orig_opt, '')}",
                         "分數":    "",
                     })
@@ -4420,7 +4431,7 @@ if st.session_state.quiz_loaded:
                 "姓名": st.session_state.user_name,
                 "分組": st.session_state.group_id,
                 "題目ID": q.get('題目ID', 'N/A'),
-                "結果": "✅" if is_ok else "❌",
+                "結果": "練習" if st.session_state.get("practice_mode") else ("✅" if is_ok else "❌"),
                 "任務名稱": st.session_state.get("current_task_name", "")
             }])
             append_to_sheet("logs", log_data)
@@ -4456,9 +4467,15 @@ if st.session_state.quiz_loaded:
             ]:
                 st.session_state.pop(k, None)
 
-    # 所有題型都禁止回到上一題
+    # 所有題型都禁止回到上一題（練習模式例外）
     if st.session_state.q_idx > 0:
-        c_nav[0].button("⬅️ 🔵 上一題", use_container_width=True, disabled=True)
+        if _practice_mode:
+            if c_nav[0].button("⬅️ 上一題", use_container_width=True, key="prev_q_btn"):
+                _clear_q()
+                st.session_state.q_idx -= 1
+                st.rerun()
+        else:
+            c_nav[0].button("⬅️ 上一題", use_container_width=True, disabled=True)
 
     nxt_label = "下一題 ➡️" if st.session_state.q_idx + 1 < len(st.session_state.quiz_list) else "🏁 結束練習"
     if c_nav[1].button(nxt_label, type="primary", use_container_width=True):
