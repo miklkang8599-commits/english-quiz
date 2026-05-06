@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.345 - debug持久顯示版)
+# 🧩 英文全能練習系統 (V2.9.346 - debug篩選前後比較版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.345
+# 📌 版本編號 (VERSION): 2.9.346
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.345"
+VERSION = "2.9.346"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3377,11 +3377,13 @@ if not st.session_state.quiz_loaded:
                 # 存 debug 資訊到 session_state（rerun 後仍可顯示）
                 st.session_state['_rv_debug'] = {
                     'my_logs_count': len(my_logs),
+                    'my_logs_total': len(df_l[df_l['姓名'] == user_name]) if not df_l.empty and '姓名' in df_l.columns else 0,
                     'rv_task_id': rv_task_id,
                     'task_name_samples': my_logs['任務名稱'].unique().tolist()[:5] if '任務名稱' in my_logs.columns else [],
                     'rv_q_ids_samples': list(rv_q_ids)[:3] if rv_q_ids else [],
                     'df_rv_qid_samples': df_rv['題目ID'].head(3).tolist() if not df_rv.empty else [],
                     'my_logs_qid_samples': my_logs['題目ID'].head(3).tolist() if '題目ID' in my_logs.columns else [],
+                    'my_logs_all_task_names': df_l[df_l['姓名'] == user_name]['任務名稱'].unique().tolist()[:10] if not df_l.empty and '姓名' in df_l.columns else [],
                 }
                 all_qids = set(df_rv['題目ID'].tolist())
                 # 同時加入任務原始 ID（版本可能不同，如 3688 vs 歷屆聯考）
@@ -3453,9 +3455,11 @@ if not st.session_state.quiz_loaded:
     if st.session_state.get('_rv_debug'):
         _dbg = st.session_state['_rv_debug']
         with st.expander("🔍 [debug] logs 比對", expanded=True):
-            st.write(f"my_logs 總筆數: {_dbg['my_logs_count']}")
+            st.write(f"my_logs 筆數（任務篩選後）: {_dbg['my_logs_count']}")
+            st.write(f"my_logs 總筆數（篩選前）: {_dbg.get('my_logs_total', '?')}")
             st.write(f"rv_task_id: {_dbg['rv_task_id']!r}")
             st.write("my_logs 任務名稱樣本:", _dbg['task_name_samples'])
+            st.write("學生所有任務名稱:", _dbg.get('my_logs_all_task_names', []))
             st.write("rv_q_ids 樣本:", _dbg['rv_q_ids_samples'])
             st.write("df_rv 題目ID 樣本:", _dbg['df_rv_qid_samples'])
             st.write("my_logs 題目ID 樣本:", _dbg['my_logs_qid_samples'])
