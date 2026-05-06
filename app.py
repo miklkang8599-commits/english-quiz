@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.348 - 講解模式logs修復版)
+# 🧩 英文全能練習系統 (V2.9.349 - 講解錯題篩選修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.348
+# 📌 版本編號 (VERSION): 2.9.349
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.348"
+VERSION = "2.9.349"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -2255,8 +2255,20 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             if _t4_key not in st.session_state:
                 def _apply_scope_t4_inner(df_in, logs_in):
                     if df_in.empty or '題目ID' not in df_in.columns: return df_in
-                    answered = set(logs_in['題目ID'].tolist()) if not logs_in.empty and '題目ID' in logs_in.columns else set()
-                    wrong    = set(logs_in[logs_in['結果']=='❌']['題目ID'].tolist()) if not logs_in.empty else set()
+                    if logs_in.empty or '題目ID' not in logs_in.columns:
+                        if scope_t4 in ("✏️ 已經答題", "❌ 只看錯題"):
+                            return pd.DataFrame()  # 沒有 logs 就沒有已答/錯題
+                        return df_in
+                    answered = set(logs_in['題目ID'].tolist())
+                    # 錯題：結果包含❌，且排除練習模式
+                    _err_logs = logs_in[
+                        logs_in['結果'].fillna('').str.contains('❌', na=False) &
+                        ~logs_in['結果'].fillna('').str.contains('練習', na=False)
+                    ]
+                    wrong = set(_err_logs['題目ID'].tolist())
+                    # 已答：有作答記錄（排除講解）
+                    _ans_logs = logs_in[~logs_in['結果'].fillna('').str.contains('📖', na=False)]
+                    answered  = set(_ans_logs['題目ID'].tolist())
                     if scope_t4 == "✏️ 已經答題":   return df_in[df_in['題目ID'].isin(answered)]
                     elif scope_t4 == "❌ 只看錯題":  return df_in[df_in['題目ID'].isin(wrong)]
                     elif scope_t4 == "❓ 只看未作答": return df_in[~df_in['題目ID'].isin(answered)]
