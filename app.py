@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.337 - 題目講解fragment獨立版)
+# 🧩 英文全能練習系統 (V2.9.338 - 單選復習欄位debug版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.337
+# 📌 版本編號 (VERSION): 2.9.338
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.337"
+VERSION = "2.9.338"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3222,6 +3222,11 @@ if not st.session_state.quiz_loaded:
                 if not matched.empty:
                     all_items.append(matched)
             if not df_mcq.empty:
+                # debug：顯示 MCQ 欄位和樣本 ID
+                with st.expander("🔍 [debug] 單選題庫欄位", expanded=False):
+                    st.write("欄位：", df_mcq.columns.tolist())
+                    st.write("樣本ID：", df_mcq.apply(lambda r: f"{r.get('版本','')}_{r.get('年度','')}_{r.get('冊編號','')}_{r.get('單元','')}_{r.get('課編號','')}_{r.get('句編號','')}", axis=1).head(3).tolist())
+                    st.write("任務ID樣本：", list(rv_q_ids)[:3])
                 matched_m = _match_ids(df_mcq, rv_q_ids)
                 if not matched_m.empty:
                     all_items.append(matched_m)
