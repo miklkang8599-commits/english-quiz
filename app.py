@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.340 - 文意文法ID比對debug版)
+# 🧩 英文全能練習系統 (V2.9.342 - MCQ模糊比對修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.340
+# 📌 版本編號 (VERSION): 2.9.342
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.340"
+VERSION = "2.9.342"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3222,24 +3222,31 @@ if not st.session_state.quiz_loaded:
                 if not matched.empty:
                     all_items.append(matched)
             if not df_mcq.empty:
-                with st.expander("🔍 [debug] 單選題庫欄位", expanded=True):
-                    st.write("欄位：", df_mcq.columns.tolist())
-                    _sample_ids = df_mcq.apply(lambda r: f"{r.get('版本','')}_{r.get('年度','')}_{r.get('冊編號','')}_{r.get('單元','')}_{r.get('課編號','')}_{r.get('句編號','')}", axis=1)
-                    st.write("樣本ID（前3）：", _sample_ids.head(3).tolist())
-                    st.write("任務ID樣本（前3）：", list(rv_q_ids)[:3])
-                    _wenyi = df_mcq[df_mcq['單元'].str.contains('文意', na=False)] if '單元' in df_mcq.columns else pd.DataFrame()
-                    st.write(f"文意文法行數：{len(_wenyi)}")
-                    # 文意文法的 ID 樣本
-                    if not _wenyi.empty:
-                        _wenyi_ids = _wenyi.apply(lambda r: f"{r.get('版本','')}_{r.get('年度','')}_{r.get('冊編號','')}_{r.get('單元','')}_{r.get('課編號','')}_{r.get('句編號','')}", axis=1)
-                        st.write("文意文法ID樣本：", _wenyi_ids.head(3).tolist())
-                        # 比對任務ID
-                        _matched = _wenyi_ids.isin(rv_q_ids).sum()
-                        st.write(f"文意文法能比對到：{_matched} 題")
-                        # 找未比對到的
-                        _no_match = _wenyi_ids[~_wenyi_ids.isin(rv_q_ids)].head(3).tolist()
-                        st.write(f"未比對到的樣本：{_no_match}")
                 matched_m = _match_ids(df_mcq, rv_q_ids)
+                # 若比對數量不足，嘗試用單元+課編號+句編號做模糊比對
+                if len(matched_m) < len(rv_q_ids) * 0.5:
+                    _rv_short = set()
+                    for _tid in rv_q_ids:
+                        _parts = _tid.split('_')
+                        if len(_parts) >= 3:
+                            _rv_short.add('_'.join(_parts[-3:]))
+                    _mcq2 = df_mcq.copy()
+                    _mcq2['_short_id'] = _mcq2.apply(
+                        lambda r: f"{r.get('單元','')}_{r.get('課編號','')}_{r.get('句編號','')}", axis=1
+                    )
+                    _fallback = _mcq2[_mcq2['_short_id'].isin(_rv_short)].copy()
+                    if len(_fallback) > len(matched_m):
+                        _sample_tid = list(rv_q_ids)[0]
+                        _parts0 = _sample_tid.split('_')
+                        _ver0 = _parts0[0] if _parts0 else ''
+                        _yr0  = _parts0[1] if len(_parts0) > 1 else ''
+                        _bk0  = _parts0[2] if len(_parts0) > 2 else ''
+                        _fallback['題目ID'] = _fallback.apply(
+                            lambda r: f"{_ver0}_{_yr0}_{_bk0}_{r.get('單元','')}_{r.get('課編號','')}_{r.get('句編號','')}",
+                            axis=1
+                        )
+                        _fallback = _fallback.drop(columns=['_short_id'], errors='ignore')
+                        matched_m = _fallback
                 if not matched_m.empty:
                     all_items.append(matched_m)
             if not df_v.empty:
