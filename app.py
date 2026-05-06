@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.338 - 單選復習欄位debug版)
+# 🧩 英文全能練習系統 (V2.9.339 - 單選復習debug強化版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.338
+# 📌 版本編號 (VERSION): 2.9.339
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.338"
+VERSION = "2.9.339"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3223,10 +3223,17 @@ if not st.session_state.quiz_loaded:
                     all_items.append(matched)
             if not df_mcq.empty:
                 # debug：顯示 MCQ 欄位和樣本 ID
-                with st.expander("🔍 [debug] 單選題庫欄位", expanded=False):
+                with st.expander("🔍 [debug] 單選題庫欄位", expanded=True):
                     st.write("欄位：", df_mcq.columns.tolist())
-                    st.write("樣本ID：", df_mcq.apply(lambda r: f"{r.get('版本','')}_{r.get('年度','')}_{r.get('冊編號','')}_{r.get('單元','')}_{r.get('課編號','')}_{r.get('句編號','')}", axis=1).head(3).tolist())
-                    st.write("任務ID樣本：", list(rv_q_ids)[:3])
+                    _sample_ids = df_mcq.apply(lambda r: f"{r.get('版本','')}_{r.get('年度','')}_{r.get('冊編號','')}_{r.get('單元','')}_{r.get('課編號','')}_{r.get('句編號','')}", axis=1)
+                    st.write("樣本ID（前3）：", _sample_ids.head(3).tolist())
+                    st.write("任務ID樣本（前3）：", list(rv_q_ids)[:3])
+                    # 檢查文意文法是否存在
+                    _wenyi = df_mcq[df_mcq.get('單元', pd.Series()).fillna('').str.contains('文意', na=False)] if '單元' in df_mcq.columns else pd.DataFrame()
+                    st.write(f"文意文法行數：{len(_wenyi)}")
+                    # 檢查比對結果
+                    _test_ids = _sample_ids.isin(rv_q_ids)
+                    st.write(f"能比對到的MCQ行數：{_test_ids.sum()}")
                 matched_m = _match_ids(df_mcq, rv_q_ids)
                 if not matched_m.empty:
                     all_items.append(matched_m)
