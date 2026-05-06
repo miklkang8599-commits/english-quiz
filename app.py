@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.333 - 練習模式上一題修復版)
+# 🧩 英文全能練習系統 (V2.9.334 - 練習模式清除上一題狀態版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.333
+# 📌 版本編號 (VERSION): 2.9.334
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.333"
+VERSION = "2.9.334"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -4471,9 +4471,17 @@ if st.session_state.quiz_loaded:
     if st.session_state.q_idx > 0:
         if _practice_mode:
             if c_nav[0].button("⬅️ 上一題", use_container_width=True, key="prev_q_btn"):
-                _clear_q()
-                st.session_state.q_idx -= 1
-                # 重置答題狀態，讓學生可以重新作答
+                _clear_q()  # 清除當前題（12題）狀態
+                _prev_idx = st.session_state.q_idx - 1
+                # 清除上一題（11題）的所有狀態
+                for _ok in [
+                    f"mcq_order_{_prev_idx}", f"rm_order_{_prev_idx}",
+                    f"audio_scored_{_prev_idx}", f"mcq_written_{_prev_idx}",
+                    f"ls_ans_{_prev_idx}", f"ls_used_{_prev_idx}", f"ls_shuf_{_prev_idx}",
+                    f"vocab_ans_{_prev_idx}", f"vocab_used_{_prev_idx}", f"ls_tts_{_prev_idx}"
+                ]:
+                    st.session_state.pop(_ok, None)
+                st.session_state.q_idx = _prev_idx
                 st.session_state.update({
                     "show_analysis": False,
                     "current_res": "",
