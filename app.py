@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.342 - MCQ模糊比對修復版)
+# 🧩 英文全能練習系統 (V2.9.343 - 錯題統計ID對應修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.342
+# 📌 版本編號 (VERSION): 2.9.343
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.342"
+VERSION = "2.9.343"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3375,6 +3375,9 @@ if not st.session_state.quiz_loaded:
             total_count = len(df_rv)
             if not my_logs.empty and '題目ID' in my_logs.columns:
                 all_qids = set(df_rv['題目ID'].tolist())
+                # 同時加入任務原始 ID（版本可能不同，如 3688 vs 歷屆聯考）
+                if rv_q_ids:
+                    all_qids |= set(rv_q_ids)
                 # 同時產生有V_和無V_的版本來比對logs
                 all_qids_alt = set()
                 for qid in all_qids:
