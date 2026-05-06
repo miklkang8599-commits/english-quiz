@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.334 - 練習模式清除上一題狀態版)
+# 🧩 英文全能練習系統 (V2.9.335 - 練習模式再練習一次版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.334
+# 📌 版本編號 (VERSION): 2.9.335
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.334"
+VERSION = "2.9.335"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -4446,7 +4446,11 @@ if st.session_state.quiz_loaded:
             if mcq_analysis:
                 st.info(f"📝 解析：{mcq_analysis}")
     st.divider()
-    c_nav = st.columns(2)
+    # 練習模式用3欄，一般模式用2欄
+    if _practice_mode and st.session_state.get('show_analysis', False):
+        c_nav = st.columns(3)
+    else:
+        c_nav = st.columns(2)
 
     def _clear_q():
         q_idx = st.session_state.q_idx
@@ -4471,9 +4475,8 @@ if st.session_state.quiz_loaded:
     if st.session_state.q_idx > 0:
         if _practice_mode:
             if c_nav[0].button("⬅️ 上一題", use_container_width=True, key="prev_q_btn"):
-                _clear_q()  # 清除當前題（12題）狀態
+                _clear_q()
                 _prev_idx = st.session_state.q_idx - 1
-                # 清除上一題（11題）的所有狀態
                 for _ok in [
                     f"mcq_order_{_prev_idx}", f"rm_order_{_prev_idx}",
                     f"audio_scored_{_prev_idx}", f"mcq_written_{_prev_idx}",
@@ -4483,8 +4486,7 @@ if st.session_state.quiz_loaded:
                     st.session_state.pop(_ok, None)
                 st.session_state.q_idx = _prev_idx
                 st.session_state.update({
-                    "show_analysis": False,
-                    "current_res": "",
+                    "show_analysis": False, "current_res": "",
                     "ans": [], "used_history": [], "shuf": [],
                     "tts_student": None, "stt_text_shown": ""
                 })
@@ -4492,8 +4494,22 @@ if st.session_state.quiz_loaded:
         else:
             c_nav[0].button("⬅️ 上一題", use_container_width=True, disabled=True)
 
+    # 練習模式：對答後顯示「再練習一次」
+    if _practice_mode and st.session_state.get('show_analysis', False):
+        if c_nav[1].button("🔁 再練習一次", use_container_width=True, key="retry_q_btn"):
+            _clear_q()
+            st.session_state.update({
+                "show_analysis": False, "current_res": "",
+                "ans": [], "used_history": [], "shuf": [],
+                "tts_student": None, "stt_text_shown": ""
+            })
+            st.rerun()
+        nxt_col = c_nav[2]
+    else:
+        nxt_col = c_nav[1]
+
     nxt_label = "下一題 ➡️" if st.session_state.q_idx + 1 < len(st.session_state.quiz_list) else "🏁 結束練習"
-    if c_nav[1].button(nxt_label, type="primary", use_container_width=True):
+    if nxt_col.button(nxt_label, type="primary", use_container_width=True):
         if st.session_state.q_idx + 1 < len(st.session_state.quiz_list):
             next_idx = st.session_state.q_idx + 1
             # 預先載入下一題聽力音檔
