@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.346 - debug篩選前後比較版)
+# 🧩 英文全能練習系統 (V2.9.347 - 錯題統計用題目ID篩選版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.346
+# 📌 版本編號 (VERSION): 2.9.347
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.346"
+VERSION = "2.9.347"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3186,12 +3186,13 @@ if not st.session_state.quiz_loaded:
         try:
             if not df_l.empty:
                 my_logs = df_l[df_l['姓名'] == user_name].copy()
-                # 依任務篩選完成數時才用 task_id，顯示範圍篩選用全部 logs
-                if rv_filter == "📋 依任務" and rv_task_id and '任務名稱' in my_logs.columns:
-                    my_logs_task = my_logs[my_logs['任務名稱'].fillna('') == rv_task_id]
-                    # 若任務篩選後有資料用任務資料，否則用全部（相容舊資料）
-                    if not my_logs_task.empty:
-                        my_logs = my_logs_task
+                # 不用任務名稱篩選，改用題目ID比對
+                # （因為舊版 logs 沒有寫入任務名稱）
+                if rv_filter == "📋 依任務" and rv_q_ids and '題目ID' in my_logs.columns:
+                    my_logs = my_logs[
+                        my_logs['題目ID'].isin(rv_q_ids) |
+                        my_logs['任務名稱'].fillna('').eq(rv_task_id)
+                    ]
             else:
                 my_logs = pd.DataFrame()
         except:
@@ -3374,17 +3375,6 @@ if not st.session_state.quiz_loaded:
             # 計算統計（在篩選前，用雙向ID比對）
             total_count = len(df_rv)
             if not my_logs.empty and '題目ID' in my_logs.columns:
-                # 存 debug 資訊到 session_state（rerun 後仍可顯示）
-                st.session_state['_rv_debug'] = {
-                    'my_logs_count': len(my_logs),
-                    'my_logs_total': len(df_l[df_l['姓名'] == user_name]) if not df_l.empty and '姓名' in df_l.columns else 0,
-                    'rv_task_id': rv_task_id,
-                    'task_name_samples': my_logs['任務名稱'].unique().tolist()[:5] if '任務名稱' in my_logs.columns else [],
-                    'rv_q_ids_samples': list(rv_q_ids)[:3] if rv_q_ids else [],
-                    'df_rv_qid_samples': df_rv['題目ID'].head(3).tolist() if not df_rv.empty else [],
-                    'my_logs_qid_samples': my_logs['題目ID'].head(3).tolist() if '題目ID' in my_logs.columns else [],
-                    'my_logs_all_task_names': df_l[df_l['姓名'] == user_name]['任務名稱'].unique().tolist()[:10] if not df_l.empty and '姓名' in df_l.columns else [],
-                }
                 all_qids = set(df_rv['題目ID'].tolist())
                 # 同時加入任務原始 ID（版本可能不同，如 3688 vs 歷屆聯考）
                 if rv_q_ids:
@@ -3451,18 +3441,6 @@ if not st.session_state.quiz_loaded:
             st.rerun()
 
     # ── 復習列表顯示 ──────────────────────────────────────────────────
-    # debug 資訊（rerun 後仍顯示）
-    if st.session_state.get('_rv_debug'):
-        _dbg = st.session_state['_rv_debug']
-        with st.expander("🔍 [debug] logs 比對", expanded=True):
-            st.write(f"my_logs 筆數（任務篩選後）: {_dbg['my_logs_count']}")
-            st.write(f"my_logs 總筆數（篩選前）: {_dbg.get('my_logs_total', '?')}")
-            st.write(f"rv_task_id: {_dbg['rv_task_id']!r}")
-            st.write("my_logs 任務名稱樣本:", _dbg['task_name_samples'])
-            st.write("學生所有任務名稱:", _dbg.get('my_logs_all_task_names', []))
-            st.write("rv_q_ids 樣本:", _dbg['rv_q_ids_samples'])
-            st.write("df_rv 題目ID 樣本:", _dbg['df_rv_qid_samples'])
-            st.write("my_logs 題目ID 樣本:", _dbg['my_logs_qid_samples'])
     if st.session_state.get('rv_items') is not None:
         rv_items        = st.session_state['rv_items']
         rv_my_logs      = pd.DataFrame(st.session_state.get('rv_my_logs', []))
