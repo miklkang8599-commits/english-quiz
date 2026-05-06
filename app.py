@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.335 - 練習模式再練習一次版)
+# 🧩 英文全能練習系統 (V2.9.336 - 文意文法單選識別修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.335
+# 📌 版本編號 (VERSION): 2.9.336
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.335"
+VERSION = "2.9.336"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3444,7 +3444,9 @@ if not st.session_state.quiz_loaded:
                     q_text     = str(item.get('KK符號') or '').strip()
                     q_ans      = q_text
                     type_label = "🎧 聽力音標"
-                elif '單選' in q_unit:
+                elif (q_type == 'mcq' or '單選' in q_unit or
+                      str(item.get('單選答案') or '').strip() or
+                      any(str(item.get(f'選項{o}') or '').strip() for o in ['A','B','C','D'])):
                     q_text     = str(item.get('單選題目') or item.get('中文題目') or '').strip()
                     q_ans      = str(item.get('單選答案') or '').strip()
                     type_label = "🔵 單選"
