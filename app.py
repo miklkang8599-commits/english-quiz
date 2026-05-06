@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.347 - 錯題統計用題目ID篩選版)
+# 🧩 英文全能練習系統 (V2.9.348 - 講解模式logs修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.347
+# 📌 版本編號 (VERSION): 2.9.348
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.347"
+VERSION = "2.9.348"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -2263,8 +2263,11 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     return df_in
 
                 _all_logs = df_l[df_l['姓名'].isin(target_stus_t4)].copy() if not df_l.empty else pd.DataFrame()
-                if rev_tid_t4 and not _all_logs.empty and '任務名稱' in _all_logs.columns:
-                    _fl = _all_logs[_all_logs['任務名稱'].fillna('') == rev_tid_t4]
+                if task_ids_t4 and not _all_logs.empty and '題目ID' in _all_logs.columns:
+                    _fl = _all_logs[
+                        _all_logs['題目ID'].isin(task_ids_t4) |
+                        (_all_logs['任務名稱'].fillna('') == rev_tid_t4)
+                    ]
                     if not _fl.empty: _all_logs = _fl
 
                 def _qid(r, prefix=""): return f"{prefix}{r['版本']}_{r['年度']}_{r['冊編號']}_{r.get('單元','')}_{r['課編號']}_{r['句編號']}"
@@ -2314,8 +2317,11 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 st.info("此範圍尚無單選題。")
             else:
                 mcq_logs = df_l[df_l['姓名'].isin(target_stus_t4)].copy() if not df_l.empty else pd.DataFrame()
-                if rev_tid_t4 and not mcq_logs.empty and '任務名稱' in mcq_logs.columns:
-                    _fl = mcq_logs[mcq_logs['任務名稱'].fillna('') == rev_tid_t4]
+                if not mcq_logs.empty and '題目ID' in mcq_logs.columns:
+                    _fl = mcq_logs[
+                        mcq_logs['題目ID'].isin(task_ids_t4 or set()) |
+                        (mcq_logs['任務名稱'].fillna('') == rev_tid_t4)
+                    ]
                     if not _fl.empty: mcq_logs = _fl
                 df_rev_mcq = _apply_scope_t4(df_rev_mcq, all_logs_t4)
                 st.markdown(f"**共 {len(df_rev_mcq)} 題**")
@@ -2378,8 +2384,11 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 st.info("此範圍尚無重組題。")
             else:
                 q_logs = df_l[df_l['姓名'].isin(target_stus_t4)].copy() if not df_l.empty else pd.DataFrame()
-                if rev_tid_t4 and not q_logs.empty and '任務名稱' in q_logs.columns:
-                    _fl = q_logs[q_logs['任務名稱'].fillna('') == rev_tid_t4]
+                if not q_logs.empty and '題目ID' in q_logs.columns:
+                    _fl = q_logs[
+                        q_logs['題目ID'].isin(task_ids_t4 or set()) |
+                        (q_logs['任務名稱'].fillna('') == rev_tid_t4)
+                    ]
                     if not _fl.empty: q_logs = _fl
                 df_rev_q2 = _apply_scope_t4(df_rev_q2, all_logs_t4)
                 st.markdown(f"**共 {len(df_rev_q2)} 題**")
@@ -2431,8 +2440,11 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 df_rev_rm = pd.DataFrame()
             if not df_rev_rm.empty:
                 rm_logs = df_l[df_l['姓名'].isin(target_stus_t4)].copy() if not df_l.empty else pd.DataFrame()
-                if rev_tid_t4 and not rm_logs.empty and '任務名稱' in rm_logs.columns:
-                    _fl = rm_logs[rm_logs['任務名稱'].fillna('') == rev_tid_t4]
+                if not rm_logs.empty and '題目ID' in rm_logs.columns:
+                    _fl = rm_logs[
+                        rm_logs['題目ID'].isin(task_ids_t4 or set()) |
+                        (rm_logs['任務名稱'].fillna('') == rev_tid_t4)
+                    ]
                     if not _fl.empty: rm_logs = _fl
                 df_rev_rm = _apply_scope_t4(df_rev_rm, all_logs_t4)
                 st.markdown(f"**共 {len(df_rev_rm)} 題**")
@@ -2485,8 +2497,11 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
 
             if not df_rev_r.empty:
                 r_logs = df_l[df_l['姓名'].isin(target_stus_t4)].copy() if not df_l.empty else pd.DataFrame()
-                if rev_tid_t4 and not r_logs.empty and '任務名稱' in r_logs.columns:
-                    _fl = r_logs[r_logs['任務名稱'].fillna('') == rev_tid_t4]
+                if not r_logs.empty and '題目ID' in r_logs.columns:
+                    _fl = r_logs[
+                        r_logs['題目ID'].isin(task_ids_t4 or set()) |
+                        (r_logs['任務名稱'].fillna('') == rev_tid_t4)
+                    ]
                     if not _fl.empty: r_logs = _fl
                 df_rev_r = _apply_scope_t4(df_rev_r, all_logs_t4)
                 st.markdown(f"**共 {len(df_rev_r)} 題**")
@@ -2529,8 +2544,11 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
 
             if not df_rev_v.empty:
                 v_logs = df_l[df_l['姓名'].isin(target_stus_t4)].copy() if not df_l.empty else pd.DataFrame()
-                if rev_tid_t4 and not v_logs.empty and '任務名稱' in v_logs.columns:
-                    _fl = v_logs[v_logs['任務名稱'].fillna('') == rev_tid_t4]
+                if not v_logs.empty and '題目ID' in v_logs.columns:
+                    _fl = v_logs[
+                        v_logs['題目ID'].isin(task_ids_t4 or set()) |
+                        (v_logs['任務名稱'].fillna('') == rev_tid_t4)
+                    ]
                     if not _fl.empty: v_logs = _fl
                 df_rev_v = _apply_scope_t4(df_rev_v, all_logs_t4)
                 st.markdown(f"**共 {len(df_rev_v)} 題**")
