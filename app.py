@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.349 - 講解錯題篩選修復版)
+# 🧩 英文全能練習系統 (V2.9.350 - 講解logs任務ID對應修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.349
+# 📌 版本編號 (VERSION): 2.9.350
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.349"
+VERSION = "2.9.350"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -2275,12 +2275,21 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     return df_in
 
                 _all_logs = df_l[df_l['姓名'].isin(target_stus_t4)].copy() if not df_l.empty else pd.DataFrame()
-                if task_ids_t4 and not _all_logs.empty and '題目ID' in _all_logs.columns:
+                if not _all_logs.empty and '題目ID' in _all_logs.columns:
+                    # 用任務原始ID（logs存的格式）+ 任務編號 雙重篩選
+                    _task_orig_ids = task_ids_t4 or set()
                     _fl = _all_logs[
-                        _all_logs['題目ID'].isin(task_ids_t4) |
+                        _all_logs['題目ID'].isin(_task_orig_ids) |
                         (_all_logs['任務名稱'].fillna('') == rev_tid_t4)
                     ]
-                    if not _fl.empty: _all_logs = _fl
+                    # 若兩者都找不到，嘗試用句編號後綴比對（相容不同版本格式）
+                    if _fl.empty and _task_orig_ids:
+                        _short_ids = set('_'.join(qid.split('_')[-3:]) for qid in _task_orig_ids)
+                        _all_logs['_short'] = _all_logs['題目ID'].apply(lambda x: '_'.join(str(x).split('_')[-3:]))
+                        _fl = _all_logs[_all_logs['_short'].isin(_short_ids)]
+                        _all_logs = _all_logs.drop(columns=['_short'], errors='ignore')
+                    if not _fl.empty:
+                        _all_logs = _fl.drop(columns=['_short'], errors='ignore')
 
                 def _qid(r, prefix=""): return f"{prefix}{r['版本']}_{r['年度']}_{r['冊編號']}_{r.get('單元','')}_{r['課編號']}_{r['句編號']}"
 
