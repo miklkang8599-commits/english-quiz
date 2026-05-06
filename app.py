@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.330 - is_mcq判斷修復版)
+# 🧩 英文全能練習系統 (V2.9.331 - 選項每次進任務重洗版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.330
+# 📌 版本編號 (VERSION): 2.9.331
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.330"
+VERSION = "2.9.331"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -2716,7 +2716,7 @@ if not st.session_state.quiz_loaded:
                                 records = retry_r.to_dict('records')
                                 for rec in records:
                                     rec['_type'] = 'reading'
-                                for _k in [k for k in list(st.session_state.keys()) if k.startswith("vocab_pool_") or k.startswith("vocab_ans_") or k.startswith("vocab_used_")]:
+                                for _k in [k for k in list(st.session_state.keys()) if k.startswith("vocab_pool_") or k.startswith("vocab_ans_") or k.startswith("vocab_used_") or k.startswith("mcq_order_") or k.startswith("rm_order_") or k.startswith("mcq_written_")]:
                                     del st.session_state[_k]
                                 st.session_state.update({
                                     "quiz_list": records,
@@ -2785,7 +2785,7 @@ if not st.session_state.quiz_loaded:
                             if _all_dfs:
                                 retry_all = pd.concat(_all_dfs, ignore_index=True)
                                 records   = retry_all.to_dict('records')
-                                for _k in [k for k in list(st.session_state.keys()) if k.startswith("vocab_pool_") or k.startswith("vocab_ans_") or k.startswith("vocab_used_")]:
+                                for _k in [k for k in list(st.session_state.keys()) if k.startswith("vocab_pool_") or k.startswith("vocab_ans_") or k.startswith("vocab_used_") or k.startswith("mcq_order_") or k.startswith("rm_order_") or k.startswith("mcq_written_")]:
                                     del st.session_state[_k]
                                 st.session_state.update({
                                     "quiz_list": records,
@@ -2841,7 +2841,7 @@ if not st.session_state.quiz_loaded:
                                 for r in records:
                                     r['_type'] = 'reading'
                                 # 清除所有舊的字母池，避免題目字母錯誤
-                                for _k in [k for k in list(st.session_state.keys()) if k.startswith("vocab_pool_") or k.startswith("vocab_ans_") or k.startswith("vocab_used_")]:
+                                for _k in [k for k in list(st.session_state.keys()) if k.startswith("vocab_pool_") or k.startswith("vocab_ans_") or k.startswith("vocab_used_") or k.startswith("mcq_order_") or k.startswith("rm_order_") or k.startswith("mcq_written_")]:
                                     del st.session_state[_k]
                                 st.session_state.update({
                                     "quiz_list": records,
@@ -2873,7 +2873,7 @@ if not st.session_state.quiz_loaded:
                                     rec['_vocab_timer'] = v_timer_t
                                     rec['_vocab_extra'] = v_extra_t
                                 # 清除所有舊的字母池，避免題目字母錯誤
-                                for _k in [k for k in list(st.session_state.keys()) if k.startswith("vocab_pool_") or k.startswith("vocab_ans_") or k.startswith("vocab_used_")]:
+                                for _k in [k for k in list(st.session_state.keys()) if k.startswith("vocab_pool_") or k.startswith("vocab_ans_") or k.startswith("vocab_used_") or k.startswith("mcq_order_") or k.startswith("rm_order_") or k.startswith("mcq_written_")]:
                                     del st.session_state[_k]
                                 st.session_state.update({
                                     "quiz_list": records,
@@ -2894,7 +2894,7 @@ if not st.session_state.quiz_loaded:
                                 for rec in records:
                                     rec['_type'] = 'reading_mcq'
                                 # 清除所有舊的字母池，避免題目字母錯誤
-                                for _k in [k for k in list(st.session_state.keys()) if k.startswith("vocab_pool_") or k.startswith("vocab_ans_") or k.startswith("vocab_used_")]:
+                                for _k in [k for k in list(st.session_state.keys()) if k.startswith("vocab_pool_") or k.startswith("vocab_ans_") or k.startswith("vocab_used_") or k.startswith("mcq_order_") or k.startswith("rm_order_") or k.startswith("mcq_written_")]:
                                     del st.session_state[_k]
                                 st.session_state.update({
                                     "quiz_list": records,
@@ -3050,7 +3050,7 @@ if not st.session_state.quiz_loaded:
                             pending = pd.concat([pending_q, pending_r, pending_v, pending_rm, pending_lp_m, pending_ls_m], ignore_index=True)
                             if not pending.empty:
                                 # 清除所有舊的字母池
-                                for _k in [k for k in list(st.session_state.keys()) if k.startswith("vocab_pool_") or k.startswith("vocab_ans_") or k.startswith("vocab_used_")]:
+                                for _k in [k for k in list(st.session_state.keys()) if k.startswith("vocab_pool_") or k.startswith("vocab_ans_") or k.startswith("vocab_used_") or k.startswith("mcq_order_") or k.startswith("rm_order_") or k.startswith("mcq_written_")]:
                                     del st.session_state[_k]
                                 st.session_state.update({
                                     "quiz_list": pending.to_dict('records'),
@@ -3074,7 +3074,7 @@ if not st.session_state.quiz_loaded:
                                     pending_q['_sn'] = pd.to_numeric(pending_q['句編號'], errors='coerce').fillna(0)
                                     pending_q = pending_q.sort_values('_sn').drop(columns=['_sn'])
                                 records = pending_q.to_dict('records')
-                                for _k in [k for k in list(st.session_state.keys()) if k.startswith("vocab_pool_") or k.startswith("vocab_ans_") or k.startswith("vocab_used_")]:
+                                for _k in [k for k in list(st.session_state.keys()) if k.startswith("vocab_pool_") or k.startswith("vocab_ans_") or k.startswith("vocab_used_") or k.startswith("mcq_order_") or k.startswith("rm_order_") or k.startswith("mcq_written_")]:
                                     del st.session_state[_k]
                                 st.session_state.update({
                                     "quiz_list": records,
