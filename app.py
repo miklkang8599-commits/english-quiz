@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.362 - 講解舊任務logs修復版)
+# 🧩 英文全能練習系統 (V2.9.363 - 講解錯題比對debug版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.362
+# 📌 版本編號 (VERSION): 2.9.363
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.362"
+VERSION = "2.9.363"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -2302,6 +2302,13 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     # 已答：有作答記錄（排除講解）
                     _ans_logs = logs_in[~logs_in['結果'].fillna('').str.contains('📖', na=False)]
                     answered  = set(_ans_logs['題目ID'].tolist())
+                    # debug
+                    st.session_state['_scope_debug'] = {
+                        'df_in_ids': df_in['題目ID'].head(3).tolist() if not df_in.empty else [],
+                        'wrong_ids': list(wrong)[:3],
+                        'wrong_count': len(wrong),
+                        'scope': scope_t4,
+                    }
                     if scope_t4 == "✏️ 已經答題":   return df_in[df_in['題目ID'].isin(answered)]
                     elif scope_t4 == "❌ 只看錯題":  return df_in[df_in['題目ID'].isin(wrong)]
                     elif scope_t4 == "❓ 只看未作答": return df_in[~df_in['題目ID'].isin(answered)]
@@ -2387,6 +2394,14 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             else:
                 st.info("請先選擇任務後套用篩選，即可顯示單選題講解。")
                 df_rev_mcq = pd.DataFrame()
+
+            if st.session_state.get('_scope_debug'):
+                _sd = st.session_state['_scope_debug']
+                with st.expander("🔍 [debug] 錯題比對", expanded=True):
+                    st.write("scope:", _sd['scope'])
+                    st.write("df_in 題目ID樣本:", _sd['df_in_ids'])
+                    st.write("wrong set 樣本:", _sd['wrong_ids'])
+                    st.write("wrong set 筆數:", _sd['wrong_count'])
 
             if df_rev_mcq.empty:
                 st.info("此範圍尚無單選題。")
