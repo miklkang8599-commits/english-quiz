@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.369 - 已作答統一定義版)
+# 🧩 英文全能練習系統 (V2.9.371 - 競賽結果TAB版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.369
+# 📌 版本編號 (VERSION): 2.9.371
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.369"
+VERSION = "2.9.371"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -976,7 +976,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
         except Exception as e:
             st.error(f"❌ 寫入失敗：{e}")
 
-    t1, t2, t3 = st.tabs(["📋 指派任務", "📋 學生名單", "📖 題目講解"])
+    t1, t2, t3, t4 = st.tabs(["📋 指派任務", "📋 學生名單", "📖 題目講解", "🏆 競賽結果"])
 
     with t1:
         # 指派任務獨立更新鍵（只更新 assignments）
@@ -1804,7 +1804,90 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                                 st.error(f"❌ 發布失敗：{_e_comb}")
 
         # ══════════════════════════════════════════════════════════════════
-        # 區塊三：任務列表
+        # 區塊三：競賽答題模式任務
+        # ══════════════════════════════════════════════════════════════════
+        st.divider()
+        st.subheader("🏆 競賽答題模式")
+        st.caption("題目隨機、選項隨機、答完不顯示對錯，最後一起顯示成績和排名")
+
+        with st.expander("➕ 建立競賽任務", expanded=False):
+            import re as _re_race
+
+            # 選擇來源任務
+            _race_task_opts = ["（請選擇任務）"]
+            _df_a_race = pd.DataFrame()
+            if not df_a.empty and '任務名稱' in df_a.columns:
+                _df_a_race = df_a[df_a.get('狀態', pd.Series(dtype=str)).fillna('') != '已刪除'].copy()
+                _df_a_race = _df_a_race[_df_a_race['任務名稱'].str.contains(r'\[T\d+\]', regex=True, na=False)]
+                _race_task_opts = ["（請選擇任務）"] + _sort_task_names(_df_a_race['任務名稱'].tolist())
+
+            sel_race_src = st.selectbox("📋 選擇來源任務", _race_task_opts, key="race_src_task")
+
+            # 指派班級
+            all_groups_race = sorted(df_s[~df_s['分組'].isin(['ADMIN','TEACHER'])]['分組'].unique())
+            race_groups = st.multiselect("👥 指派班級", [_group_label(g) for g in all_groups_race], key="race_groups")
+            race_group_ids = [g for g in all_groups_race if _group_label(g) in race_groups]
+
+            # 日期
+            _rcc1, _rcc2 = st.columns(2)
+            race_date_start = _rcc1.date_input("開始日期", value=get_now().date(), key="race_date_start")
+            race_date_end   = _rcc2.date_input("結束日期", value=get_now().date(), key="race_date_end")
+
+            if st.button("🚀 發布競賽任務", type="primary", use_container_width=True, key="race_publish"):
+                if sel_race_src == "（請選擇任務）":
+                    st.error("請先選擇來源任務")
+                elif not race_groups:
+                    st.error("請選擇指派班級")
+                else:
+                    _race_row = _df_a_race[_df_a_race['任務名稱'] == sel_race_src].iloc[0]
+                    _race_qids_str = str(_race_row.get('題目ID清單','') or '')
+                    _race_qids = [q.strip() for q in _race_qids_str.split(',') if q.strip() and q.strip() != 'nan']
+                    _race_stus = []
+                    for _rg in race_group_ids:
+                        _race_stus.extend(df_s[df_s['分組'] == _rg]['姓名'].tolist())
+                    _race_stus = sorted(set(_race_stus))
+
+                    try:
+                        # 取任務序號
+                        _sb_r = get_supabase()
+                        _today_r = get_now().strftime("%y%m%d")
+                        _exist_r = _sb_r.table("assignments").select("task_id").execute()
+                        _today_cnt_r = sum(1 for row in (_exist_r.data or []) if str(row.get('task_id','')).startswith(f'T{_today_r}'))
+                        _race_tid = f"T{_today_r}{_today_cnt_r+1:03d}"
+                        _groups_lbl = ','.join(race_group_ids)
+                        _teacher = st.session_state.user_name
+                        _ptime   = get_now().strftime("%Y-%m-%d_%H:%M")
+                        _race_name = f"[{_race_tid}] 競賽模式-{_sort_task_names([sel_race_src])[0]}-{len(_race_qids)}題-{_groups_lbl}-{_teacher}-{_ptime}-{race_date_start}~{race_date_end}"
+
+                        _race_payload = _to_en_assign({
+                            "建立時間":  get_now().strftime("%Y-%m-%d %H:%M:%S"),
+                            "任務名稱":  _race_name,
+                            "任務編號":  _race_tid,
+                            "對象班級":  _groups_lbl,
+                            "指派學生":  ','.join(_race_stus),
+                            "指派人數":  len(_race_stus),
+                            "內容":      "競賽模式",
+                            "任務說明":  f"競賽模式，來源：{sel_race_src}",
+                            "單字設定":  "",
+                            "題目數":    len(_race_qids),
+                            "題目ID清單": ','.join(_race_qids),
+                            "開始日期":  str(race_date_start),
+                            "結束日期":  str(race_date_end),
+                            "參考學生":  '',
+                            "狀態":      "進行中",
+                            "類型":      "競賽",
+                        })
+                        _sb_r.table("assignments").insert(_race_payload).execute()
+                        load_assignments.clear()
+                        st.session_state['_a2_cache_stale'] = True
+                        st.success(f"🎉 競賽任務發布！序號：{_race_tid}，共 {len(_race_qids)} 題，{len(_race_stus)} 位學生")
+                        st.balloons()
+                        st.rerun()
+                    except Exception as _e_race:
+                        st.error(f"❌ 發布失敗：{_e_race}")
+
+        # ══════════════════════════════════════════════════════════════════
+        # 區塊四：任務列表
         # ══════════════════════════════════════════════════════════════════
         st.divider()
         st.subheader("📋 任務列表")
@@ -2671,6 +2754,95 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                                 st.success(f"✅ 已為 {len(target_stus_t4)} 位學生寫入講解紀錄！")
             st.divider()
         _t3_topic_explanation()
+
+    with t4:
+        st.subheader("🏆 競賽結果")
+
+        # 選競賽任務
+        _df_a_rt = pd.DataFrame()
+        _race_opts = ["（請選擇競賽任務）"]
+        if not df_a.empty and '任務名稱' in df_a.columns and '類型' in df_a.columns:
+            _df_a_rt = df_a[df_a['類型'].fillna('') == '競賽'].copy()
+            if not _df_a_rt.empty:
+                _race_opts = ["（請選擇競賽任務）"] + _sort_task_names(_df_a_rt['任務名稱'].tolist())
+
+        _sel_race = st.selectbox("📋 選擇競賽任務", _race_opts, key="t4_race_sel")
+
+        if _sel_race == "（請選擇競賽任務）":
+            st.info("請選擇競賽任務查看結果。")
+        else:
+            _rt4_col1, _rt4_col2 = st.columns([4, 1])
+            _rt4_col1.caption("競賽結果即時統計")
+            if _rt4_col2.button("🔄 更新", key="t4_race_refresh", use_container_width=True):
+                st.session_state.pop('_race_result_cache', None)
+
+            _race_cache_key = f"_race_result_{_sel_race}"
+            if _race_cache_key not in st.session_state:
+                _df_l_race = _get_df_l()
+                _race_row  = _df_a_rt[_df_a_rt['任務名稱'] == _sel_race].iloc[0]
+                _race_qids_str = str(_race_row.get('題目ID清單','') or '')
+                _race_qids = set(q.strip() for q in _race_qids_str.split(',') if q.strip() and q.strip() != 'nan')
+                _total_q   = len(_race_qids)
+
+                # 篩選此競賽的 logs
+                _rt_logs = pd.DataFrame()
+                if not _df_l_race.empty and _race_qids:
+                    _rev_tid = str(_race_row.get('任務編號','') or '')
+                    _rt_logs = _df_l_race[
+                        _df_l_race['題目ID'].isin(_race_qids) |
+                        (_df_l_race['任務名稱'].fillna('') == _rev_tid)
+                    ].copy()
+
+                # 計算排名
+                _rank_data = []
+                if not _rt_logs.empty:
+                    for _stu, _sg in _rt_logs.groupby('姓名'):
+                        _s_answered = set(_sg[~_sg['結果'].fillna('').str.contains('📖|練習')]['題目ID'].tolist())
+                        _s_correct  = set(_sg[_sg['結果'].fillna('').str.contains('✅')]['題目ID'].tolist())
+                        _s_wrong    = _s_answered - _s_correct
+                        _s_acc      = len(_s_correct) / _total_q if _total_q else 0
+                        # 作答時間（最早到最晚）
+                        _s_time = 9999
+                        if '時間' in _sg.columns and len(_sg) >= 2:
+                            try:
+                                _t_sorted = pd.to_datetime(_sg['時間']).sort_values()
+                                _s_time   = (_t_sorted.iloc[-1] - _t_sorted.iloc[0]).total_seconds()
+                            except:
+                                pass
+                        _rank_data.append({
+                            '姓名': _stu,
+                            '答題數': len(_s_answered),
+                            '答對數': len(_s_correct),
+                            '答錯數': len(_s_wrong),
+                            '正確率': _s_acc,
+                            '作答秒數': _s_time,
+                        })
+
+                st.session_state[_race_cache_key] = {
+                    'rank_data': _rank_data,
+                    'total_q': _total_q,
+                }
+
+            _rc = st.session_state.get(_race_cache_key, {})
+            _rank_data = _rc.get('rank_data', [])
+            _total_q   = _rc.get('total_q', 0)
+
+            if not _rank_data:
+                st.info("目前尚無學生作答記錄。")
+            else:
+                _rank_df = pd.DataFrame(_rank_data).sort_values(
+                    ['正確率', '作答秒數'], ascending=[False, True]
+                ).reset_index(drop=True)
+                _rank_df.index += 1
+                _rank_df['正確率']  = _rank_df['正確率'].apply(lambda x: f"{int(x*100)}%")
+                _rank_df['作答時間'] = _rank_df['作答秒數'].apply(
+                    lambda x: f"{int(x//60)}分{int(x%60):02d}秒" if x < 9000 else "—"
+                )
+                _rank_df = _rank_df[['姓名','答題數','答對數','答錯數','正確率','作答時間']]
+
+                st.caption(f"共 {len(_rank_df)} 位學生作答　總題數：{_total_q} 題")
+                st.dataframe(_rank_df, use_container_width=True, hide_index=False)
+
     st.stop()
 
 # ------------------------------------------------------------------------------
@@ -2765,9 +2937,13 @@ if not st.session_state.quiz_loaded:
 
             # 計算個人完成進度（混合任務：一般題答對 + 朗讀題有紀錄）
             task_type       = str(arow.get('類型', '一般'))
+            is_race_task    = task_type == '競賽'
             is_reading_task = task_type == '朗讀'
             is_vocab_task   = task_type == '單字'
             is_mixed_task   = task_type == '混合'
+
+            # 競賽模式 flag
+            is_race_task    = task_type == '競賽'
             is_rm_task      = task_type == '閱讀單句'
             is_lp_task      = task_type == '聽力音標'
             is_ls_task      = task_type == '聽力重組'
@@ -2861,7 +3037,7 @@ if not st.session_state.quiz_loaded:
                                 st.session_state.update({
                                     "quiz_list": records,
                                     "q_idx": min(_start_idx, len(records)-1),
-                                    "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key, "practice_mode": _is_practice,
+                                    "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key, "practice_mode": _is_practice, "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
                                     "ans": [], "used_history": [], "shuf": [], "show_analysis": False
                                 })
                                 st.rerun()
@@ -2930,7 +3106,7 @@ if not st.session_state.quiz_loaded:
                                 st.session_state.update({
                                     "quiz_list": records,
                                     "q_idx": min(_start_idx, len(records)-1),
-                                    "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key, "practice_mode": _is_practice,
+                                    "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key, "practice_mode": _is_practice, "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
                                     "ans": [], "used_history": [], "shuf": [], "show_analysis": False
                                 })
                                 st.rerun()
@@ -2958,11 +3134,13 @@ if not st.session_state.quiz_loaded:
                     else:
                         _start_from = 1
 
-                    _is_practice = (_mode == "🏋️ 練習模式")
-                    btn_key = f"start_task_{_task_idx}_{task_name[:20]}"
-                    label   = "📌 繼續未完成部分" if _mode == "📌 繼續未完成部分" else (f"🏋️ 練習模式 從第 {_start_from} 題" if _is_practice else f"🔢 從第 {_start_from} 題開始")
-
-                    if st.button(f"🚀 {label}", key=btn_key, type="primary", use_container_width=True):
+                    # 競賽模式任務：只顯示競賽按鈕，不顯示一般模式選項
+                    if is_race_task:
+                        _is_practice = False
+                        btn_key = f"start_task_{_task_idx}_{task_name[:20]}"
+                        if st.button("🏆 開始競賽", key=btn_key, type="primary", use_container_width=True):
+                            pending_ids = q_ids_all
+                            _start_idx_fwd = 0
                         if _mode == "📌 繼續未完成部分":
                             _start_idx_fwd = 0
                             pending_ids = q_ids_all - my_done
@@ -2991,7 +3169,7 @@ if not st.session_state.quiz_loaded:
                                     del st.session_state[_k]
                                 st.session_state.update({
                                     "quiz_list": records,
-                                    "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key, "practice_mode": _is_practice,
+                                    "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key, "practice_mode": _is_practice, "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
                                     "ans": [], "used_history": [], "shuf": [], "show_analysis": False
                                 })
                                 st.rerun()
@@ -3023,7 +3201,7 @@ if not st.session_state.quiz_loaded:
                                     del st.session_state[_k]
                                 st.session_state.update({
                                     "quiz_list": records,
-                                    "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key, "practice_mode": _is_practice,
+                                    "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key, "practice_mode": _is_practice, "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
                                     "ans": [], "used_history": [], "shuf": [], "show_analysis": False
                                 })
                                 st.rerun()
@@ -3044,7 +3222,7 @@ if not st.session_state.quiz_loaded:
                                     del st.session_state[_k]
                                 st.session_state.update({
                                     "quiz_list": records,
-                                    "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key, "practice_mode": _is_practice,
+                                    "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key, "practice_mode": _is_practice, "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
                                     "ans": [], "used_history": [], "shuf": [], "show_analysis": False
                                 })
                                 st.rerun()
@@ -3097,7 +3275,7 @@ if not st.session_state.quiz_loaded:
                                         del st.session_state[_k]
                                     st.session_state.update({
                                         "quiz_list": records,
-                                        "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key, "practice_mode": _is_practice,
+                                        "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key, "practice_mode": _is_practice, "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
                                         "ans": [], "used_history": [], "shuf": [], "show_analysis": False
                                     })
                                     st.rerun()
@@ -3117,7 +3295,7 @@ if not st.session_state.quiz_loaded:
                                         del st.session_state[_k]
                                     st.session_state.update({
                                         "quiz_list": records,
-                                        "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key, "practice_mode": _is_practice,
+                                        "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key, "practice_mode": _is_practice, "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
                                         "ans": [], "used_history": [], "shuf": [], "show_analysis": False
                                     })
                                     st.rerun()
@@ -3200,7 +3378,7 @@ if not st.session_state.quiz_loaded:
                                     del st.session_state[_k]
                                 st.session_state.update({
                                     "quiz_list": pending.to_dict('records'),
-                                    "q_idx": min(_start_idx_fwd, len(pending)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key, "practice_mode": _is_practice,
+                                    "q_idx": min(_start_idx_fwd, len(pending)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key, "practice_mode": _is_practice, "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
                                     "ans": [], "used_history": [], "shuf": [], "show_analysis": False
                                 })
                                 st.rerun()
@@ -3224,7 +3402,7 @@ if not st.session_state.quiz_loaded:
                                     del st.session_state[_k]
                                 st.session_state.update({
                                     "quiz_list": records,
-                                    "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key, "practice_mode": _is_practice,
+                                    "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key, "practice_mode": _is_practice, "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
                                     "ans": [], "used_history": [], "shuf": [], "show_analysis": False
                                 })
                                 st.rerun()
@@ -3805,7 +3983,8 @@ if st.session_state.quiz_loaded:
     total_q   = len(st.session_state.quiz_list)
     answered_c    = st.session_state.get('answered_count', 0)
     _practice_mode = st.session_state.get('practice_mode', False)
-    _mode_label   = "🏋️ 練習模式" if _practice_mode else ""
+    _race_mode     = st.session_state.get('race_mode', False)
+    _mode_label    = "🏆 競賽模式" if _race_mode else ("🏋️ 練習模式" if _practice_mode else "")
     st.markdown(f"### 🔴 練習中 (第 {st.session_state.q_idx + 1} / {total_q} 題　｜　已作答 {answered_c} 題) {_mode_label}")
     q = st.session_state.quiz_list[st.session_state.q_idx]
     # 判斷題型：優先用 _type，其次看欄位，最後看單元名稱
@@ -4441,7 +4620,7 @@ if st.session_state.quiz_loaded:
     elif is_mcq:
         mcq_q   = str(q.get('單選題目') or q.get('中文題目') or '【無資料】')
         ans_key = str(q.get("單選答案") or "").strip()
-        already_answered = st.session_state.get('show_analysis', False) and not st.session_state.get('practice_mode', False)
+        already_answered = st.session_state.get('show_analysis', False) and not st.session_state.get('practice_mode', False) and not _race_mode
 
         # 解析選項（從獨立欄位或題目文字）
         mcq_full    = str(q.get('單選題目') or q.get('中文題目') or '')
@@ -4500,6 +4679,12 @@ if st.session_state.quiz_loaded:
                 st.session_state[_mcq_written_key] = True
                 is_ok = (orig_opt.upper() == ans_key.upper())
                 _err_msg = f"❌ 錯誤！正確答案：({_correct_display}) {_correct_text}"
+                # 競賽模式：不顯示對錯，直接跳下一題
+                if _race_mode:
+                    st.session_state.update({
+                        "current_res": "✅" if is_ok else "❌",
+                        "show_analysis": False
+                    })
                 st.session_state.update({
                     "current_res": "✅ 正確！" if is_ok else _err_msg,
                     "show_analysis": True
@@ -4677,10 +4862,15 @@ if st.session_state.quiz_loaded:
     else:
         nxt_col = c_nav[1]
 
-    nxt_label = "下一題 ➡️" if st.session_state.q_idx + 1 < len(st.session_state.quiz_list) else "🏁 結束練習"
+    nxt_label = "下一題 ➡️" if st.session_state.q_idx + 1 < len(st.session_state.quiz_list) else ("🏆 查看成績" if _race_mode else "🏁 結束練習")
     if nxt_col.button(nxt_label, type="primary", use_container_width=True):
         if st.session_state.q_idx + 1 < len(st.session_state.quiz_list):
             next_idx = st.session_state.q_idx + 1
+            # 競賽模式：答完自動跳下一題（不等 show_analysis）
+            if _race_mode:
+                st.session_state.q_idx += 1
+                _clear_q()
+                st.rerun()
             # 預先載入下一題聽力音檔
             next_q = st.session_state.quiz_list[next_idx]
             if next_q.get('_type') == 'listen_phon':
@@ -4707,8 +4897,75 @@ if st.session_state.quiz_loaded:
             _clear_q()
             st.rerun()
         else:
-            st.session_state.update({"quiz_loaded": False, "range_confirmed": False})
-            st.rerun()
+            # 競賽模式：顯示成績和排名
+            if _race_mode:
+                _race_elapsed = time.time() - (st.session_state.get('race_start_time') or time.time())
+                _race_min = int(_race_elapsed // 60)
+                _race_sec = int(_race_elapsed % 60)
+                _race_logs = _get_df_l()
+                _task_name = st.session_state.get('current_task_name', '')
+                _user      = st.session_state.user_name
+                _quiz_ids  = set(q.get('題目ID','') for q in st.session_state.get('quiz_list', []))
+
+                # 本次作答統計
+                _my_logs = _race_logs[
+                    (_race_logs['姓名'] == _user) &
+                    (_race_logs['題目ID'].isin(_quiz_ids))
+                ] if not _race_logs.empty else pd.DataFrame()
+                _total    = len(_quiz_ids)
+                _answered = len(set(_my_logs['題目ID'].tolist())) if not _my_logs.empty else 0
+                _correct  = len(_my_logs[_my_logs['結果'].fillna('').str.contains('✅', na=False)]) if not _my_logs.empty else 0
+                _wrong    = _answered - _correct
+                _acc      = f"{int(_correct/_answered*100)}%" if _answered else "0%"
+
+                st.markdown(f"## 🏆 競賽完成！")
+                rc1, rc2, rc3, rc4 = st.columns(4)
+                rc1.metric("⏱ 作答時間", f"{_race_min}分{_race_sec:02d}秒")
+                rc2.metric("📝 題數", f"{_answered}/{_total}")
+                rc3.metric("✅ 答對", _correct)
+                rc4.metric("🎯 正確率", _acc)
+
+                # 排名計算
+                if not _race_logs.empty and _task_name:
+                    _all_stus_logs = _race_logs[_race_logs['題目ID'].isin(_quiz_ids)].copy()
+                    _rank_data = []
+                    for _stu, _sg in _all_stus_logs.groupby('姓名'):
+                        _s_correct = len(_sg[_sg['結果'].fillna('').str.contains('✅', na=False)])
+                        _s_ans     = len(set(_sg['題目ID'].tolist()))
+                        _s_acc     = _s_correct / _s_ans if _s_ans else 0
+                        # 取最早和最晚的時間差當作該學生的作答時間
+                        if '時間' in _sg.columns and len(_sg) > 1:
+                            try:
+                                _t_min = pd.to_datetime(_sg['時間'].min())
+                                _t_max = pd.to_datetime(_sg['時間'].max())
+                                _s_time = (_t_max - _t_min).total_seconds()
+                            except:
+                                _s_time = 9999
+                        else:
+                            _s_time = 9999
+                        _rank_data.append({'姓名': _stu, '正確率': _s_acc, '正確題數': _s_correct, '作答秒數': _s_time})
+
+                    if _rank_data:
+                        _rank_df = pd.DataFrame(_rank_data).sort_values(['正確率', '作答秒數'], ascending=[False, True]).reset_index(drop=True)
+                        _rank_df.index += 1
+                        _rank_df['正確率'] = _rank_df['正確率'].apply(lambda x: f"{int(x*100)}%")
+                        _rank_df['作答時間'] = _rank_df['作答秒數'].apply(lambda x: f"{int(x//60)}分{int(x%60):02d}秒" if x < 9999 else "—")
+                        _rank_df = _rank_df[['姓名','正確題數','正確率','作答時間']]
+
+                        # 我的排名
+                        _my_rank = _rank_df[_rank_df['姓名'] == _user].index
+                        if len(_my_rank) > 0:
+                            st.success(f"🥇 正確率排名：第 **{_my_rank[0]}** 名 / 共 {len(_rank_df)} 人")
+
+                        st.markdown("**📊 班級排名**")
+                        st.dataframe(_rank_df.style.highlight_between(subset=['姓名'], axis=None, props='background-color:yellow;' if _user in _rank_df['姓名'].values else ''), use_container_width=True, hide_index=False)
+
+                if st.button("🏁 返回主選單", type="primary", use_container_width=True):
+                    st.session_state.update({"quiz_loaded": False, "range_confirmed": False, "race_mode": False})
+                    st.rerun()
+            else:
+                st.session_state.update({"quiz_loaded": False, "range_confirmed": False})
+                st.rerun()
 
     if st.button("🏁 🔴 結束作答 (返回主選單)", use_container_width=True):
         st.session_state.update({"quiz_loaded": False, "range_confirmed": False})
