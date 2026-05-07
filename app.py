@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.365 - 講解scope取出後套用版)
+# 🧩 英文全能練習系統 (V2.9.366 - 複習模式logs懶載入版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.365
+# 📌 版本編號 (VERSION): 2.9.366
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.365"
+VERSION = "2.9.366"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3302,6 +3302,7 @@ if not st.session_state.quiz_loaded:
 
     if st.button("📖 開始復習", type="primary", use_container_width=True, key="rv_start"):
         try:
+            df_l = _get_df_l()  # 懶載入 logs
             if not df_l.empty:
                 my_logs = df_l[df_l['姓名'] == user_name].copy()
                 # 不用任務名稱篩選，改用題目ID比對
@@ -3314,6 +3315,7 @@ if not st.session_state.quiz_loaded:
             else:
                 my_logs = pd.DataFrame()
         except:
+            df_l = _get_df_l()
             my_logs = df_l[df_l['姓名'] == user_name].copy() if not df_l.empty and '姓名' in df_l.columns else pd.DataFrame()
 
         def _get_qid(r, prefix=""):
