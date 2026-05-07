@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.373 - pending_ids空值修復版)
+# 🧩 英文全能練習系統 (V2.9.374 - pending_ids全面保護版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.373
+# 📌 版本編號 (VERSION): 2.9.374
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.373"
+VERSION = "2.9.374"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3163,238 +3163,239 @@ if not st.session_state.quiz_loaded:
                         if not hasattr(st.session_state, "_is_practice_defined"):
                             _is_practice = _is_practice if "_is_practice" in dir() else False
 
-                        if is_reading_task:
-                            df_r2 = df_r.copy()
-                            if '題目ID' not in df_r2.columns:
-                                df_r2['題目ID'] = df_r2.apply(
-                                    lambda r: f"R_{r.get('版本','')}_{r.get('年度','')}_{r.get('冊編號','')}_{r.get('單元','')}_{r.get('課編號','')}_{r.get('句編號','')}", axis=1
-                                )
-                            pending = df_r2[df_r2['題目ID'].isin(pending_ids)].copy()
-                            if not pending.empty:
-                                records = pending.to_dict('records')
-                                for r in records:
-                                    r['_type'] = 'reading'
-                                # 清除所有舊的字母池，避免題目字母錯誤
-                                for _k in [k for k in list(st.session_state.keys()) if k.startswith("vocab_pool_") or k.startswith("vocab_ans_") or k.startswith("vocab_used_") or k.startswith("mcq_order_") or k.startswith("rm_order_") or k.startswith("mcq_written_")]:
-                                    del st.session_state[_k]
-                                st.session_state.update({
-                                    "quiz_list": records,
-                                    "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key, "practice_mode": _is_practice, "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
-                                    "ans": [], "used_history": [], "shuf": [], "show_analysis": False
-                                })
-                                st.rerun()
-
-                        elif is_vocab_task:
-                            # 純單字任務
-                            df_v2 = df_v.copy() if not df_v.empty else pd.DataFrame()
-                            if not df_v2.empty and '題目ID' not in df_v2.columns:
-                                df_v2['題目ID'] = df_v2.apply(
-                                    lambda r: f"V_{r.get('版本','')}_{r.get('年度','')}_{r.get('冊編號','')}_{r.get('單元','')}_{r.get('課編號','')}_{r.get('句編號','')}", axis=1
-                                )
-                            pending = df_v2[df_v2['題目ID'].isin(pending_ids)].copy() if not df_v2.empty else pd.DataFrame()
-                            if not pending.empty:
-                                vocab_cfg_str = str(arow.get('單字設定', '') or '')
-                                vcfg = vocab_cfg_str.split('|') if vocab_cfg_str else []
-                                v_mode_t  = vcfg[0] if len(vcfg) > 0 else '自選'
-                                if v_mode_t == '學生自選':
-                                    v_mode_t = '自選'
-                                v_timer_t = int(vcfg[1]) if len(vcfg) > 1 else 30
-                                v_extra_t = int(vcfg[2]) if len(vcfg) > 2 else 3
-                                records = pending.to_dict('records')
-                                for rec in records:
-                                    rec['_type']        = 'vocab'
-                                    rec['_vocab_mode']  = v_mode_t
-                                    rec['_vocab_timer'] = v_timer_t
-                                    rec['_vocab_extra'] = v_extra_t
-                                # 清除所有舊的字母池，避免題目字母錯誤
-                                for _k in [k for k in list(st.session_state.keys()) if k.startswith("vocab_pool_") or k.startswith("vocab_ans_") or k.startswith("vocab_used_") or k.startswith("mcq_order_") or k.startswith("rm_order_") or k.startswith("mcq_written_")]:
-                                    del st.session_state[_k]
-                                st.session_state.update({
-                                    "quiz_list": records,
-                                    "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key, "practice_mode": _is_practice, "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
-                                    "ans": [], "used_history": [], "shuf": [], "show_analysis": False
-                                })
-                                st.rerun()
-
-                        elif is_rm_task:
-                            df_rm2 = df_rm.copy() if not df_rm.empty else pd.DataFrame()
-                            if not df_rm2.empty and '題目ID' not in df_rm2.columns:
-                                df_rm2['題目ID'] = df_rm2.apply(
-                                    lambda r: f"RM_{r.get('版本','')}_{r.get('年度','')}_{r.get('冊編號','')}_{r.get('單元','')}_{r.get('課編號','')}_{r.get('句編號','')}", axis=1
-                                )
-                            pending = df_rm2[df_rm2['題目ID'].isin(pending_ids)].copy() if not df_rm2.empty else pd.DataFrame()
-                            if not pending.empty:
-                                records = pending.to_dict('records')
-                                for rec in records:
-                                    rec['_type'] = 'reading_mcq'
-                                # 清除所有舊的字母池，避免題目字母錯誤
-                                for _k in [k for k in list(st.session_state.keys()) if k.startswith("vocab_pool_") or k.startswith("vocab_ans_") or k.startswith("vocab_used_") or k.startswith("mcq_order_") or k.startswith("rm_order_") or k.startswith("mcq_written_")]:
-                                    del st.session_state[_k]
-                                st.session_state.update({
-                                    "quiz_list": records,
-                                    "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key, "practice_mode": _is_practice, "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
-                                    "ans": [], "used_history": [], "shuf": [], "show_analysis": False
-                                })
-                                st.rerun()
-
-                        elif is_lp_task:
-                            if not df_lp.empty:
-                                dlp2 = df_lp.copy()
-                                dlp2['題目ID'] = dlp2.apply(_get_lp_qid, axis=1)
-                                pending_lp = dlp2[dlp2['題目ID'].isin(pending_ids)].copy()
-                                if not pending_lp.empty:
-                                    import random as _rand_lp2
-                                    lp_recs2 = []
-                                    for _, lp_row in pending_lp.iterrows():
-                                        lp_d = lp_row.to_dict()
-                                        distractors = _get_lp_distractors(df_lp, lp_row, n=3)
-                                        opts = distractors + [lp_row.to_dict()]
-                                        _rand_lp2.shuffle(opts)
-                                        opts = opts[:4]
-                                        correct_idx = next((i for i, o in enumerate(opts) if o.get('KK符號') == lp_d.get('KK符號')), 0)
-                                        lp_d['_lp_opts']        = opts
-                                        lp_d['_lp_correct_opt'] = ["A","B","C","D"][correct_idx]
-                                        lp_d['_type']           = 'listen_phon'
-                                        lp_recs2.append(lp_d)
-                                    import random as _rand_lp_final
-                                    _rand_lp_final.shuffle(lp_recs2)
-                                    records = lp_recs2
-                                    # 預載第一題音檔
-                                    if records:
-                                        _f1 = records[min(_start_idx_fwd, len(records)-1)]
-                                        _f1_num = str(_f1.get('總編號','')).strip()
-                                        _f1_sym = str(_f1.get('KK符號','')).strip()
-                                        _f1_qid = _f1.get('題目ID','')
-                                        try:
-                                            _f1_fkey = f"{int(_f1_num):02d}-{_f1_sym}".lower()
-                                        except:
-                                            _f1_fkey = f"{_f1_num}-{_f1_sym}".lower()
-                                        _f1_cache = f"lp_audio_{min(_start_idx_fwd, len(records)-1)}_{_f1_qid}"
-                                        if not st.session_state.get(_f1_cache):
-                                            try:
-                                                import requests as _req_f1, base64 as _b64_f1
-                                                _f1_idx = load_audio_file_index()
-                                                _f1_fid = _f1_idx.get(_f1_fkey, "")
-                                                if _f1_fid:
-                                                    _f1_r = _req_f1.get(get_audio_url(_f1_fid), timeout=8)
-                                                    if _f1_r.status_code == 200:
-                                                        st.session_state[_f1_cache] = _b64_f1.b64encode(_f1_r.content).decode()
-                                            except:
-                                                pass
-                                    for _k in [k for k in list(st.session_state.keys()) if k.startswith("vocab_pool_") or k.startswith("vocab_ans_") or k.startswith("vocab_used_")]:
-                                        del st.session_state[_k]
-                                    st.session_state.update({
-                                        "quiz_list": records,
-                                        "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key, "practice_mode": _is_practice, "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
-                                        "ans": [], "used_history": [], "shuf": [], "show_analysis": False
-                                    })
-                                    st.rerun()
-                                else:
-                                    st.error("❌ 找不到任務題目（已全部完成或題目不存在）")
-
-                        elif is_ls_task:
-                            if not df_ls.empty:
-                                dls_t = df_ls.copy()
-                                dls_t['題目ID'] = dls_t.apply(_get_ls_qid, axis=1)
-                                dls_t['_type']  = 'listen_sent'
-                                pending_ls = dls_t[dls_t['題目ID'].isin(pending_ids)].copy()
-                                if not pending_ls.empty:
-                                    pending_ls['_ls_words'] = pending_ls['聽力重組英文答案'].apply(_ls_split_words)
-                                    records = pending_ls.to_dict('records')
-                                    for _k in [k for k in list(st.session_state.keys()) if k.startswith("vocab_pool_") or k.startswith("vocab_ans_") or k.startswith("vocab_used_") or k.startswith("ls_ans_") or k.startswith("ls_used_") or k.startswith("ls_shuf_")]:
-                                        del st.session_state[_k]
-                                    st.session_state.update({
-                                        "quiz_list": records,
-                                        "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key, "practice_mode": _is_practice, "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
-                                        "ans": [], "used_history": [], "shuf": [], "show_analysis": False
-                                    })
-                                    st.rerun()
-
-                        elif is_mixed_task:
-                            df_q2 = pd.concat([df_q, df_mcq], ignore_index=True) if not df_mcq.empty else df_q.copy()
-                            df_q2['題目ID'] = df_q2.apply(lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1)
-                            df_q2 = df_q2.drop_duplicates(subset='題目ID', keep='last')
-                            df_q2['題目ID'] = df_q2.apply(
-                                lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1
-                            )
-                            df_r2 = df_r.copy() if not df_r.empty else pd.DataFrame()
-                            if not df_r2.empty and '題目ID' not in df_r2.columns:
-                                df_r2['題目ID'] = df_r2.apply(
-                                    lambda r: f"R_{r.get('版本','')}_{r.get('年度','')}_{r.get('冊編號','')}_{r.get('單元','')}_{r.get('課編號','')}_{r.get('句編號','')}", axis=1
-                                )
-                            df_v2 = df_v.copy() if not df_v.empty else pd.DataFrame()
-                            if not df_v2.empty and '題目ID' not in df_v2.columns:
-                                df_v2['題目ID'] = df_v2.apply(
-                                    lambda r: f"V_{r.get('版本','')}_{r.get('年度','')}_{r.get('冊編號','')}_{r.get('單元','')}_{r.get('課編號','')}_{r.get('句編號','')}", axis=1
-                                )
-                            df_rm2 = df_rm.copy() if not df_rm.empty else pd.DataFrame()
-                            if not df_rm2.empty and '題目ID' not in df_rm2.columns:
-                                df_rm2['題目ID'] = df_rm2.apply(
-                                    lambda r: f"RM_{r.get('版本','')}_{r.get('年度','')}_{r.get('冊編號','')}_{r.get('單元','')}_{r.get('課編號','')}_{r.get('句編號','')}", axis=1
-                                )
-                            pending_q  = df_q2[df_q2['題目ID'].isin(pending_ids)].copy()
-                            pending_r  = df_r2[df_r2['題目ID'].isin(pending_ids)].copy() if not df_r2.empty else pd.DataFrame()
-                            pending_v  = df_v2[df_v2['題目ID'].isin(pending_ids)].copy() if not df_v2.empty else pd.DataFrame()
-                            pending_rm = df_rm2[df_rm2['題目ID'].isin(pending_ids)].copy() if not df_rm2.empty else pd.DataFrame()
-                            if not pending_r.empty:
-                                pending_r['_type'] = 'reading'
-                            if not pending_rm.empty:
-                                pending_rm['_type'] = 'reading_mcq'
-                            if not pending_v.empty:
-                                vocab_cfg_str = str(arow.get('單字設定', '') or '')
-                                vcfg = vocab_cfg_str.split('|') if vocab_cfg_str else []
-                                v_mode_mixed = vcfg[0] if len(vcfg) > 0 else '自選'
-                                if v_mode_mixed == '學生自選':
-                                    v_mode_mixed = '自選'
-                                pending_v['_type']        = 'vocab'
-                                pending_v['_vocab_mode']  = v_mode_mixed
-                                pending_v['_vocab_timer'] = int(vcfg[1]) if len(vcfg) > 1 else 30
-                                pending_v['_vocab_extra'] = int(vcfg[2]) if len(vcfg) > 2 else 3
-                            # 聽力音標（混合任務）
-                            pending_lp_m = pd.DataFrame()
-                            if not df_lp.empty:
-                                dlp_m = df_lp.copy()
-                                dlp_m['題目ID'] = dlp_m.apply(_get_lp_qid, axis=1)
-                                _plp = dlp_m[dlp_m['題目ID'].isin(pending_ids)].copy()
-                                if not _plp.empty:
-                                    import random as _rand_lpm
-                                    _lp_recs_m = []
-                                    for _, _lr in _plp.iterrows():
-                                        _ld = _lr.to_dict()
-                                        _dis = _get_lp_distractors(df_lp, _lr, n=3)
-                                        _opts = _dis + [_lr.to_dict()]
-                                        _rand_lpm.shuffle(_opts)
-                                        _opts = _opts[:4]
-                                        _ci = next((i for i, o in enumerate(_opts) if o.get('KK符號') == _ld.get('KK符號')), 0)
-                                        _ld['_lp_opts'] = _opts
-                                        _ld['_lp_correct_opt'] = ["A","B","C","D"][_ci]
-                                        _ld['_type'] = 'listen_phon'
-                                        _lp_recs_m.append(_ld)
-                                    pending_lp_m = pd.DataFrame(_lp_recs_m)
-                            # 聽力句子重組（混合任務）
-                            pending_ls_m = pd.DataFrame()
-                            if not df_ls.empty:
-                                dls_m = df_ls.copy()
-                                dls_m['題目ID'] = dls_m.apply(_get_ls_qid, axis=1)
-                                dls_m['_type'] = 'listen_sent'
-                                _pls = dls_m[dls_m['題目ID'].isin(pending_ids)].copy()
-                                if not _pls.empty:
-                                    _pls['_ls_words'] = _pls['聽力重組英文答案'].apply(_ls_split_words)
-                                    pending_ls_m = _pls
-                            pending = pd.concat([pending_q, pending_r, pending_v, pending_rm, pending_lp_m, pending_ls_m], ignore_index=True)
-                            if not pending.empty:
-                                # 清除所有舊的字母池
-                                for _k in [k for k in list(st.session_state.keys()) if k.startswith("vocab_pool_") or k.startswith("vocab_ans_") or k.startswith("vocab_used_") or k.startswith("mcq_order_") or k.startswith("rm_order_") or k.startswith("mcq_written_")]:
-                                    del st.session_state[_k]
-                                st.session_state.update({
-                                    "quiz_list": pending.to_dict('records'),
-                                    "q_idx": min(_start_idx_fwd, len(pending)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key, "practice_mode": _is_practice, "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
-                                    "ans": [], "used_history": [], "shuf": [], "show_analysis": False
-                                })
-                                st.rerun()
-
-                        elif (can_preload or q_ids_all) and pending_ids:
-                            # 直接從 df_q 取出未完成題目載入（優先用題目ID清單）
+                        if pending_ids:  # 按鈕按下才載入
+                          if is_reading_task:
+                              df_r2 = df_r.copy()
+                              if '題目ID' not in df_r2.columns:
+                                  df_r2['題目ID'] = df_r2.apply(
+                                      lambda r: f"R_{r.get('版本','')}_{r.get('年度','')}_{r.get('冊編號','')}_{r.get('單元','')}_{r.get('課編號','')}_{r.get('句編號','')}", axis=1
+                                  )
+                              pending = df_r2[df_r2['題目ID'].isin(pending_ids)].copy()
+                              if not pending.empty:
+                                  records = pending.to_dict('records')
+                                  for r in records:
+                                      r['_type'] = 'reading'
+                                  # 清除所有舊的字母池，避免題目字母錯誤
+                                  for _k in [k for k in list(st.session_state.keys()) if k.startswith("vocab_pool_") or k.startswith("vocab_ans_") or k.startswith("vocab_used_") or k.startswith("mcq_order_") or k.startswith("rm_order_") or k.startswith("mcq_written_")]:
+                                      del st.session_state[_k]
+                                  st.session_state.update({
+                                      "quiz_list": records,
+                                      "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key, "practice_mode": _is_practice, "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
+                                      "ans": [], "used_history": [], "shuf": [], "show_analysis": False
+                                  })
+                                  st.rerun()
+  
+                          elif is_vocab_task:
+                              # 純單字任務
+                              df_v2 = df_v.copy() if not df_v.empty else pd.DataFrame()
+                              if not df_v2.empty and '題目ID' not in df_v2.columns:
+                                  df_v2['題目ID'] = df_v2.apply(
+                                      lambda r: f"V_{r.get('版本','')}_{r.get('年度','')}_{r.get('冊編號','')}_{r.get('單元','')}_{r.get('課編號','')}_{r.get('句編號','')}", axis=1
+                                  )
+                              pending = df_v2[df_v2['題目ID'].isin(pending_ids)].copy() if not df_v2.empty else pd.DataFrame()
+                              if not pending.empty:
+                                  vocab_cfg_str = str(arow.get('單字設定', '') or '')
+                                  vcfg = vocab_cfg_str.split('|') if vocab_cfg_str else []
+                                  v_mode_t  = vcfg[0] if len(vcfg) > 0 else '自選'
+                                  if v_mode_t == '學生自選':
+                                      v_mode_t = '自選'
+                                  v_timer_t = int(vcfg[1]) if len(vcfg) > 1 else 30
+                                  v_extra_t = int(vcfg[2]) if len(vcfg) > 2 else 3
+                                  records = pending.to_dict('records')
+                                  for rec in records:
+                                      rec['_type']        = 'vocab'
+                                      rec['_vocab_mode']  = v_mode_t
+                                      rec['_vocab_timer'] = v_timer_t
+                                      rec['_vocab_extra'] = v_extra_t
+                                  # 清除所有舊的字母池，避免題目字母錯誤
+                                  for _k in [k for k in list(st.session_state.keys()) if k.startswith("vocab_pool_") or k.startswith("vocab_ans_") or k.startswith("vocab_used_") or k.startswith("mcq_order_") or k.startswith("rm_order_") or k.startswith("mcq_written_")]:
+                                      del st.session_state[_k]
+                                  st.session_state.update({
+                                      "quiz_list": records,
+                                      "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key, "practice_mode": _is_practice, "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
+                                      "ans": [], "used_history": [], "shuf": [], "show_analysis": False
+                                  })
+                                  st.rerun()
+  
+                          elif is_rm_task:
+                              df_rm2 = df_rm.copy() if not df_rm.empty else pd.DataFrame()
+                              if not df_rm2.empty and '題目ID' not in df_rm2.columns:
+                                  df_rm2['題目ID'] = df_rm2.apply(
+                                      lambda r: f"RM_{r.get('版本','')}_{r.get('年度','')}_{r.get('冊編號','')}_{r.get('單元','')}_{r.get('課編號','')}_{r.get('句編號','')}", axis=1
+                                  )
+                              pending = df_rm2[df_rm2['題目ID'].isin(pending_ids)].copy() if not df_rm2.empty else pd.DataFrame()
+                              if not pending.empty:
+                                  records = pending.to_dict('records')
+                                  for rec in records:
+                                      rec['_type'] = 'reading_mcq'
+                                  # 清除所有舊的字母池，避免題目字母錯誤
+                                  for _k in [k for k in list(st.session_state.keys()) if k.startswith("vocab_pool_") or k.startswith("vocab_ans_") or k.startswith("vocab_used_") or k.startswith("mcq_order_") or k.startswith("rm_order_") or k.startswith("mcq_written_")]:
+                                      del st.session_state[_k]
+                                  st.session_state.update({
+                                      "quiz_list": records,
+                                      "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key, "practice_mode": _is_practice, "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
+                                      "ans": [], "used_history": [], "shuf": [], "show_analysis": False
+                                  })
+                                  st.rerun()
+  
+                          elif is_lp_task:
+                              if not df_lp.empty:
+                                  dlp2 = df_lp.copy()
+                                  dlp2['題目ID'] = dlp2.apply(_get_lp_qid, axis=1)
+                                  pending_lp = dlp2[dlp2['題目ID'].isin(pending_ids)].copy()
+                                  if not pending_lp.empty:
+                                      import random as _rand_lp2
+                                      lp_recs2 = []
+                                      for _, lp_row in pending_lp.iterrows():
+                                          lp_d = lp_row.to_dict()
+                                          distractors = _get_lp_distractors(df_lp, lp_row, n=3)
+                                          opts = distractors + [lp_row.to_dict()]
+                                          _rand_lp2.shuffle(opts)
+                                          opts = opts[:4]
+                                          correct_idx = next((i for i, o in enumerate(opts) if o.get('KK符號') == lp_d.get('KK符號')), 0)
+                                          lp_d['_lp_opts']        = opts
+                                          lp_d['_lp_correct_opt'] = ["A","B","C","D"][correct_idx]
+                                          lp_d['_type']           = 'listen_phon'
+                                          lp_recs2.append(lp_d)
+                                      import random as _rand_lp_final
+                                      _rand_lp_final.shuffle(lp_recs2)
+                                      records = lp_recs2
+                                      # 預載第一題音檔
+                                      if records:
+                                          _f1 = records[min(_start_idx_fwd, len(records)-1)]
+                                          _f1_num = str(_f1.get('總編號','')).strip()
+                                          _f1_sym = str(_f1.get('KK符號','')).strip()
+                                          _f1_qid = _f1.get('題目ID','')
+                                          try:
+                                              _f1_fkey = f"{int(_f1_num):02d}-{_f1_sym}".lower()
+                                          except:
+                                              _f1_fkey = f"{_f1_num}-{_f1_sym}".lower()
+                                          _f1_cache = f"lp_audio_{min(_start_idx_fwd, len(records)-1)}_{_f1_qid}"
+                                          if not st.session_state.get(_f1_cache):
+                                              try:
+                                                  import requests as _req_f1, base64 as _b64_f1
+                                                  _f1_idx = load_audio_file_index()
+                                                  _f1_fid = _f1_idx.get(_f1_fkey, "")
+                                                  if _f1_fid:
+                                                      _f1_r = _req_f1.get(get_audio_url(_f1_fid), timeout=8)
+                                                      if _f1_r.status_code == 200:
+                                                          st.session_state[_f1_cache] = _b64_f1.b64encode(_f1_r.content).decode()
+                                              except:
+                                                  pass
+                                      for _k in [k for k in list(st.session_state.keys()) if k.startswith("vocab_pool_") or k.startswith("vocab_ans_") or k.startswith("vocab_used_")]:
+                                          del st.session_state[_k]
+                                      st.session_state.update({
+                                          "quiz_list": records,
+                                          "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key, "practice_mode": _is_practice, "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
+                                          "ans": [], "used_history": [], "shuf": [], "show_analysis": False
+                                      })
+                                      st.rerun()
+                                  else:
+                                      st.error("❌ 找不到任務題目（已全部完成或題目不存在）")
+  
+                          elif is_ls_task:
+                              if not df_ls.empty:
+                                  dls_t = df_ls.copy()
+                                  dls_t['題目ID'] = dls_t.apply(_get_ls_qid, axis=1)
+                                  dls_t['_type']  = 'listen_sent'
+                                  pending_ls = dls_t[dls_t['題目ID'].isin(pending_ids)].copy()
+                                  if not pending_ls.empty:
+                                      pending_ls['_ls_words'] = pending_ls['聽力重組英文答案'].apply(_ls_split_words)
+                                      records = pending_ls.to_dict('records')
+                                      for _k in [k for k in list(st.session_state.keys()) if k.startswith("vocab_pool_") or k.startswith("vocab_ans_") or k.startswith("vocab_used_") or k.startswith("ls_ans_") or k.startswith("ls_used_") or k.startswith("ls_shuf_")]:
+                                          del st.session_state[_k]
+                                      st.session_state.update({
+                                          "quiz_list": records,
+                                          "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key, "practice_mode": _is_practice, "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
+                                          "ans": [], "used_history": [], "shuf": [], "show_analysis": False
+                                      })
+                                      st.rerun()
+  
+                          elif is_mixed_task:
+                              df_q2 = pd.concat([df_q, df_mcq], ignore_index=True) if not df_mcq.empty else df_q.copy()
+                              df_q2['題目ID'] = df_q2.apply(lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1)
+                              df_q2 = df_q2.drop_duplicates(subset='題目ID', keep='last')
+                              df_q2['題目ID'] = df_q2.apply(
+                                  lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1
+                              )
+                              df_r2 = df_r.copy() if not df_r.empty else pd.DataFrame()
+                              if not df_r2.empty and '題目ID' not in df_r2.columns:
+                                  df_r2['題目ID'] = df_r2.apply(
+                                      lambda r: f"R_{r.get('版本','')}_{r.get('年度','')}_{r.get('冊編號','')}_{r.get('單元','')}_{r.get('課編號','')}_{r.get('句編號','')}", axis=1
+                                  )
+                              df_v2 = df_v.copy() if not df_v.empty else pd.DataFrame()
+                              if not df_v2.empty and '題目ID' not in df_v2.columns:
+                                  df_v2['題目ID'] = df_v2.apply(
+                                      lambda r: f"V_{r.get('版本','')}_{r.get('年度','')}_{r.get('冊編號','')}_{r.get('單元','')}_{r.get('課編號','')}_{r.get('句編號','')}", axis=1
+                                  )
+                              df_rm2 = df_rm.copy() if not df_rm.empty else pd.DataFrame()
+                              if not df_rm2.empty and '題目ID' not in df_rm2.columns:
+                                  df_rm2['題目ID'] = df_rm2.apply(
+                                      lambda r: f"RM_{r.get('版本','')}_{r.get('年度','')}_{r.get('冊編號','')}_{r.get('單元','')}_{r.get('課編號','')}_{r.get('句編號','')}", axis=1
+                                  )
+                              pending_q  = df_q2[df_q2['題目ID'].isin(pending_ids)].copy()
+                              pending_r  = df_r2[df_r2['題目ID'].isin(pending_ids)].copy() if not df_r2.empty else pd.DataFrame()
+                              pending_v  = df_v2[df_v2['題目ID'].isin(pending_ids)].copy() if not df_v2.empty else pd.DataFrame()
+                              pending_rm = df_rm2[df_rm2['題目ID'].isin(pending_ids)].copy() if not df_rm2.empty else pd.DataFrame()
+                              if not pending_r.empty:
+                                  pending_r['_type'] = 'reading'
+                              if not pending_rm.empty:
+                                  pending_rm['_type'] = 'reading_mcq'
+                              if not pending_v.empty:
+                                  vocab_cfg_str = str(arow.get('單字設定', '') or '')
+                                  vcfg = vocab_cfg_str.split('|') if vocab_cfg_str else []
+                                  v_mode_mixed = vcfg[0] if len(vcfg) > 0 else '自選'
+                                  if v_mode_mixed == '學生自選':
+                                      v_mode_mixed = '自選'
+                                  pending_v['_type']        = 'vocab'
+                                  pending_v['_vocab_mode']  = v_mode_mixed
+                                  pending_v['_vocab_timer'] = int(vcfg[1]) if len(vcfg) > 1 else 30
+                                  pending_v['_vocab_extra'] = int(vcfg[2]) if len(vcfg) > 2 else 3
+                              # 聽力音標（混合任務）
+                              pending_lp_m = pd.DataFrame()
+                              if not df_lp.empty:
+                                  dlp_m = df_lp.copy()
+                                  dlp_m['題目ID'] = dlp_m.apply(_get_lp_qid, axis=1)
+                                  _plp = dlp_m[dlp_m['題目ID'].isin(pending_ids)].copy()
+                                  if not _plp.empty:
+                                      import random as _rand_lpm
+                                      _lp_recs_m = []
+                                      for _, _lr in _plp.iterrows():
+                                          _ld = _lr.to_dict()
+                                          _dis = _get_lp_distractors(df_lp, _lr, n=3)
+                                          _opts = _dis + [_lr.to_dict()]
+                                          _rand_lpm.shuffle(_opts)
+                                          _opts = _opts[:4]
+                                          _ci = next((i for i, o in enumerate(_opts) if o.get('KK符號') == _ld.get('KK符號')), 0)
+                                          _ld['_lp_opts'] = _opts
+                                          _ld['_lp_correct_opt'] = ["A","B","C","D"][_ci]
+                                          _ld['_type'] = 'listen_phon'
+                                          _lp_recs_m.append(_ld)
+                                      pending_lp_m = pd.DataFrame(_lp_recs_m)
+                              # 聽力句子重組（混合任務）
+                              pending_ls_m = pd.DataFrame()
+                              if not df_ls.empty:
+                                  dls_m = df_ls.copy()
+                                  dls_m['題目ID'] = dls_m.apply(_get_ls_qid, axis=1)
+                                  dls_m['_type'] = 'listen_sent'
+                                  _pls = dls_m[dls_m['題目ID'].isin(pending_ids)].copy()
+                                  if not _pls.empty:
+                                      _pls['_ls_words'] = _pls['聽力重組英文答案'].apply(_ls_split_words)
+                                      pending_ls_m = _pls
+                              pending = pd.concat([pending_q, pending_r, pending_v, pending_rm, pending_lp_m, pending_ls_m], ignore_index=True)
+                              if not pending.empty:
+                                  # 清除所有舊的字母池
+                                  for _k in [k for k in list(st.session_state.keys()) if k.startswith("vocab_pool_") or k.startswith("vocab_ans_") or k.startswith("vocab_used_") or k.startswith("mcq_order_") or k.startswith("rm_order_") or k.startswith("mcq_written_")]:
+                                      del st.session_state[_k]
+                                  st.session_state.update({
+                                      "quiz_list": pending.to_dict('records'),
+                                      "q_idx": min(_start_idx_fwd, len(pending)-1), "quiz_loaded": True, "answered_count": 0, "current_task_name": task_id_key, "practice_mode": _is_practice, "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
+                                      "ans": [], "used_history": [], "shuf": [], "show_analysis": False
+                                  })
+                                  st.rerun()
+  
+                          elif (can_preload or q_ids_all) and pending_ids:
+                              # 直接從 df_q 取出未完成題目載入（優先用題目ID清單）
                             df_q2 = pd.concat([df_q, df_mcq], ignore_index=True) if not df_mcq.empty else df_q.copy()
                             df_q2['題目ID'] = df_q2.apply(lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1)
                             df_q2 = df_q2.drop_duplicates(subset='題目ID', keep='last')
