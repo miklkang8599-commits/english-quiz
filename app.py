@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.366 - 複習模式logs懶載入版)
+# 🧩 英文全能練習系統 (V2.9.367 - 任務完成數計算修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.366
+# 📌 版本編號 (VERSION): 2.9.367
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.366"
+VERSION = "2.9.367"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -2784,21 +2784,24 @@ if not st.session_state.quiz_loaded:
                     if df_l.empty:
                         df_l = _get_df_l()
                     if not df_l.empty:
-                        if task_id_key_check and '任務名稱' in df_l.columns:
-                            stu_logs_check = df_l[
-                                (df_l['姓名'] == user_name) &
-                                (df_l['任務名稱'].fillna('') == task_id_key_check)
-                            ]
-                            # 若任務名稱找不到，用題目ID比對
-                            if stu_logs_check.empty and q_ids_all:
-                                stu_logs_check = df_l[
-                                    (df_l['姓名'] == user_name) &
-                                    (df_l['題目ID'].isin(q_ids_all))
-                                ]
-                        else:
-                            stu_logs_check = df_l[df_l['姓名'] == user_name]
-                        my_correct = set(stu_logs_check[stu_logs_check['結果'] == '✅']['題目ID'].tolist())
-                        my_reading = set(stu_logs_check[stu_logs_check['結果'] == '🎤 朗讀']['題目ID'].tolist())
+                        _stu_all = df_l[df_l['姓名'] == user_name]
+                        # 優先用任務名稱篩選
+                        stu_logs_check = pd.DataFrame()
+                        if task_id_key_check and '任務名稱' in _stu_all.columns:
+                            stu_logs_check = _stu_all[_stu_all['任務名稱'].fillna('') == task_id_key_check]
+                        # 若任務名稱找不到或為空，改用題目ID比對
+                        if stu_logs_check.empty and q_ids_all and '題目ID' in _stu_all.columns:
+                            stu_logs_check = _stu_all[_stu_all['題目ID'].isin(q_ids_all)]
+                        # 若仍找不到，用全部該學生的 logs
+                        if stu_logs_check.empty:
+                            stu_logs_check = _stu_all
+                        my_correct = set(stu_logs_check[
+                            stu_logs_check['結果'].fillna('').str.contains('✅', na=False) &
+                            ~stu_logs_check['結果'].fillna('').str.contains('練習', na=False)
+                        ]['題目ID'].tolist())
+                        my_reading = set(stu_logs_check[
+                            stu_logs_check['結果'].fillna('').str.contains('🎤|朗讀|分', na=False)
+                        ]['題目ID'].tolist())
                     else:
                         my_correct, my_reading = set(), set()
                     my_done  = my_correct | my_reading
