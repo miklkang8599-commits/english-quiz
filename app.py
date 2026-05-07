@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.364 - 講解debug快取外版)
+# 🧩 英文全能練習系統 (V2.9.365 - 講解scope取出後套用版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.364
+# 📌 版本編號 (VERSION): 2.9.365
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.364"
+VERSION = "2.9.365"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -2279,10 +2279,9 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             # 快取 key：用 hash 縮短（避免學生名單很長）
             import hashlib as _hl
             _stus_hash = _hl.md5(','.join(sorted(target_stus_t4)).encode()).hexdigest()[:8]
-            _t4_key = f"_t4_{sel_task_t4}_{rev_group_t4}_{_stus_hash}_{scope_t4}"
-            # 清除同一任務但不同 scope 的舊快取（確保 scope 切換後重算）
-            _t4_prefix = f"_t4_{sel_task_t4}_{rev_group_t4}_{_stus_hash}_"
-            for _old_k in [k for k in list(st.session_state.keys()) if k.startswith('_t4_') and k != _t4_key and _t4_prefix in k]:
+            _t4_key = f"_t4_{sel_task_t4}_{rev_group_t4}_{_stus_hash}"
+            # 清除舊快取
+            for _old_k in [k for k in list(st.session_state.keys()) if k.startswith('_t4_') and k != _t4_key]:
                 del st.session_state[_old_k]
 
             if _t4_key not in st.session_state:
@@ -2299,16 +2298,6 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                         ~logs_in['結果'].fillna('').str.contains('練習', na=False)
                     ]
                     wrong = set(_err_logs['題目ID'].tolist())
-                    # 已答：有作答記錄（排除講解）
-                    _ans_logs = logs_in[~logs_in['結果'].fillna('').str.contains('📖', na=False)]
-                    answered  = set(_ans_logs['題目ID'].tolist())
-                    # debug
-                    st.session_state['_scope_debug'] = {
-                        'df_in_ids': df_in['題目ID'].head(3).tolist() if not df_in.empty else [],
-                        'wrong_ids': list(wrong)[:3],
-                        'wrong_count': len(wrong),
-                        'scope': scope_t4,
-                    }
                     if scope_t4 == "✏️ 已經答題":   return df_in[df_in['題目ID'].isin(answered)]
                     elif scope_t4 == "❌ 只看錯題":  return df_in[df_in['題目ID'].isin(wrong)]
                     elif scope_t4 == "❓ 只看未作答": return df_in[~df_in['題目ID'].isin(answered)]
@@ -2354,21 +2343,23 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                             d['課編號'].astype(str) + '_' +
                             d['句編號'].astype(str)
                         )
-                        return _apply_scope_t4_inner(d[d['題目ID'].isin(task_ids_t4)].copy(), _all_logs)
+                        return d[d['題目ID'].isin(task_ids_t4)].copy()  # scope applied on retrieval
                     _mcq2 = df_mcq.copy()
                     _mcq2['題目ID'] = (
                         _mcq2['版本'].astype(str) + '_' + _mcq2['年度'].astype(str) + '_' +
                         _mcq2['冊編號'].astype(str) + '_' + _mcq2['單元'].astype(str) + '_' +
                         _mcq2['課編號'].astype(str) + '_' + _mcq2['句編號'].astype(str)
                     )
-                    _rev_mcq = _apply_scope_t4_inner(_mcq2[_mcq2['題目ID'].isin(task_ids_t4)].copy() if task_ids_t4 else pd.DataFrame(), _all_logs)
+                    _rev_mcq = _mcq2[_mcq2['題目ID'].isin(task_ids_t4)].copy() if task_ids_t4 else pd.DataFrame()  # scope applied on retrieval
                     _rev_q   = _get(df_q)
                     _rev_rm  = _get(df_rm, "RM_")
                     _rev_r   = _get(df_r,  "R_")
                     _rev_v   = _get(df_v,  "V_")
 
                 st.session_state[_t4_key] = {
-                    'mcq': _rev_mcq, 'q': _rev_q, 'rm': _rev_rm, 'r': _rev_r, 'v': _rev_v, 'logs': _all_logs
+                    'mcq': _mcq2[_mcq2['題目ID'].isin(task_ids_t4)].copy() if task_ids_t4 else _rev_mcq,
+                    'q': _get(df_q) if False else _rev_q,  # already computed
+                    'rm': _rev_rm, 'r': _rev_r, 'v': _rev_v, 'logs': _all_logs
                 }
 
             _cached      = st.session_state[_t4_key]
@@ -2379,19 +2370,25 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             df_rev_v     = _cached['v']
             all_logs_t4  = _cached['logs']
 
-            def _apply_scope_t4(df_in, logs_in): return df_in  # 已套用
-
-            # debug 強制顯示
-            with st.expander("🔍 [debug] 錯題比對", expanded=True):
-                st.write("scope:", scope_t4)
-                st.write("df_rev_mcq 題數:", len(df_rev_mcq))
-                st.write("all_logs 筆數:", len(all_logs_t4))
-                if not all_logs_t4.empty and '結果' in all_logs_t4.columns:
-                    _err = all_logs_t4[all_logs_t4['結果'].fillna('').str.contains('❌', na=False)]
-                    st.write("wrong筆數:", len(_err))
-                    st.write("wrong ID樣本:", _err['題目ID'].head(3).tolist() if '題目ID' in _err.columns else [])
-                if not df_rev_mcq.empty and '題目ID' in df_rev_mcq.columns:
-                    st.write("mcq 題目ID樣本:", df_rev_mcq['題目ID'].head(3).tolist())
+            def _apply_scope_t4(df_in, logs_in):
+                """從快取取出後套用 scope 篩選"""
+                if df_in.empty or '題目ID' not in df_in.columns: return df_in
+                _logs = all_logs_t4 if all_logs_t4 is not None and not all_logs_t4.empty else logs_in
+                if _logs.empty or '題目ID' not in _logs.columns:
+                    if scope_t4 in ("✏️ 已經答題", "❌ 只看錯題"):
+                        return pd.DataFrame()
+                    return df_in
+                _err_logs = _logs[
+                    _logs['結果'].fillna('').str.contains('❌', na=False) &
+                    ~_logs['結果'].fillna('').str.contains('練習', na=False)
+                ]
+                wrong    = set(_err_logs['題目ID'].tolist())
+                _ans_logs = _logs[~_logs['結果'].fillna('').str.contains('📖', na=False)]
+                answered  = set(_ans_logs['題目ID'].tolist())
+                if scope_t4 == "✏️ 已經答題":   return df_in[df_in['題目ID'].isin(answered)]
+                elif scope_t4 == "❌ 只看錯題":  return df_in[df_in['題目ID'].isin(wrong)]
+                elif scope_t4 == "❓ 只看未作答": return df_in[~df_in['題目ID'].isin(answered)]
+                return df_in
 
 
 
@@ -2407,14 +2404,6 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             else:
                 st.info("請先選擇任務後套用篩選，即可顯示單選題講解。")
                 df_rev_mcq = pd.DataFrame()
-
-            if st.session_state.get('_scope_debug'):
-                _sd = st.session_state['_scope_debug']
-                with st.expander("🔍 [debug] 錯題比對", expanded=True):
-                    st.write("scope:", _sd['scope'])
-                    st.write("df_in 題目ID樣本:", _sd['df_in_ids'])
-                    st.write("wrong set 樣本:", _sd['wrong_ids'])
-                    st.write("wrong set 筆數:", _sd['wrong_count'])
 
             if df_rev_mcq.empty:
                 st.info("此範圍尚無單選題。")
