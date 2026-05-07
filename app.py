@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.371 - 競賽結果TAB版)
+# 🧩 英文全能練習系統 (V2.9.372 - 競賽按鈕修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.371
+# 📌 版本編號 (VERSION): 2.9.372
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.371"
+VERSION = "2.9.372"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3116,39 +3116,47 @@ if not st.session_state.quiz_loaded:
                     can_preload  = len(parts) == 5
                     remaining    = task_q_count - done_cnt
 
-                    # 三個選項（含練習模式）
-                    _mode = st.radio(
-                        "練習方式",
-                        ["📌 繼續未完成部分", "🔢 從第幾題開始", "🏋️ 練習模式"],
-                        horizontal=True,
-                        key=f"start_mode_{_task_idx}"
-                    )
-                    if _mode in ("🔢 從第幾題開始", "🏋️ 練習模式"):
-                        _start_from = st.number_input(
-                            "從第幾題（依任務原始題號）",
-                            min_value=1, max_value=task_q_count, value=1,
-                            key=f"start_from_{_task_idx}"
+                    # 三個選項（含練習模式）- 競賽任務不顯示
+                    # 三個選項（含練習模式）- 競賽任務不顯示
+                    _mode = "📌 繼續未完成部分"  # default
+                    _start_from = 1
+                    if not is_race_task:
+                        _mode = st.radio(
+                            "練習方式",
+                            ["📌 繼續未完成部分", "🔢 從第幾題開始", "🏋️ 練習模式"],
+                            horizontal=True,
+                            key=f"start_mode_{_task_idx}"
                         )
-                        if _mode == "🏋️ 練習模式":
-                            st.caption("🏋️ 練習模式：可回上一題，作答紀錄標記為「練習」不列入正式記錄")
-                    else:
-                        _start_from = 1
+                        if _mode in ("🔢 從第幾題開始", "🏋️ 練習模式"):
+                            _start_from = st.number_input(
+                                "從第幾題（依任務原始題號）",
+                                min_value=1, max_value=task_q_count, value=1,
+                                key=f"start_from_{_task_idx}"
+                            )
+                            if _mode == "🏋️ 練習模式":
+                                st.caption("🏋️ 練習模式：可回上一題，作答紀錄標記為「練習」不列入正式記錄")
 
                     # 競賽模式任務：只顯示競賽按鈕，不顯示一般模式選項
                     if is_race_task:
                         _is_practice = False
                         btn_key = f"start_task_{_task_idx}_{task_name[:20]}"
                         if st.button("🏆 開始競賽", key=btn_key, type="primary", use_container_width=True):
-                            pending_ids = q_ids_all
+                            pending_ids    = q_ids_all
                             _start_idx_fwd = 0
-                        if _mode == "📌 繼續未完成部分":
-                            _start_idx_fwd = 0
-                            pending_ids = q_ids_all - my_done
-                            if not pending_ids:
+                            import random as _rr; _rr.shuffle(list(pending_ids))  # noqa
+                    else:
+                        _is_practice = (_mode == "🏋️ 練習模式")
+                        btn_key = f"start_task_{_task_idx}_{task_name[:20]}"
+                        label   = "📌 繼續未完成部分" if _mode == "📌 繼續未完成部分" else (f"🏋️ 練習模式 從第 {_start_from} 題" if _is_practice else f"🔢 從第 {_start_from} 題開始")
+                        if st.button(f"🚀 {label}", key=btn_key, type="primary", use_container_width=True):
+                            if _mode == "📌 繼續未完成部分":
+                                _start_idx_fwd = 0
+                                pending_ids = q_ids_all - my_done
+                                if not pending_ids:
+                                    pending_ids = q_ids_all
+                            else:
+                                _start_idx_fwd = max(0, int(_start_from) - 1)
                                 pending_ids = q_ids_all
-                        else:
-                            _start_idx_fwd = max(0, int(_start_from) - 1)
-                            pending_ids = q_ids_all
 
                         if not hasattr(st.session_state, "_is_practice_defined"):
                             _is_practice = _is_practice if "_is_practice" in dir() else False
