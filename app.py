@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.359 - 任務列表懶展開版)
+# 🧩 英文全能練習系統 (V2.9.360 - 講解logs來源修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.359
+# 📌 版本編號 (VERSION): 2.9.360
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.359"
+VERSION = "2.9.360"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -2307,7 +2307,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     elif scope_t4 == "❓ 只看未作答": return df_in[~df_in['題目ID'].isin(answered)]
                     return df_in
 
-                _all_logs = df_l[df_l['姓名'].isin(target_stus_t4)].copy() if not df_l.empty else pd.DataFrame()
+                _all_logs = _df_l_local[_df_l_local['姓名'].isin(target_stus_t4)].copy() if not _df_l_local.empty else pd.DataFrame()
                 if not _all_logs.empty and '題目ID' in _all_logs.columns:
                     _task_orig_ids = task_ids_t4 or set()
                     _fl = _all_logs[
@@ -2387,7 +2387,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             if df_rev_mcq.empty:
                 st.info("此範圍尚無單選題。")
             else:
-                mcq_logs = df_l[df_l['姓名'].isin(target_stus_t4)].copy() if not df_l.empty else pd.DataFrame()
+                mcq_logs = _df_l_local[_df_l_local['姓名'].isin(target_stus_t4)].copy() if not _df_l_local.empty else pd.DataFrame()
                 if not mcq_logs.empty and '題目ID' in mcq_logs.columns:
                     _fl = mcq_logs[
                         mcq_logs['題目ID'].isin(task_ids_t4 or set()) |
@@ -2454,7 +2454,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             if df_rev_q2.empty:
                 st.info("此範圍尚無重組題。")
             else:
-                q_logs = df_l[df_l['姓名'].isin(target_stus_t4)].copy() if not df_l.empty else pd.DataFrame()
+                q_logs = _df_l_local[_df_l_local['姓名'].isin(target_stus_t4)].copy() if not _df_l_local.empty else pd.DataFrame()
                 if not q_logs.empty and '題目ID' in q_logs.columns:
                     _fl = q_logs[
                         q_logs['題目ID'].isin(task_ids_t4 or set()) |
@@ -2510,7 +2510,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 st.info("請先選擇任務後套用篩選，即可顯示閱讀單句題講解。")
                 df_rev_rm = pd.DataFrame()
             if not df_rev_rm.empty:
-                rm_logs = df_l[df_l['姓名'].isin(target_stus_t4)].copy() if not df_l.empty else pd.DataFrame()
+                rm_logs = _df_l_local[_df_l_local['姓名'].isin(target_stus_t4)].copy() if not _df_l_local.empty else pd.DataFrame()
                 if not rm_logs.empty and '題目ID' in rm_logs.columns:
                     _fl = rm_logs[
                         rm_logs['題目ID'].isin(task_ids_t4 or set()) |
@@ -2567,7 +2567,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 df_rev_r = pd.DataFrame()
 
             if not df_rev_r.empty:
-                r_logs = df_l[df_l['姓名'].isin(target_stus_t4)].copy() if not df_l.empty else pd.DataFrame()
+                r_logs = _df_l_local[_df_l_local['姓名'].isin(target_stus_t4)].copy() if not _df_l_local.empty else pd.DataFrame()
                 if not r_logs.empty and '題目ID' in r_logs.columns:
                     _fl = r_logs[
                         r_logs['題目ID'].isin(task_ids_t4 or set()) |
@@ -2614,7 +2614,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 df_rev_v = pd.DataFrame()
 
             if not df_rev_v.empty:
-                v_logs = df_l[df_l['姓名'].isin(target_stus_t4)].copy() if not df_l.empty else pd.DataFrame()
+                v_logs = _df_l_local[_df_l_local['姓名'].isin(target_stus_t4)].copy() if not _df_l_local.empty else pd.DataFrame()
                 if not v_logs.empty and '題目ID' in v_logs.columns:
                     _fl = v_logs[
                         v_logs['題目ID'].isin(task_ids_t4 or set()) |
