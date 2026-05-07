@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.361 - 學生任務完成數修復版)
+# 🧩 英文全能練習系統 (V2.9.362 - 講解舊任務logs修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.361
+# 📌 版本編號 (VERSION): 2.9.362
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.361"
+VERSION = "2.9.362"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -2310,21 +2310,25 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 _all_logs = _df_l_local[_df_l_local['姓名'].isin(target_stus_t4)].copy() if not _df_l_local.empty else pd.DataFrame()
                 if not _all_logs.empty and '題目ID' in _all_logs.columns:
                     _task_orig_ids = task_ids_t4 or set()
-                    _fl = _all_logs[
-                        _all_logs['題目ID'].isin(_task_orig_ids) |
-                        (_all_logs['任務名稱'].fillna('') == rev_tid_t4)
-                    ]
-                    # 若直接比對找不到，用後三段模糊比對
+                    # 先用題目ID + 任務名稱比對
+                    _cond = pd.Series(False, index=_all_logs.index)
+                    if _task_orig_ids:
+                        _cond = _cond | _all_logs['題目ID'].isin(_task_orig_ids)
+                    if rev_tid_t4 and '任務名稱' in _all_logs.columns:
+                        _cond = _cond | (_all_logs['任務名稱'].fillna('') == rev_tid_t4)
+                    _fl = _all_logs[_cond]
+                    # 若找不到，用後三段模糊比對
                     if _fl.empty and _task_orig_ids:
                         _short_ids = set('_'.join(qid.split('_')[-3:]) for qid in _task_orig_ids)
                         _all_logs['_short'] = _all_logs['題目ID'].apply(lambda x: '_'.join(str(x).split('_')[-3:]))
                         _fl = _all_logs[_all_logs['_short'].isin(_short_ids)]
                         _all_logs = _all_logs.drop(columns=['_short'], errors='ignore')
-                    # 有找到才更新，沒找到就設空（避免全量 logs 污染 wrong set）
                     if not _fl.empty:
                         _all_logs = _fl.drop(columns=['_short'], errors='ignore')
+                    elif not rev_tid_t4 and not _task_orig_ids:
+                        pass  # 沒有任何篩選條件，保留全部
                     else:
-                        _all_logs = pd.DataFrame()
+                        _all_logs = pd.DataFrame()  # 有條件但找不到，設空
 
 
 
