@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.374 - pending_ids全面保護版)
+# 🧩 英文全能練習系統 (V2.9.375 - 再次練習pending_ids修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.374
+# 📌 版本編號 (VERSION): 2.9.375
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.374"
+VERSION = "2.9.375"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3094,7 +3094,7 @@ if not st.session_state.quiz_loaded:
                                 dls2 = df_ls.copy()
                                 dls2['題目ID'] = dls2.apply(_get_ls_qid, axis=1)
                                 dls2['_type']  = 'listen_sent'
-                                rls = dls2[dls2['題目ID'].isin(pending_ids)].copy()
+                                rls = dls2[dls2['題目ID'].isin(q_ids_set)].copy()
                                 if not rls.empty:
                                     rls['_ls_words'] = rls['聽力重組英文答案'].apply(_ls_split_words)
                                     all_dfs.append(rls)
