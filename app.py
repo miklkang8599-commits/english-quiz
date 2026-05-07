@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.368 - 任務頁面題目ID優先版)
+# 🧩 英文全能練習系統 (V2.9.369 - 已作答統一定義版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.368
+# 📌 版本編號 (VERSION): 2.9.369
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.368"
+VERSION = "2.9.369"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -2804,9 +2804,13 @@ if not st.session_state.quiz_loaded:
                         my_reading = set(stu_logs_check[
                             stu_logs_check['結果'].fillna('').str.contains('🎤|朗讀|分', na=False)
                         ]['題目ID'].tolist())
+                        # 已作答 = 有任何非講解紀錄（與複習模式一致）
+                        my_answered = set(stu_logs_check[
+                            ~stu_logs_check['結果'].fillna('').str.contains('📖|練習', na=False)
+                        ]['題目ID'].tolist())
                     else:
-                        my_correct, my_reading = set(), set()
-                    my_done  = my_correct | my_reading
+                        my_correct, my_reading, my_answered = set(), set(), set()
+                    my_done  = my_correct | my_reading | my_answered
                     done_cnt = len(q_ids_all & my_done)
                     all_done = done_cnt >= len(q_ids_set)
                 except:
