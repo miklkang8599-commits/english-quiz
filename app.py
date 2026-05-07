@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.355 - 講解scope切換重算版)
+# 🧩 英文全能練習系統 (V2.9.356 - 套用篩選清除快取版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.355
+# 📌 版本編號 (VERSION): 2.9.356
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.355"
+VERSION = "2.9.356"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -2227,7 +2227,10 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 scope_t4 = st.radio("顯示範圍",
                     ["📚 全部題目", "✏️ 已經答題", "❌ 只看錯題", "❓ 只看未作答"],
                     horizontal=True, key="rev_scope_t4")
-                st.form_submit_button("🔍 套用篩選", use_container_width=True, type="primary")
+                _submitted = st.form_submit_button("🔍 套用篩選", use_container_width=True, type="primary")
+                if _submitted:
+                    for _k in [k for k in list(st.session_state.keys()) if k.startswith('_t4_')]:
+                        del st.session_state[_k]
 
 
             # 取得班級值
