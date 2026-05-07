@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.363 - 講解錯題比對debug版)
+# 🧩 英文全能練習系統 (V2.9.364 - 講解debug快取外版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.363
+# 📌 版本編號 (VERSION): 2.9.364
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.363"
+VERSION = "2.9.364"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -2380,6 +2380,19 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             all_logs_t4  = _cached['logs']
 
             def _apply_scope_t4(df_in, logs_in): return df_in  # 已套用
+
+            # debug 強制顯示
+            with st.expander("🔍 [debug] 錯題比對", expanded=True):
+                st.write("scope:", scope_t4)
+                st.write("df_rev_mcq 題數:", len(df_rev_mcq))
+                st.write("all_logs 筆數:", len(all_logs_t4))
+                if not all_logs_t4.empty and '結果' in all_logs_t4.columns:
+                    _err = all_logs_t4[all_logs_t4['結果'].fillna('').str.contains('❌', na=False)]
+                    st.write("wrong筆數:", len(_err))
+                    st.write("wrong ID樣本:", _err['題目ID'].head(3).tolist() if '題目ID' in _err.columns else [])
+                if not df_rev_mcq.empty and '題目ID' in df_rev_mcq.columns:
+                    st.write("mcq 題目ID樣本:", df_rev_mcq['題目ID'].head(3).tolist())
+
 
 
 
