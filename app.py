@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.356 - 套用篩選清除快取版)
+# 🧩 英文全能練習系統 (V2.9.357 - logs延遲載入版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.356
+# 📌 版本編號 (VERSION): 2.9.357
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.356"
+VERSION = "2.9.357"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -394,7 +394,14 @@ df_q, df_s, df_mcq = load_core_data()
 df_r, df_v, df_rm = load_extended_data()
 # 第三層：listening（聽力音標+聽力重組）
 df_lp, df_ls = load_listening_data()
-df_a, df_l = load_dynamic_data()
+df_a = load_assignments()
+# df_l 延遲載入（登入後不立即讀 logs，等需要時才載）
+df_l = pd.DataFrame()  # 預設空，需要時用 _load_logs_cached() 取得
+
+def _get_df_l():
+    """懶載入 logs，只在需要時才查詢"""
+    _cached = _load_logs_cached()
+    return _cached if not _cached.empty else pd.DataFrame()
 
 if df_q is None or df_s is None:
     # 立即清快取重試一次
@@ -450,9 +457,10 @@ with st.sidebar:
 
     # 更新按鈕：只有按了才重新計算
     _lb_cache_key = f"_lb_{period}_{st.session_state.group_id}"
-    _need_update  = _lb_cache_key not in st.session_state
+    _need_update  = False  # 不自動計算，等使用者按更新
 
     if st.button("🔄 更新排行榜", use_container_width=True, key="lb_refresh") or _need_update:
+        df_l = _get_df_l()
         try:
             target_group = st.session_state.group_id if not is_admin(st.session_state.group_id) else None
             df_lb_all = _load_logs_cached()
@@ -1670,6 +1678,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     try:
                         # 用快取的 df_l
                         if not df_l.empty:
+                            if df_l.empty: df_l = _get_df_l()
                             df_c_logs = df_l[df_l['姓名'].isin(ref_stus)].copy()
                             df_c_logs['question_id'] = df_c_logs['題目ID'].apply(
                                 lambda x: x[2:] if str(x).startswith('V_') else x
@@ -2743,6 +2752,7 @@ if not st.session_state.quiz_loaded:
                                 (df_l['任務名稱'].fillna('') == task_id_key_check)
                             ]
                         else:
+                            if df_l.empty: df_l = _get_df_l()
                             stu_logs_check = df_l[df_l['姓名'] == user_name]
                         my_correct = set(stu_logs_check[stu_logs_check['結果'] == '✅']['題目ID'].tolist())
                         my_reading = set(stu_logs_check[stu_logs_check['結果'] == '🎤 朗讀']['題目ID'].tolist())
