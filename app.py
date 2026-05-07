@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.360 - 講解logs來源修復版)
+# 🧩 英文全能練習系統 (V2.9.361 - 學生任務完成數修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.360
+# 📌 版本編號 (VERSION): 2.9.361
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.360"
+VERSION = "2.9.361"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -2760,14 +2760,21 @@ if not st.session_state.quiz_loaded:
                         _m2 = _re_tid2.search(r'\[T(\d+)\]', task_name)
                         if _m2:
                             task_id_key_check = 'T' + _m2.group(1)
+                    if df_l.empty:
+                        df_l = _get_df_l()
                     if not df_l.empty:
                         if task_id_key_check and '任務名稱' in df_l.columns:
                             stu_logs_check = df_l[
                                 (df_l['姓名'] == user_name) &
                                 (df_l['任務名稱'].fillna('') == task_id_key_check)
                             ]
+                            # 若任務名稱找不到，用題目ID比對
+                            if stu_logs_check.empty and q_ids_all:
+                                stu_logs_check = df_l[
+                                    (df_l['姓名'] == user_name) &
+                                    (df_l['題目ID'].isin(q_ids_all))
+                                ]
                         else:
-                            if df_l.empty: df_l = _get_df_l()
                             stu_logs_check = df_l[df_l['姓名'] == user_name]
                         my_correct = set(stu_logs_check[stu_logs_check['結果'] == '✅']['題目ID'].tolist())
                         my_reading = set(stu_logs_check[stu_logs_check['結果'] == '🎤 朗讀']['題目ID'].tolist())
