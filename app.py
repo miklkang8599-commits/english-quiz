@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.358 - 再登入快速載入版)
+# 🧩 英文全能練習系統 (V2.9.359 - 任務列表懶展開版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.358
+# 📌 版本編號 (VERSION): 2.9.359
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.358"
+VERSION = "2.9.359"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1887,8 +1887,17 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                         task_status  = str(row.get('狀態', '進行中'))
                         date_info    = f"{task_start} ～ {task_end}" if task_start else ""
                         done_icon    = "⚫" if task_status == '已結束' else "🔵"
+                        _exp_key     = f"exp_{teacher}_{idx}"
 
-                        with st.expander(f"{done_icon} {task_name}　{task_group}　{date_info}"):
+                        # 標題列：任務名稱 + 展開/收起按鈕
+                        _col1, _col2 = st.columns([8, 1])
+                        _col1.markdown(f"**{done_icon} {task_name}**　{task_group}　{date_info}")
+                        _is_open = st.session_state.get(_exp_key, False)
+                        if _col2.button("▼" if not _is_open else "▲", key=f"btn_{_exp_key}", use_container_width=True):
+                            st.session_state[_exp_key] = not _is_open
+                            st.rerun()
+
+                        if _is_open:
                             # ── 展開後才計算 ─────────────────────────────────
                             task_stu_str = str(row.get('指派學生', ''))
                             task_q_ids   = str(row.get('題目ID清單', ''))
