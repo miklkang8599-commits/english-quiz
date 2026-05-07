@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.354 - 講解debug強化版)
+# 🧩 英文全能練習系統 (V2.9.355 - 講解scope切換重算版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.354
+# 📌 版本編號 (VERSION): 2.9.355
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.354"
+VERSION = "2.9.355"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -2253,6 +2253,10 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             import hashlib as _hl
             _stus_hash = _hl.md5(','.join(sorted(target_stus_t4)).encode()).hexdigest()[:8]
             _t4_key = f"_t4_{sel_task_t4}_{rev_group_t4}_{_stus_hash}_{scope_t4}"
+            # 清除同一任務但不同 scope 的舊快取（確保 scope 切換後重算）
+            _t4_prefix = f"_t4_{sel_task_t4}_{rev_group_t4}_{_stus_hash}_"
+            for _old_k in [k for k in list(st.session_state.keys()) if k.startswith('_t4_') and k != _t4_key and _t4_prefix in k]:
+                del st.session_state[_old_k]
 
             if _t4_key not in st.session_state:
                 def _apply_scope_t4_inner(df_in, logs_in):
@@ -2295,15 +2299,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     else:
                         _all_logs = pd.DataFrame()
 
-                    # debug：無條件記錄
-                    st.session_state['_t4_logs_debug'] = {
-                        'task_ids_sample': list(_task_orig_ids)[:3],
-                        'rev_tid_t4': rev_tid_t4,
-                        'all_logs_count': len(_all_logs),
-                        'all_logs_qid_sample': _all_logs['題目ID'].head(3).tolist() if not _all_logs.empty and '題目ID' in _all_logs.columns else [],
-                        'wrong_count': len(set(_all_logs[_all_logs['結果'].fillna('').str.contains('❌', na=False)]['題目ID'].tolist())) if not _all_logs.empty and '結果' in _all_logs.columns else 0,
-                        'df_rev_mcq_before': len(_rev_mcq) if '_rev_mcq' in dir() else -1,
-                    }
+
 
                 def _qid(r, prefix=""): return f"{prefix}{r['版本']}_{r['年度']}_{r['冊編號']}_{r.get('單元','')}_{r['課編號']}_{r['句編號']}"
 
@@ -2360,16 +2356,6 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             else:
                 st.info("請先選擇任務後套用篩選，即可顯示單選題講解。")
                 df_rev_mcq = pd.DataFrame()
-
-            # debug（無條件顯示）
-            if st.session_state.get('_t4_logs_debug'):
-                _d = st.session_state['_t4_logs_debug']
-                with st.expander("🔍 [debug]", expanded=True):
-                    st.write("任務ID樣本:", _d['task_ids_sample'])
-                    st.write("rev_tid_t4:", _d['rev_tid_t4'])
-                    st.write("all_logs 筆數:", _d['all_logs_count'])
-                    st.write("all_logs 題目ID樣本:", _d['all_logs_qid_sample'])
-                    st.write("wrong set 筆數:", _d['wrong_count'])
 
             if df_rev_mcq.empty:
                 st.info("此範圍尚無單選題。")
