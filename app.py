@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.357 - logs延遲載入版)
+# 🧩 英文全能練習系統 (V2.9.358 - 再登入快速載入版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.357
+# 📌 版本編號 (VERSION): 2.9.358
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.357"
+VERSION = "2.9.358"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -373,13 +373,15 @@ if not st.session_state.get('logged_in', False):
             df_s['c_pw'] = df_s['密碼'].apply(standardize)
             user = df_s[df_s['c_id'] == std_id]
             if not user.empty and user.iloc[0]['c_pw'] == std_pw:
+                _was_loaded = st.session_state.get('static_loaded', False)
                 st.session_state.clear()
                 st.session_state.update({
                     "logged_in": True,
                     "user_id": f"EA{std_id}",
                     "user_name": user.iloc[0]['姓名'],
                     "group_id": user.iloc[0]['分組'],
-                    "view_mode": "管理後台" if is_admin(user.iloc[0]["分組"]) else "練習模式"
+                    "view_mode": "管理後台" if is_admin(user.iloc[0]["分組"]) else "練習模式",
+                    "static_loaded": _was_loaded,
                 })
                 st.rerun()
             else:
@@ -387,16 +389,20 @@ if not st.session_state.get('logged_in', False):
         show_version_caption()
     st.stop()
 
-# 載入資料（登入後）- 分層載入，減少 API 限速
-# 第一層：core（重組+單選+學生），最重要
-df_q, df_s, df_mcq = load_core_data()
-# 第二層：extended（朗讀+拼單字+閱讀）
-df_r, df_v, df_rm = load_extended_data()
-# 第三層：listening（聽力音標+聽力重組）
-df_lp, df_ls = load_listening_data()
+# 載入靜態資料（有快取，重複登入幾乎瞬間）
+if 'static_loaded' not in st.session_state:
+    with st.spinner("⏳ 載入題庫中，請稍候..."):
+        df_q, df_s, df_mcq = load_core_data()
+        df_r, df_v, df_rm  = load_extended_data()
+        df_lp, df_ls       = load_listening_data()
+    st.session_state['static_loaded'] = True
+else:
+    df_q, df_s, df_mcq = load_core_data()
+    df_r, df_v, df_rm  = load_extended_data()
+    df_lp, df_ls       = load_listening_data()
 df_a = load_assignments()
-# df_l 延遲載入（登入後不立即讀 logs，等需要時才載）
-df_l = pd.DataFrame()  # 預設空，需要時用 _load_logs_cached() 取得
+# df_l 延遲載入（不立即讀 logs）
+df_l = pd.DataFrame()
 
 def _get_df_l():
     """懶載入 logs，只在需要時才查詢"""
