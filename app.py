@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.367 - 任務完成數計算修復版)
+# 🧩 英文全能練習系統 (V2.9.368 - 任務頁面題目ID優先版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.367
+# 📌 版本編號 (VERSION): 2.9.368
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.367"
+VERSION = "2.9.368"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -2785,15 +2785,17 @@ if not st.session_state.quiz_loaded:
                         df_l = _get_df_l()
                     if not df_l.empty:
                         _stu_all = df_l[df_l['姓名'] == user_name]
-                        # 優先用任務名稱篩選
-                        stu_logs_check = pd.DataFrame()
-                        if task_id_key_check and '任務名稱' in _stu_all.columns:
-                            stu_logs_check = _stu_all[_stu_all['任務名稱'].fillna('') == task_id_key_check]
-                        # 若任務名稱找不到或為空，改用題目ID比對
-                        if stu_logs_check.empty and q_ids_all and '題目ID' in _stu_all.columns:
+                        # 用題目ID比對（最可靠，相容舊資料沒有任務名稱的 logs）
+                        if q_ids_all and '題目ID' in _stu_all.columns:
                             stu_logs_check = _stu_all[_stu_all['題目ID'].isin(q_ids_all)]
-                        # 若仍找不到，用全部該學生的 logs
-                        if stu_logs_check.empty:
+                            # 再加上任務名稱比對的結果（取聯集）
+                            if task_id_key_check and '任務名稱' in _stu_all.columns:
+                                _by_name = _stu_all[_stu_all['任務名稱'].fillna('') == task_id_key_check]
+                                if not _by_name.empty:
+                                    stu_logs_check = pd.concat([stu_logs_check, _by_name]).drop_duplicates()
+                        elif task_id_key_check and '任務名稱' in _stu_all.columns:
+                            stu_logs_check = _stu_all[_stu_all['任務名稱'].fillna('') == task_id_key_check]
+                        else:
                             stu_logs_check = _stu_all
                         my_correct = set(stu_logs_check[
                             stu_logs_check['結果'].fillna('').str.contains('✅', na=False) &
