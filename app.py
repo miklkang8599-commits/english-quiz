@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.352 - 講解錯題logs空值修復版)
+# 🧩 英文全能練習系統 (V2.9.353 - 講解舊任務ID debug版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.352
+# 📌 版本編號 (VERSION): 2.9.353
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.352"
+VERSION = "2.9.353"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -2293,6 +2293,13 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     if not _fl.empty:
                         _all_logs = _fl.drop(columns=['_short'], errors='ignore')
                     else:
+                        # debug：顯示找不到的原因
+                        st.session_state['_t4_logs_debug'] = {
+                            'task_ids_sample': list(_task_orig_ids)[:3],
+                            'rev_tid_t4': rev_tid_t4,
+                            'logs_qid_sample': _all_logs['題目ID'].head(3).tolist() if not _all_logs.empty and '題目ID' in _all_logs.columns else [],
+                            'logs_task_sample': _all_logs['任務名稱'].unique().tolist()[:5] if not _all_logs.empty and '任務名稱' in _all_logs.columns else [],
+                        }
                         _all_logs = pd.DataFrame()  # 此任務無 logs，設空
 
                 def _qid(r, prefix=""): return f"{prefix}{r['版本']}_{r['年度']}_{r['冊編號']}_{r.get('單元','')}_{r['課編號']}_{r['句編號']}"
@@ -2350,6 +2357,15 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             else:
                 st.info("請先選擇任務後套用篩選，即可顯示單選題講解。")
                 df_rev_mcq = pd.DataFrame()
+
+            # debug（logs 找不到時顯示）
+            if st.session_state.get('_t4_logs_debug'):
+                _d = st.session_state['_t4_logs_debug']
+                with st.expander("🔍 [debug] logs 未找到原因", expanded=True):
+                    st.write("任務ID樣本:", _d['task_ids_sample'])
+                    st.write("rev_tid_t4:", _d['rev_tid_t4'])
+                    st.write("logs題目ID樣本:", _d['logs_qid_sample'])
+                    st.write("logs任務名稱樣本:", _d['logs_task_sample'])
 
             if df_rev_mcq.empty:
                 st.info("此範圍尚無單選題。")
