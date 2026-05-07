@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.372 - 競賽按鈕修復版)
+# 🧩 英文全能練習系統 (V2.9.373 - pending_ids空值修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.372
+# 📌 版本編號 (VERSION): 2.9.373
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.372"
+VERSION = "2.9.373"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3137,6 +3137,8 @@ if not st.session_state.quiz_loaded:
                                 st.caption("🏋️ 練習模式：可回上一題，作答紀錄標記為「練習」不列入正式記錄")
 
                     # 競賽模式任務：只顯示競賽按鈕，不顯示一般模式選項
+                    pending_ids    = set()  # 預設空，按鈕按下才賦值
+                    _start_idx_fwd = 0
                     if is_race_task:
                         _is_practice = False
                         btn_key = f"start_task_{_task_idx}_{task_name[:20]}"
@@ -3391,7 +3393,7 @@ if not st.session_state.quiz_loaded:
                                 })
                                 st.rerun()
 
-                        elif can_preload or q_ids_all:
+                        elif (can_preload or q_ids_all) and pending_ids:
                             # 直接從 df_q 取出未完成題目載入（優先用題目ID清單）
                             df_q2 = pd.concat([df_q, df_mcq], ignore_index=True) if not df_mcq.empty else df_q.copy()
                             df_q2['題目ID'] = df_q2.apply(lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1)
