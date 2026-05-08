@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.383 - 拼單字ID格式修復版)
+# 🧩 英文全能練習系統 (V2.9.384 - 題目數計算修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.383
+# 📌 版本編號 (VERSION): 2.9.384
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.383"
+VERSION = "2.9.384"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -2924,16 +2924,15 @@ if not st.session_state.quiz_loaded:
             task_q_ids   = str(arow.get('題目ID清單', '') or '')
             # 過濾掉 nan 和空白
             raw_ids   = set([q.strip() for q in task_q_ids.split(',') if q.strip() and q.strip() != 'nan'])
-            # 同時產生有V_和無V_的版本，都加入供比對
-            q_ids_set = set()
+            q_ids_set = raw_ids  # 原始格式，用於題數計算
+            # q_ids_all 包含所有格式（有V_/無V_），用於 logs 比對
+            q_ids_all = set()
             for qid in raw_ids:
-                q_ids_set.add(qid)  # 原始格式
+                q_ids_all.add(qid)
                 if qid.startswith('V_'):
-                    q_ids_set.add(qid[2:])   # 無前綴版本（相容舊格式）
-                elif not qid.startswith('R_') and not qid.startswith('RM_') and not qid.startswith('LP_') and not qid.startswith('LS_'):
-                    q_ids_set.add(f"V_{qid}")  # 加 V_ 前綴版本（相容拼單字）
-            # q_ids_all 包含所有格式
-            q_ids_all = raw_ids | q_ids_set
+                    q_ids_all.add(qid[2:])   # 無前綴版本
+                elif not any(qid.startswith(p) for p in ('R_','RM_','LP_','LS_')):
+                    q_ids_all.add(f"V_{qid}")  # 加 V_ 前綴版本
             task_q_count = len(q_ids_set) if q_ids_set else max(int(float(str(arow.get('題目數', 0) or 0))), 0)
 
             # 計算個人完成進度（混合任務：一般題答對 + 朗讀題有紀錄）
