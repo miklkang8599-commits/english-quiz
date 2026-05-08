@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.380 - 再次練習按鈕修復版)
+# 🧩 英文全能練習系統 (V2.9.381 - 所有題型再次練習版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.380
+# 📌 版本編號 (VERSION): 2.9.381
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.380"
+VERSION = "2.9.381"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3032,9 +3032,14 @@ if not st.session_state.quiz_loaded:
                     # 從 session_state 恢復（rerun 後）
                     if not _do_retry and st.session_state.get(f"_retry_pending_{_task_idx}"):
                         _do_retry    = True
-                        _is_practice = st.session_state.pop(f"_retry_mode_{_task_idx}", False)
+                        _is_practice = st.session_state.get(f"_retry_mode_{_task_idx}", False)
+                        # 清除旗標，避免重複觸發
                         st.session_state.pop(f"_retry_pending_{_task_idx}", None)
-                    if _do_retry:
+                        st.session_state.pop(f"_retry_mode_{_task_idx}", None)
+                    if _do_retry and not st.session_state.get(f"_retry_pending_{_task_idx}"):
+                        # 已消費旗標，不再 pending
+                        pass
+                    elif _do_retry:
                         st.session_state[f"_retry_pending_{_task_idx}"] = True
 
                         _start_idx = max(0, int(retry_start) - 1)
@@ -3115,6 +3120,39 @@ if not st.session_state.quiz_loaded:
                                 if not rls.empty:
                                     rls['_ls_words'] = rls['聽力重組英文答案'].apply(_ls_split_words)
                                     _all_dfs.append(rls)
+                            # 純單字任務
+                            if is_vocab_task and not df_v.empty:
+                                dv_r = df_v.copy()
+                                dv_r['題目ID'] = dv_r.apply(lambda r: f"V_{r.get('版本','')}_{r.get('年度','')}_{r.get('冊編號','')}_{r.get('單元','')}_{r.get('課編號','')}_{r.get('句編號','')}", axis=1)
+                                rv_r = dv_r[dv_r['題目ID'].isin(q_ids_set)].copy()
+                                if not rv_r.empty:
+                                    vocab_cfg_str3 = str(arow.get('單字設定', '') or '')
+                                    vcfg3 = vocab_cfg_str3.split('|') if vocab_cfg_str3 else []
+                                    rv_r['_type']        = 'vocab'
+                                    rv_r['_vocab_mode']  = (vcfg3[0] if len(vcfg3)>0 else '自選').replace('學生自選','自選')
+                                    rv_r['_vocab_timer'] = int(vcfg3[1]) if len(vcfg3)>1 else 30
+                                    rv_r['_vocab_extra'] = int(vcfg3[2]) if len(vcfg3)>2 else 3
+                                    _all_dfs.append(rv_r)
+                            # 純聽力音標任務
+                            if is_lp_task and not df_lp.empty:
+                                dlp_r = df_lp.copy()
+                                dlp_r['題目ID'] = dlp_r.apply(_get_lp_qid, axis=1)
+                                rlp_r = dlp_r[dlp_r['題目ID'].isin(q_ids_set)].copy()
+                                if not rlp_r.empty:
+                                    import random as _rand_lp_r
+                                    lp_recs_r = []
+                                    for _, lp_row_r in rlp_r.iterrows():
+                                        lp_d_r = lp_row_r.to_dict()
+                                        dist_r  = _get_lp_distractors(df_lp, lp_row_r, n=3)
+                                        opts_r  = dist_r + [lp_row_r.to_dict()]
+                                        _rand_lp_r.shuffle(opts_r)
+                                        opts_r  = opts_r[:4]
+                                        cidx_r  = next((i for i, o in enumerate(opts_r) if o.get('KK符號') == lp_d_r.get('KK符號')), 0)
+                                        lp_d_r['_lp_opts']        = opts_r
+                                        lp_d_r['_lp_correct_opt'] = ["A","B","C","D"][cidx_r]
+                                        lp_d_r['_type']           = 'listen_phon'
+                                        lp_recs_r.append(lp_d_r)
+                                    _all_dfs.append(pd.DataFrame(lp_recs_r))
                             if _all_dfs:
                                 retry_all = pd.concat(_all_dfs, ignore_index=True)
                                 records   = retry_all.to_dict('records')
