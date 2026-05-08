@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.377 - 完成任務顯示練習模式版)
+# 🧩 英文全能練習系統 (V2.9.378 - 練習不計正確率版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.377
+# 📌 版本編號 (VERSION): 2.9.378
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.377"
+VERSION = "2.9.378"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -478,7 +478,9 @@ with st.sidebar:
                     (df_lb["時間"].str[:10] >= date_from_str) &
                     (df_lb["時間"].str[:10] <= date_to_str)
                 ]
-                df_lb_ans = df_lb[~df_lb["結果"].str.contains("📖", na=False)]
+                df_lb_ans = df_lb[
+                    ~df_lb["結果"].str.contains("📖|練習", na=False)
+                ]
                 if target_group:
                     members = sorted(df_s[df_s["分組"] == target_group]["姓名"].tolist())
                 else:
@@ -2978,7 +2980,8 @@ if not st.session_state.quiz_loaded:
                             ~stu_logs_check['結果'].fillna('').str.contains('練習', na=False)
                         ]['題目ID'].tolist())
                         my_reading = set(stu_logs_check[
-                            stu_logs_check['結果'].fillna('').str.contains('🎤|朗讀|分', na=False)
+                            stu_logs_check['結果'].fillna('').str.contains('🎤|朗讀|分', na=False) &
+                            ~stu_logs_check['結果'].fillna('').str.contains('練習', na=False)
                         ]['題目ID'].tolist())
                         # 已作答 = 有任何非講解紀錄（與複習模式一致）
                         my_answered = set(stu_logs_check[
@@ -2999,7 +3002,7 @@ if not st.session_state.quiz_loaded:
             status_icon = "🟢" if all_done else ("🎤" if is_reading_task else "🔴")
             date_info   = f"{task_start} ～ {task_end}" if task_start else ""
 
-            with st.expander(f"{status_icon} {task_name}　{date_info}　{done_cnt}/{task_q_count} 題完成", expanded=not all_done):
+            with st.expander(f"{status_icon} {task_name}　{date_info}　{done_cnt}/{task_q_count} 題完成", expanded=True):
                 # 任務說明
                 task_desc_text = str(arow.get('任務說明') or '').strip()
                 if task_desc_text and task_desc_text not in ('nan', 'None', ''):
