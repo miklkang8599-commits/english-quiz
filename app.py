@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.376 - 所有題型練習模式版)
+# 🧩 英文全能練習系統 (V2.9.377 - 完成任務顯示練習模式版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.376
+# 📌 版本編號 (VERSION): 2.9.377
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.376"
+VERSION = "2.9.377"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3011,15 +3011,24 @@ if not st.session_state.quiz_loaded:
 
                 if all_done:
                     st.success("🎉 此任務已全部完成！")
-                    _rc1, _rc2 = st.columns([2, 1])
-                    retry_start = _rc2.number_input(
+                    _rc1, _rc2, _rc3 = st.columns([2, 2, 1])
+                    retry_start = _rc3.number_input(
                         "從第幾題", min_value=1, max_value=task_q_count, value=1,
                         key=f"retry_start_{_task_idx}"
                     )
+                    _retry_practice = False
                     if _rc1.button("🔁 再次練習", key=f"retry_task_{_task_idx}", use_container_width=True, type="primary"):
+                        _retry_practice = False
+                        _do_retry = True
+                    elif _rc2.button("🏋️ 練習模式", key=f"practice_task_{_task_idx}", use_container_width=True):
+                        _retry_practice = True
+                        _do_retry = True
+                    else:
+                        _do_retry = False
+
+                    if _do_retry:
                         _start_idx = max(0, int(retry_start) - 1)
-                        if not hasattr(st.session_state, "_is_practice_defined"):
-                            _is_practice = _is_practice if "_is_practice" in dir() else False
+                        _is_practice = _retry_practice
 
                         if is_reading_task:
                             df_r2 = df_r.copy()
