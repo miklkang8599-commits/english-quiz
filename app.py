@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.375 - 再次練習pending_ids修復版)
+# 🧩 英文全能練習系統 (V2.9.376 - 所有題型練習模式版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.375
+# 📌 版本編號 (VERSION): 2.9.376
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.375"
+VERSION = "2.9.376"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -4811,8 +4811,9 @@ if st.session_state.quiz_loaded:
             if mcq_analysis:
                 st.info(f"📝 解析：{mcq_analysis}")
     st.divider()
-    # 練習模式用3欄，一般模式用2欄
-    if _practice_mode and st.session_state.get('show_analysis', False):
+    # 練習模式對答後用3欄，其他用2欄
+    _show_retry = _practice_mode and st.session_state.get('show_analysis', False)
+    if _show_retry:
         c_nav = st.columns(3)
     else:
         c_nav = st.columns(2)
@@ -4860,7 +4861,7 @@ if st.session_state.quiz_loaded:
             c_nav[0].button("⬅️ 上一題", use_container_width=True, disabled=True)
 
     # 練習模式：對答後顯示「再練習一次」
-    if _practice_mode and st.session_state.get('show_analysis', False):
+    if _show_retry:
         if c_nav[1].button("🔁 再練習一次", use_container_width=True, key="retry_q_btn"):
             _clear_q()
             st.session_state.update({
