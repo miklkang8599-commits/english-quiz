@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.379 - 再次練習all_dfs修復版)
+# 🧩 英文全能練習系統 (V2.9.378 - 練習不計正確率版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.379
+# 📌 版本編號 (VERSION): 2.9.378
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.379"
+VERSION = "2.9.378"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3019,20 +3019,25 @@ if not st.session_state.quiz_loaded:
                         "從第幾題", min_value=1, max_value=task_q_count, value=1,
                         key=f"retry_start_{_task_idx}"
                     )
-                    _retry_practice = False
+                    _do_retry    = False
+                    _is_practice = False
                     if _rc1.button("🔁 再次練習", key=f"retry_task_{_task_idx}", use_container_width=True, type="primary"):
-                        _retry_practice = False
-                        _do_retry = True
-                    elif _rc2.button("🏋️ 練習模式", key=f"practice_task_{_task_idx}", use_container_width=True):
-                        _retry_practice = True
-                        _do_retry = True
-                    else:
-                        _do_retry = False
-
+                        _do_retry    = True
+                        _is_practice = False
+                        st.session_state[f"_retry_mode_{_task_idx}"] = False
+                    if _rc2.button("🏋️ 練習模式", key=f"practice_task_{_task_idx}", use_container_width=True):
+                        _do_retry    = True
+                        _is_practice = True
+                        st.session_state[f"_retry_mode_{_task_idx}"] = True
+                    # 從 session_state 恢復（rerun 後）
+                    if not _do_retry and st.session_state.get(f"_retry_pending_{_task_idx}"):
+                        _do_retry    = True
+                        _is_practice = st.session_state.pop(f"_retry_mode_{_task_idx}", False)
+                        st.session_state.pop(f"_retry_pending_{_task_idx}", None)
                     if _do_retry:
-                        _start_idx = max(0, int(retry_start) - 1)
-                        _is_practice = _retry_practice
+                        st.session_state[f"_retry_pending_{_task_idx}"] = True
 
+                        _start_idx = max(0, int(retry_start) - 1)
                         if is_reading_task:
                             df_r2 = df_r.copy()
                             if '題目ID' not in df_r2.columns:
