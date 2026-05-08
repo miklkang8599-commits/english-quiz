@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.378 - 練習不計正確率版)
+# 🧩 英文全能練習系統 (V2.9.379 - 再次練習all_dfs修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.378
+# 📌 版本編號 (VERSION): 2.9.379
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.378"
+VERSION = "2.9.379"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3109,7 +3109,7 @@ if not st.session_state.quiz_loaded:
                                 rls = dls2[dls2['題目ID'].isin(q_ids_set)].copy()
                                 if not rls.empty:
                                     rls['_ls_words'] = rls['聽力重組英文答案'].apply(_ls_split_words)
-                                    all_dfs.append(rls)
+                                    _all_dfs.append(rls)
                             if _all_dfs:
                                 retry_all = pd.concat(_all_dfs, ignore_index=True)
                                 records   = retry_all.to_dict('records')
