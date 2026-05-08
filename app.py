@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.381 - 所有題型再次練習版)
+# 🧩 英文全能練習系統 (V2.9.382 - 再次練習邏輯簡化版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.381
+# 📌 版本編號 (VERSION): 2.9.382
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.381"
+VERSION = "2.9.382"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3024,24 +3024,11 @@ if not st.session_state.quiz_loaded:
                     if _rc1.button("🔁 再次練習", key=f"retry_task_{_task_idx}", use_container_width=True, type="primary"):
                         _do_retry    = True
                         _is_practice = False
-                        st.session_state[f"_retry_mode_{_task_idx}"] = False
                     if _rc2.button("🏋️ 練習模式", key=f"practice_task_{_task_idx}", use_container_width=True):
                         _do_retry    = True
                         _is_practice = True
-                        st.session_state[f"_retry_mode_{_task_idx}"] = True
-                    # 從 session_state 恢復（rerun 後）
-                    if not _do_retry and st.session_state.get(f"_retry_pending_{_task_idx}"):
-                        _do_retry    = True
-                        _is_practice = st.session_state.get(f"_retry_mode_{_task_idx}", False)
-                        # 清除旗標，避免重複觸發
-                        st.session_state.pop(f"_retry_pending_{_task_idx}", None)
-                        st.session_state.pop(f"_retry_mode_{_task_idx}", None)
-                    if _do_retry and not st.session_state.get(f"_retry_pending_{_task_idx}"):
-                        # 已消費旗標，不再 pending
-                        pass
-                    elif _do_retry:
-                        st.session_state[f"_retry_pending_{_task_idx}"] = True
 
+                    if _do_retry:
                         _start_idx = max(0, int(retry_start) - 1)
                         if is_reading_task:
                             df_r2 = df_r.copy()
