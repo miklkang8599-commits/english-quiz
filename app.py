@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.385 - 競賽任務獨立路徑版)
+# 🧩 英文全能練習系統 (V2.9.386 - 競賽else分支修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.385
+# 📌 版本編號 (VERSION): 2.9.386
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.385"
+VERSION = "2.9.386"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3008,7 +3008,7 @@ if not st.session_state.quiz_loaded:
                     if st.button("🏆 開始競賽", key=btn_key, type="primary", use_container_width=True):
                         pending_ids = q_ids_set
             else:
-
+                status_icon = "🟢" if all_done else ("🎤" if is_reading_task else "🔴")
                 with st.expander(f"{status_icon} {task_name}　{date_info}　{done_cnt}/{task_q_count} 題完成", expanded=True):
                     # 任務說明
                     task_desc_text = str(arow.get('任務說明') or '').strip()
