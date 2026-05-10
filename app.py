@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.390 - 學生任務變數完整定義版)
+# 🧩 英文全能練習系統 (V2.9.391 - raw_ids補回版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.390
+# 📌 版本編號 (VERSION): 2.9.391
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.390"
+VERSION = "2.9.391"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -2927,6 +2927,8 @@ if not st.session_state.quiz_loaded:
             # 預設值（避免任何路徑沒有賦值）
             done_cnt, all_done, my_done = 0, False, set()
             pending_ids, _start_idx_fwd, _is_practice = set(), 0, False
+            # 過濾掉 nan 和空白
+            raw_ids   = set([q.strip() for q in task_q_ids.split(',') if q.strip() and q.strip() != 'nan'])
             q_ids_set = raw_ids  # 原始格式，用於題數計算
             # q_ids_all 包含所有格式（有V_/無V_），用於 logs 比對
             q_ids_all = set()
