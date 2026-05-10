@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.392 - 競賽多次參賽版)
+# 🧩 英文全能練習系統 (V2.9.393 - 拼單字雙聲TTS版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.392
+# 📌 版本編號 (VERSION): 2.9.393
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.392"
+VERSION = "2.9.393"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -4669,25 +4669,37 @@ if st.session_state.quiz_loaded:
                         st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
                         st.rerun()
 
-        # 答對後播放 TTS
+        # 答對後播放 TTS（自然聲音 + 男聲）
         if st.session_state.get("show_analysis") and is_vocab:
             res = st.session_state.get("current_res", "")
-            tts_key = f"vocab_tts_{st.session_state.q_idx}"
+            tts_key_f = f"vocab_tts_f_{st.session_state.q_idx}"  # nova（自然）
+            tts_key_m = f"vocab_tts_m_{st.session_state.q_idx}"  # onyx（男聲）
             if "✅" in res:
                 st.success(res)
-                if not st.session_state.get(tts_key):
+                # 產生兩種聲音
+                if not st.session_state.get(tts_key_f) or not st.session_state.get(tts_key_m):
                     try:
-                        import openai as _oai, base64 as _b64, io as _io
+                        import openai as _oai, base64 as _b64
                         _client = _oai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
-                        tts_raw = _client.audio.speech.create(model="tts-1", voice="nova", input=word).content
-                        st.session_state[tts_key] = _b64.b64encode(tts_raw).decode()
+                        if not st.session_state.get(tts_key_f):
+                            tts_f = _client.audio.speech.create(model="tts-1", voice="nova", input=word).content
+                            st.session_state[tts_key_f] = _b64.b64encode(tts_f).decode()
+                        if not st.session_state.get(tts_key_m):
+                            tts_m = _client.audio.speech.create(model="tts-1", voice="onyx", input=word).content
+                            st.session_state[tts_key_m] = _b64.b64encode(tts_m).decode()
                         st.rerun()
                     except:
                         pass
-                if st.session_state.get(tts_key):
+                if st.session_state.get(tts_key_f) or st.session_state.get(tts_key_m):
                     import base64 as _b64, io as _io
                     st.markdown(f"**🔊 {word}**")
-                    st.audio(_io.BytesIO(_b64.b64decode(st.session_state[tts_key])), format="audio/mpeg")
+                    _tc1, _tc2 = st.columns(2)
+                    if st.session_state.get(tts_key_f):
+                        _tc1.caption("🎵 自然聲音")
+                        _tc1.audio(_io.BytesIO(_b64.b64decode(st.session_state[tts_key_f])), format="audio/mpeg")
+                    if st.session_state.get(tts_key_m):
+                        _tc2.caption("🎵 男聲")
+                        _tc2.audio(_io.BytesIO(_b64.b64decode(st.session_state[tts_key_m])), format="audio/mpeg")
             else:
                 st.warning(res)
 
@@ -4890,7 +4902,8 @@ if st.session_state.quiz_loaded:
             "vocab_start_time": None, "vocab_q_idx": None
         })
         # 清除選項順序快取和錄音評分快取
-        for _ok in [f"mcq_order_{q_idx}", f"rm_order_{q_idx}", f"audio_scored_{q_idx}", f"mcq_written_{q_idx}"]:
+        for _ok in [f"mcq_order_{q_idx}", f"rm_order_{q_idx}", f"audio_scored_{q_idx}", f"mcq_written_{q_idx}",
+                    f"vocab_tts_f_{q_idx}", f"vocab_tts_m_{q_idx}"]:
             st.session_state.pop(_ok, None)
         # 清除該題目的所有 vocab pool（含新格式 vocab_pool_{q_idx}_{extra}）
         for k in list(st.session_state.keys()):
