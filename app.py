@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.386 - 競賽else分支修復版)
+# 🧩 英文全能練習系統 (V2.9.387 - status_icon預設值修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.386
+# 📌 版本編號 (VERSION): 2.9.387
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.386"
+VERSION = "2.9.387"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -2998,8 +2998,8 @@ if not st.session_state.quiz_loaded:
                 done_cnt, all_done = 0, False
 
             # 競賽任務：不計算完成數，直接顯示開始按鈕
+            status_icon = "🏆" if is_race_task else ("🟢" if all_done else ("🎤" if is_reading_task else "🔴"))
             if is_race_task:
-                status_icon = "🏆"
                 with st.expander(f"{status_icon} {task_name}　{date_info}", expanded=True):
                     _is_practice = False
                     btn_key = f"start_task_{_task_idx}_{task_name[:20]}"
@@ -3008,7 +3008,6 @@ if not st.session_state.quiz_loaded:
                     if st.button("🏆 開始競賽", key=btn_key, type="primary", use_container_width=True):
                         pending_ids = q_ids_set
             else:
-                status_icon = "🟢" if all_done else ("🎤" if is_reading_task else "🔴")
                 with st.expander(f"{status_icon} {task_name}　{date_info}　{done_cnt}/{task_q_count} 題完成", expanded=True):
                     # 任務說明
                     task_desc_text = str(arow.get('任務說明') or '').strip()
