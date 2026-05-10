@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.394 - TTS半速播放版)
+# 🧩 英文全能練習系統 (V2.9.395 - 競賽開始按鈕修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.394
+# 📌 版本編號 (VERSION): 2.9.395
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.394"
+VERSION = "2.9.395"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3019,10 +3019,40 @@ if not st.session_state.quiz_loaded:
                 with st.expander(f"{status_icon} {task_name}　{date_info}", expanded=True):
                     _is_practice = False
                     btn_key = f"start_task_{_task_idx}_{task_name[:20]}"
-                    pending_ids    = set()
-                    _start_idx_fwd = 0
                     if st.button("🏆 開始競賽", key=btn_key, type="primary", use_container_width=True):
-                        pending_ids = q_ids_set
+                        # 競賽模式：混合所有題型，隨機排列
+                        import random as _rr
+                        _race_records = []
+                        _race_q2 = pd.concat([df_q, df_mcq], ignore_index=True) if not df_mcq.empty else df_q.copy()
+                        if not _race_q2.empty:
+                            _race_q2['題目ID'] = (_race_q2['版本'].astype(str) + '_' + _race_q2['年度'].astype(str) + '_' +
+                                _race_q2['冊編號'].astype(str) + '_' + _race_q2['單元'].astype(str) + '_' +
+                                _race_q2['課編號'].astype(str) + '_' + _race_q2['句編號'].astype(str))
+                            _race_q2 = _race_q2.drop_duplicates(subset='題目ID', keep='last')
+                            _matched = _race_q2[_race_q2['題目ID'].isin(q_ids_set)].copy()
+                            if not _matched.empty:
+                                _race_records.extend(_matched.to_dict('records'))
+                        if not _race_records:
+                            st.error("找不到題目，請確認任務設定")
+                        else:
+                            _rr.shuffle(_race_records)
+                            for _rk in [k for k in list(st.session_state.keys()) if k.startswith("mcq_order_") or k.startswith("mcq_written_")]:
+                                del st.session_state[_rk]
+                            st.session_state.update({
+                                "quiz_list":    _race_records,
+                                "q_idx":        0,
+                                "quiz_loaded":  True,
+                                "answered_count": 0,
+                                "current_task_name": task_id_key,
+                                "practice_mode": False,
+                                "race_mode":    True,
+                                "race_start_time": __import__("time").time(),
+                                "race_attempt": st.session_state.get("race_attempt", 0) + 1,
+                                "show_analysis": False,
+                                "current_res": "",
+                                "ans": [], "used_history": [], "shuf": [],
+                            })
+                            st.rerun()
             else:
                 with st.expander(f"{status_icon} {task_name}　{date_info}　{done_cnt}/{task_q_count} 題完成", expanded=True):
                     # 任務說明
