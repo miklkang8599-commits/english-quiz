@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.396 - 競賽全題型載入版)
+# 🧩 英文全能練習系統 (V2.9.397 - 競賽第一題狀態清除版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.396
+# 📌 版本編號 (VERSION): 2.9.397
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.396"
+VERSION = "2.9.397"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3073,21 +3073,30 @@ if not st.session_state.quiz_loaded:
                             st.error("找不到題目，請確認任務設定")
                         else:
                             _rr.shuffle(_race_records)
-                            for _rk in [k for k in list(st.session_state.keys()) if k.startswith("mcq_order_") or k.startswith("mcq_written_")]:
+                            # 清除所有舊答題狀態
+                            _keys_to_clear = [k for k in list(st.session_state.keys()) if
+                                k.startswith("mcq_order_") or k.startswith("mcq_written_") or
+                                k.startswith("vocab_pool_") or k.startswith("vocab_ans_") or
+                                k.startswith("vocab_used_") or k.startswith("rm_order_") or
+                                k.startswith("audio_scored_") or k.startswith("vocab_tts_") or
+                                k.startswith("ls_ans_") or k.startswith("ls_shuf_")]
+                            for _rk in _keys_to_clear:
                                 del st.session_state[_rk]
                             st.session_state.update({
-                                "quiz_list":    _race_records,
-                                "q_idx":        0,
-                                "quiz_loaded":  True,
+                                "quiz_list":     _race_records,
+                                "q_idx":         0,
+                                "quiz_loaded":   True,
                                 "answered_count": 0,
                                 "current_task_name": task_id_key,
                                 "practice_mode": False,
-                                "race_mode":    True,
+                                "race_mode":     True,
                                 "race_start_time": __import__("time").time(),
-                                "race_attempt": st.session_state.get("race_attempt", 0) + 1,
+                                "race_attempt":  st.session_state.get("race_attempt", 0) + 1,
                                 "show_analysis": False,
-                                "current_res": "",
+                                "current_res":   "",
                                 "ans": [], "used_history": [], "shuf": [],
+                                "tts_student":   None,
+                                "stt_text_shown": "",
                             })
                             st.rerun()
             else:
@@ -4127,6 +4136,10 @@ if st.session_state.quiz_loaded:
     _practice_mode = st.session_state.get('practice_mode', False)
     _race_mode     = st.session_state.get('race_mode', False)
     _mode_label    = "🏆 競賽模式" if _race_mode else ("🏋️ 練習模式" if _practice_mode else "")
+    # 競賽模式：確保第一題不顯示對錯
+    if _race_mode and st.session_state.get('q_idx', 0) == 0 and not st.session_state.get('answered_count', 0):
+        st.session_state['show_analysis'] = False
+        st.session_state['current_res']   = ""
     st.markdown(f"### 🔴 練習中 (第 {st.session_state.q_idx + 1} / {total_q} 題　｜　已作答 {answered_c} 題) {_mode_label}")
     q = st.session_state.quiz_list[st.session_state.q_idx]
     # 判斷題型：優先用 _type，其次看欄位，最後看單元名稱
