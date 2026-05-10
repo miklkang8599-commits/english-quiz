@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.391 - raw_ids補回版)
+# 🧩 英文全能練習系統 (V2.9.392 - 競賽多次參賽版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.391
+# 📌 版本編號 (VERSION): 2.9.392
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.391"
+VERSION = "2.9.392"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -2797,28 +2797,37 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
 
                 # 計算排名
                 _rank_data = []
-                if not _rt_logs.empty:
+                if not _rt_logs.empty and '時間' in _rt_logs.columns:
                     for _stu, _sg in _rt_logs.groupby('姓名'):
-                        _s_answered = set(_sg[~_sg['結果'].fillna('').str.contains('📖|練習')]['題目ID'].tolist())
-                        _s_correct  = set(_sg[_sg['結果'].fillna('').str.contains('✅')]['題目ID'].tolist())
-                        _s_wrong    = _s_answered - _s_correct
-                        _s_acc      = len(_s_correct) / _total_q if _total_q else 0
-                        # 作答時間（最早到最晚）
-                        _s_time = 9999
-                        if '時間' in _sg.columns and len(_sg) >= 2:
-                            try:
-                                _t_sorted = pd.to_datetime(_sg['時間']).sort_values()
-                                _s_time   = (_t_sorted.iloc[-1] - _t_sorted.iloc[0]).total_seconds()
-                            except:
-                                pass
-                        _rank_data.append({
-                            '姓名': _stu,
-                            '答題數': len(_s_answered),
-                            '答對數': len(_s_correct),
-                            '答錯數': len(_s_wrong),
-                            '正確率': _s_acc,
-                            '作答秒數': _s_time,
-                        })
+                        _sg = _sg.sort_values('時間')
+                        try:
+                            _times = pd.to_datetime(_sg['時間'])
+                            _gaps  = _times.diff().dt.total_seconds().fillna(9999)
+                            _sg = _sg.copy()
+                            _sg['參賽次'] = (_gaps > 300).cumsum() + 1
+                        except:
+                            _sg['參賽次'] = 1
+                        for _ano, _ag in _sg.groupby('參賽次'):
+                            _s_answered = set(_ag[~_ag['結果'].fillna('').str.contains('📖|練習')]['題目ID'].tolist())
+                            _s_correct  = set(_ag[_ag['結果'].fillna('').str.contains('✅')]['題目ID'].tolist())
+                            _s_wrong    = _s_answered - _s_correct
+                            _s_acc      = len(_s_correct) / _total_q if _total_q else 0
+                            _s_time = 9999
+                            if len(_ag) >= 2:
+                                try:
+                                    _t_sorted = pd.to_datetime(_ag['時間']).sort_values()
+                                    _s_time   = (_t_sorted.iloc[-1] - _t_sorted.iloc[0]).total_seconds()
+                                except:
+                                    pass
+                            _rank_data.append({
+                                '姓名': _stu,
+                                '次數': int(_ano),
+                                '答題數': len(_s_answered),
+                                '答對數': len(_s_correct),
+                                '答錯數': len(_s_wrong),
+                                '正確率': _s_acc,
+                                '作答秒數': _s_time,
+                            })
 
                 st.session_state[_race_cache_key] = {
                     'rank_data': _rank_data,
@@ -2840,7 +2849,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 _rank_df['作答時間'] = _rank_df['作答秒數'].apply(
                     lambda x: f"{int(x//60)}分{int(x%60):02d}秒" if x < 9000 else "—"
                 )
-                _rank_df = _rank_df[['姓名','答題數','答對數','答錯數','正確率','作答時間']]
+                _rank_df = _rank_df[['姓名','次數','答題數','答對數','答錯數','正確率','作答時間']]
 
                 st.caption(f"共 {len(_rank_df)} 位學生作答　總題數：{_total_q} 題")
                 st.dataframe(_rank_df, use_container_width=True, hide_index=False)
@@ -4974,61 +4983,108 @@ if st.session_state.quiz_loaded:
                 _user      = st.session_state.user_name
                 _quiz_ids  = set(q.get('題目ID','') for q in st.session_state.get('quiz_list', []))
 
-                # 本次作答統計
-                _my_logs = _race_logs[
+                # 本次作答統計（用 race_start_time 篩選本次）
+                _race_start = st.session_state.get('race_start_time') or 0
+                _my_logs_all = _race_logs[
                     (_race_logs['姓名'] == _user) &
                     (_race_logs['題目ID'].isin(_quiz_ids))
                 ] if not _race_logs.empty else pd.DataFrame()
+                # 本次：只算 race_start_time 之後的記錄
+                if not _my_logs_all.empty and '時間' in _my_logs_all.columns and _race_start:
+                    try:
+                        import datetime as _dt
+                        _race_start_dt = _dt.datetime.fromtimestamp(_race_start)
+                        _my_logs = _my_logs_all[pd.to_datetime(_my_logs_all['時間']) >= _race_start_dt]
+                    except:
+                        _my_logs = _my_logs_all
+                else:
+                    _my_logs = _my_logs_all
+
                 _total    = len(_quiz_ids)
                 _answered = len(set(_my_logs['題目ID'].tolist())) if not _my_logs.empty else 0
                 _correct  = len(_my_logs[_my_logs['結果'].fillna('').str.contains('✅', na=False)]) if not _my_logs.empty else 0
                 _wrong    = _answered - _correct
                 _acc      = f"{int(_correct/_answered*100)}%" if _answered else "0%"
+                _race_no  = st.session_state.get('race_attempt', 1)
 
-                st.markdown(f"## 🏆 競賽完成！")
+                st.markdown(f"## 🏆 競賽完成！（第 {_race_no} 次）")
                 rc1, rc2, rc3, rc4 = st.columns(4)
                 rc1.metric("⏱ 作答時間", f"{_race_min}分{_race_sec:02d}秒")
                 rc2.metric("📝 題數", f"{_answered}/{_total}")
                 rc3.metric("✅ 答對", _correct)
                 rc4.metric("🎯 正確率", _acc)
 
-                # 排名計算
-                if not _race_logs.empty and _task_name:
+                # 排名計算（每人每次分開，以 race_no 區分）
+                if not _race_logs.empty:
                     _all_stus_logs = _race_logs[_race_logs['題目ID'].isin(_quiz_ids)].copy()
+                    # 每人按時間分組成多次參賽（每次間隔超過5分鐘算新一次）
                     _rank_data = []
                     for _stu, _sg in _all_stus_logs.groupby('姓名'):
-                        _s_correct = len(_sg[_sg['結果'].fillna('').str.contains('✅', na=False)])
-                        _s_ans     = len(set(_sg['題目ID'].tolist()))
-                        _s_acc     = _s_correct / _s_ans if _s_ans else 0
-                        # 取最早和最晚的時間差當作該學生的作答時間
-                        if '時間' in _sg.columns and len(_sg) > 1:
+                        if '時間' not in _sg.columns: continue
+                        _sg = _sg.sort_values('時間')
+                        try:
+                            _times = pd.to_datetime(_sg['時間'])
+                            _gaps  = _times.diff().dt.total_seconds().fillna(9999)
+                            _attempt_no = (_gaps > 300).cumsum() + 1
+                            _sg = _sg.copy()
+                            _sg['參賽次'] = _attempt_no
+                        except:
+                            _sg['參賽次'] = 1
+
+                        for _ano, _ag in _sg.groupby('參賽次'):
+                            _s_correct = len(_ag[_ag['結果'].fillna('').str.contains('✅', na=False)])
+                            _s_ans     = len(set(_ag['題目ID'].tolist()))
+                            _s_acc     = _s_correct / _total if _total else 0
                             try:
-                                _t_min = pd.to_datetime(_sg['時間'].min())
-                                _t_max = pd.to_datetime(_sg['時間'].max())
-                                _s_time = (_t_max - _t_min).total_seconds()
+                                _t_sorted = pd.to_datetime(_ag['時間']).sort_values()
+                                _s_time   = (_t_sorted.iloc[-1] - _t_sorted.iloc[0]).total_seconds() if len(_t_sorted) > 1 else 9999
                             except:
                                 _s_time = 9999
-                        else:
-                            _s_time = 9999
-                        _rank_data.append({'姓名': _stu, '正確率': _s_acc, '正確題數': _s_correct, '作答秒數': _s_time})
+                            _rank_data.append({
+                                '姓名': _stu,
+                                '次數': int(_ano),
+                                '答題數': _s_ans,
+                                '答對數': _s_correct,
+                                '正確率_num': _s_acc,
+                                '作答秒數': _s_time,
+                            })
 
                     if _rank_data:
-                        _rank_df = pd.DataFrame(_rank_data).sort_values(['正確率', '作答秒數'], ascending=[False, True]).reset_index(drop=True)
+                        _rank_df = pd.DataFrame(_rank_data).sort_values(
+                            ['正確率_num', '作答秒數'], ascending=[False, True]
+                        ).reset_index(drop=True)
                         _rank_df.index += 1
-                        _rank_df['正確率'] = _rank_df['正確率'].apply(lambda x: f"{int(x*100)}%")
-                        _rank_df['作答時間'] = _rank_df['作答秒數'].apply(lambda x: f"{int(x//60)}分{int(x%60):02d}秒" if x < 9999 else "—")
-                        _rank_df = _rank_df[['姓名','正確題數','正確率','作答時間']]
+                        _rank_df['正確率'] = _rank_df['正確率_num'].apply(lambda x: f"{int(x*100)}%")
+                        _rank_df['作答時間'] = _rank_df['作答秒數'].apply(
+                            lambda x: f"{int(x//60)}分{int(x%60):02d}秒" if x < 9000 else "—"
+                        )
+                        _rank_df = _rank_df[['姓名','次數','答題數','答對數','正確率','作答時間']]
 
-                        # 我的排名
-                        _my_rank = _rank_df[_rank_df['姓名'] == _user].index
-                        if len(_my_rank) > 0:
-                            st.success(f"🥇 正確率排名：第 **{_my_rank[0]}** 名 / 共 {len(_rank_df)} 人")
+                        _my_rows = _rank_df[_rank_df['姓名'] == _user]
+                        if not _my_rows.empty:
+                            st.success(f"🥇 本次正確率排名：第 **{_my_rows.index[0]}** 名 / 共 {len(_rank_df)} 筆")
 
-                        st.markdown("**📊 班級排名**")
-                        st.dataframe(_rank_df.style.highlight_between(subset=['姓名'], axis=None, props='background-color:yellow;' if _user in _rank_df['姓名'].values else ''), use_container_width=True, hide_index=False)
+                        st.markdown("**📊 班級排名（含多次參賽）**")
+                        st.dataframe(_rank_df, use_container_width=True, hide_index=False)
 
-                if st.button("🏁 返回主選單", type="primary", use_container_width=True):
-                    st.session_state.update({"quiz_loaded": False, "range_confirmed": False, "race_mode": False})
+                # 按鈕
+                _btn1, _btn2 = st.columns(2)
+                if _btn1.button("🔁 再次參賽", type="primary", use_container_width=True):
+                    _load_logs_cached.clear()
+                    st.session_state.update({
+                        "quiz_loaded": False, "range_confirmed": False,
+                        "race_mode": True,
+                        "race_attempt": st.session_state.get('race_attempt', 1) + 1,
+                        "race_start_time": None,
+                        "show_analysis": False, "current_res": "",
+                        "ans": [], "used_history": [], "shuf": [],
+                    })
+                    st.rerun()
+                if _btn2.button("🏁 返回主選單", use_container_width=True):
+                    st.session_state.update({
+                        "quiz_loaded": False, "range_confirmed": False,
+                        "race_mode": False, "race_attempt": 1,
+                    })
                     st.rerun()
             else:
                 st.session_state.update({"quiz_loaded": False, "range_confirmed": False})
