@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.387 - status_icon預設值修復版)
+# 🧩 英文全能練習系統 (V2.9.388 - 競賽任務done_cnt修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.387
+# 📌 版本編號 (VERSION): 2.9.388
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.387"
+VERSION = "2.9.388"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -2948,7 +2948,7 @@ if not st.session_state.quiz_loaded:
             is_lp_task      = task_type == '聽力音標'
             is_ls_task      = task_type == '聽力重組'
 
-            if q_ids_set:
+            if q_ids_set and not is_race_task:
                 try:
                     # 用快取的 df_l，依任務編號篩選
                     task_id_key_check = arow.get('任務編號', '') or ''
@@ -2998,6 +2998,8 @@ if not st.session_state.quiz_loaded:
                 done_cnt, all_done = 0, False
 
             # 競賽任務：不計算完成數，直接顯示開始按鈕
+            if is_race_task:
+                done_cnt, all_done = 0, False
             status_icon = "🏆" if is_race_task else ("🟢" if all_done else ("🎤" if is_reading_task else "🔴"))
             if is_race_task:
                 with st.expander(f"{status_icon} {task_name}　{date_info}", expanded=True):
