@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.393 - 拼單字雙聲TTS版)
+# 🧩 英文全能練習系統 (V2.9.394 - TTS半速播放版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.393
+# 📌 版本編號 (VERSION): 2.9.394
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.393"
+VERSION = "2.9.394"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -4696,10 +4696,22 @@ if st.session_state.quiz_loaded:
                     _tc1, _tc2 = st.columns(2)
                     if st.session_state.get(tts_key_f):
                         _tc1.caption("🎵 自然聲音")
-                        _tc1.audio(_io.BytesIO(_b64.b64decode(st.session_state[tts_key_f])), format="audio/mpeg")
+                        _audio_f = st.session_state[tts_key_f]
+                        _tc1.markdown(f'''<audio controls playbackRate="0.5" style="width:100%">
+                            <source src="data:audio/mpeg;base64,{_audio_f}" type="audio/mpeg">
+                        </audio>
+                        <script>
+                        document.querySelectorAll("audio").forEach(a => {{ a.playbackRate = 0.5; }});
+                        </script>''', unsafe_allow_html=True)
                     if st.session_state.get(tts_key_m):
                         _tc2.caption("🎵 男聲")
-                        _tc2.audio(_io.BytesIO(_b64.b64decode(st.session_state[tts_key_m])), format="audio/mpeg")
+                        _audio_m = st.session_state[tts_key_m]
+                        _tc2.markdown(f'''<audio controls style="width:100%">
+                            <source src="data:audio/mpeg;base64,{_audio_m}" type="audio/mpeg">
+                        </audio>
+                        <script>
+                        document.querySelectorAll("audio").forEach(a => {{ a.playbackRate = 0.5; }});
+                        </script>''', unsafe_allow_html=True)
             else:
                 st.warning(res)
 
