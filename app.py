@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.395 - 競賽開始按鈕修復版)
+# 🧩 英文全能練習系統 (V2.9.396 - 競賽全題型載入版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.395
+# 📌 版本編號 (VERSION): 2.9.396
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.395"
+VERSION = "2.9.396"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3020,18 +3020,55 @@ if not st.session_state.quiz_loaded:
                     _is_practice = False
                     btn_key = f"start_task_{_task_idx}_{task_name[:20]}"
                     if st.button("🏆 開始競賽", key=btn_key, type="primary", use_container_width=True):
-                        # 競賽模式：混合所有題型，隨機排列
                         import random as _rr
                         _race_records = []
-                        _race_q2 = pd.concat([df_q, df_mcq], ignore_index=True) if not df_mcq.empty else df_q.copy()
-                        if not _race_q2.empty:
-                            _race_q2['題目ID'] = (_race_q2['版本'].astype(str) + '_' + _race_q2['年度'].astype(str) + '_' +
-                                _race_q2['冊編號'].astype(str) + '_' + _race_q2['單元'].astype(str) + '_' +
-                                _race_q2['課編號'].astype(str) + '_' + _race_q2['句編號'].astype(str))
-                            _race_q2 = _race_q2.drop_duplicates(subset='題目ID', keep='last')
-                            _matched = _race_q2[_race_q2['題目ID'].isin(q_ids_set)].copy()
-                            if not _matched.empty:
-                                _race_records.extend(_matched.to_dict('records'))
+
+                        def _race_qid(r, pfx=""):
+                            return f"{pfx}{r.get('版本','')}_{r.get('年度','')}_{r.get('冊編號','')}_{r.get('單元','')}_{r.get('課編號','')}_{r.get('句編號','')}"
+
+                        # 重組 + 單選（合併去重）
+                        _rq2 = pd.concat([df_q, df_mcq], ignore_index=True) if not df_mcq.empty else df_q.copy()
+                        if not _rq2.empty:
+                            _rq2 = _rq2.copy()
+                            _rq2['題目ID'] = _rq2.apply(lambda r: _race_qid(r), axis=1)
+                            _rq2 = _rq2.drop_duplicates(subset='題目ID', keep='last')
+                            _m = _rq2[_rq2['題目ID'].isin(q_ids_set)].copy()
+                            if not _m.empty: _race_records.extend(_m.to_dict('records'))
+                        # 朗讀
+                        if not df_r.empty:
+                            _rr2 = df_r.copy()
+                            _rr2['題目ID'] = _rr2.apply(lambda r: _race_qid(r, "R_"), axis=1)
+                            _rr2['_type'] = 'reading'
+                            _m = _rr2[_rr2['題目ID'].isin(q_ids_set)].copy()
+                            if not _m.empty: _race_records.extend(_m.to_dict('records'))
+                        # 拼單字
+                        if not df_v.empty:
+                            _rv2 = df_v.copy()
+                            _rv2['題目ID'] = _rv2.apply(lambda r: _race_qid(r, "V_"), axis=1)
+                            _rv2['_type'] = 'vocab'
+                            _m = _rv2[_rv2['題目ID'].isin(q_ids_set)].copy()
+                            if not _m.empty: _race_records.extend(_m.to_dict('records'))
+                        # 閱讀單句
+                        if not df_rm.empty:
+                            _rrm2 = df_rm.copy()
+                            _rrm2['題目ID'] = _rrm2.apply(lambda r: _race_qid(r, "RM_"), axis=1)
+                            _rrm2['_type'] = 'reading_mcq'
+                            _m = _rrm2[_rrm2['題目ID'].isin(q_ids_set)].copy()
+                            if not _m.empty: _race_records.extend(_m.to_dict('records'))
+                        # 聽力音標
+                        if not df_lp.empty:
+                            _rlp2 = df_lp.copy()
+                            _rlp2['題目ID'] = _rlp2.apply(_get_lp_qid, axis=1)
+                            _rlp2['_type'] = 'listen_phon'
+                            _m = _rlp2[_rlp2['題目ID'].isin(q_ids_set)].copy()
+                            if not _m.empty: _race_records.extend(_m.to_dict('records'))
+                        # 聽力句子重組
+                        if not df_ls.empty:
+                            _rls2 = df_ls.copy()
+                            _rls2['題目ID'] = _rls2.apply(_get_ls_qid, axis=1)
+                            _rls2['_type'] = 'listen_sent'
+                            _m = _rls2[_rls2['題目ID'].isin(q_ids_set)].copy()
+                            if not _m.empty: _race_records.extend(_m.to_dict('records'))
                         if not _race_records:
                             st.error("找不到題目，請確認任務設定")
                         else:
