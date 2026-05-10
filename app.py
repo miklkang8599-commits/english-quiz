@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.397 - 競賽第一題狀態清除版)
+# 🧩 英文全能練習系統 (V2.9.398 - 拼單字預設60秒0干擾版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.397
+# 📌 版本編號 (VERSION): 2.9.398
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.397"
+VERSION = "2.9.398"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1305,8 +1305,8 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 # 難度設定
                 vm1, vm2, vm3 = st.columns(3)
                 vt_mode  = vm1.selectbox("模式鎖定", ["學生自選", "拆字母", "鍵盤"], key="vt_mode")
-                vt_timer = vm2.number_input("限時（秒，0=不限）", 0, 300, 30, key="vt_timer")
-                vt_extra = vm3.number_input("干擾字母數", 0, 10, 3, key="vt_extra")
+                vt_timer = vm2.number_input("限時（秒，0=不限）", 0, 300, 60, key="vt_timer")
+                vt_extra = vm3.number_input("干擾字母數", 0, 10, 0, key="vt_extra")
 
                 st.caption(f"📚 範圍 {v_total} 題 → 篩選後 {len(df_v_scope_t1)} 題")
                 df_v_final = df_v_scope_t1.copy()
@@ -1509,8 +1509,8 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 vocab_cfg = ""
                 if has_v:
                     vt_mode_val  = st.session_state.get('vt_mode', '學生自選')
-                    vt_timer_val = st.session_state.get('vt_timer', 30)
-                    vt_extra_val = st.session_state.get('vt_extra', 3)
+                    vt_timer_val = st.session_state.get('vt_timer', 60)
+                    vt_extra_val = st.session_state.get('vt_extra', 0)
                     vocab_cfg = f"{vt_mode_val}|{vt_timer_val}|{vt_extra_val}"
 
                 # 自動產生任務名稱（新格式）
@@ -3166,8 +3166,8 @@ if not st.session_state.quiz_loaded:
                                         vcfg2 = vocab_cfg_str2.split('|') if vocab_cfg_str2 else []
                                         rv['_type'] = 'vocab'
                                         rv['_vocab_mode']  = (vcfg2[0] if len(vcfg2)>0 else '自選').replace('學生自選','自選')
-                                        rv['_vocab_timer'] = int(vcfg2[1]) if len(vcfg2)>1 else 30
-                                        rv['_vocab_extra'] = int(vcfg2[2]) if len(vcfg2)>2 else 3
+                                        rv['_vocab_timer'] = int(vcfg2[1]) if len(vcfg2)>1 else 60
+                                        rv['_vocab_extra'] = int(vcfg2[2]) if len(vcfg2)>2 else 0
                                         _all_dfs.append(rv)
                                 if not df_rm.empty:
                                     drm2 = df_rm.copy()
@@ -3215,8 +3215,8 @@ if not st.session_state.quiz_loaded:
                                         vcfg3 = vocab_cfg_str3.split('|') if vocab_cfg_str3 else []
                                         rv_r['_type']        = 'vocab'
                                         rv_r['_vocab_mode']  = (vcfg3[0] if len(vcfg3)>0 else '自選').replace('學生自選','自選')
-                                        rv_r['_vocab_timer'] = int(vcfg3[1]) if len(vcfg3)>1 else 30
-                                        rv_r['_vocab_extra'] = int(vcfg3[2]) if len(vcfg3)>2 else 3
+                                        rv_r['_vocab_timer'] = int(vcfg3[1]) if len(vcfg3)>1 else 60
+                                        rv_r['_vocab_extra'] = int(vcfg3[2]) if len(vcfg3)>2 else 0
                                         _all_dfs.append(rv_r)
                                 # 純聽力音標任務
                                 if is_lp_task and not df_lp.empty:
@@ -3339,8 +3339,8 @@ if not st.session_state.quiz_loaded:
                                       v_mode_t  = vcfg[0] if len(vcfg) > 0 else '自選'
                                       if v_mode_t == '學生自選':
                                           v_mode_t = '自選'
-                                      v_timer_t = int(vcfg[1]) if len(vcfg) > 1 else 30
-                                      v_extra_t = int(vcfg[2]) if len(vcfg) > 2 else 3
+                                      v_timer_t = int(vcfg[1]) if len(vcfg) > 1 else 60
+                                      v_extra_t = int(vcfg[2]) if len(vcfg) > 2 else 0
                                       records = pending.to_dict('records')
                                       for rec in records:
                                           rec['_type']        = 'vocab'
@@ -3489,8 +3489,8 @@ if not st.session_state.quiz_loaded:
                                           v_mode_mixed = '自選'
                                       pending_v['_type']        = 'vocab'
                                       pending_v['_vocab_mode']  = v_mode_mixed
-                                      pending_v['_vocab_timer'] = int(vcfg[1]) if len(vcfg) > 1 else 30
-                                      pending_v['_vocab_extra'] = int(vcfg[2]) if len(vcfg) > 2 else 3
+                                      pending_v['_vocab_timer'] = int(vcfg[1]) if len(vcfg) > 1 else 60
+                                      pending_v['_vocab_extra'] = int(vcfg[2]) if len(vcfg) > 2 else 0
                                   # 聽力音標（混合任務）
                                   pending_lp_m = pd.DataFrame()
                                   if not df_lp.empty:
@@ -4612,7 +4612,7 @@ if st.session_state.quiz_loaded:
         meaning  = str(q.get("中文意思") or "").strip()
         task_mode    = q.get("_vocab_mode", "自選")
         use_timer    = int(q.get("_vocab_timer", 0) or 0)
-        extra_letters= int(q.get("_vocab_extra", 3)) if q.get("_vocab_extra") is not None else 3
+        extra_letters= int(q.get("_vocab_extra", 0)) if q.get("_vocab_extra") is not None else 0
 
 
         st.markdown(f"<div style=\'font-size:1.3rem;font-weight:600;padding:12px;background:var(--color-background-secondary);border-radius:8px;\'>📖 {meaning}</div>", unsafe_allow_html=True)
