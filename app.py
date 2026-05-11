@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.398 - 拼單字預設60秒0干擾版)
+# 🧩 英文全能練習系統 (V2.9.399 - 登入Enter鍵支援版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.398
+# 📌 版本編號 (VERSION): 2.9.399
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.398"
+VERSION = "2.9.399"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -365,9 +365,11 @@ if not st.session_state.get('logged_in', False):
                 st.rerun()
             st.stop()
         st.markdown("### 🔵 系統登入")
-        i_id = st.text_input("帳號 (學號/員工編號)", key="l_id")
-        i_pw = st.text_input("密碼", type="password", key="l_pw")
-        if st.button("🚀 登入系統", use_container_width=True):
+        with st.form("login_form"):
+            i_id = st.text_input("帳號 (學號/員工編號)", key="l_id")
+            i_pw = st.text_input("密碼", type="password", key="l_pw")
+            _login_submitted = st.form_submit_button("🚀 登入系統", use_container_width=True)
+        if _login_submitted:
             std_id, std_pw = standardize(i_id), standardize(i_pw)
             df_s['c_id'] = df_s['帳號'].apply(standardize)
             df_s['c_pw'] = df_s['密碼'].apply(standardize)
