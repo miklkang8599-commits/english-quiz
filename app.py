@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.402 - 練習模式第一題狀態清除版)
+# 🧩 英文全能練習系統 (V2.9.403 - 再次練習第一題清除版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.402
+# 📌 版本編號 (VERSION): 2.9.403
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.402"
+VERSION = "2.9.403"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -4155,10 +4155,14 @@ if st.session_state.quiz_loaded:
     _practice_mode = st.session_state.get('practice_mode', False)
     _race_mode     = st.session_state.get('race_mode', False)
     _mode_label    = "🏆 競賽模式" if _race_mode else ("🏋️ 練習模式" if _practice_mode else "")
-    # 競賽/練習模式：確保第一題不顯示對錯
-    if (_race_mode or _practice_mode) and st.session_state.get('q_idx', 0) == 0 and not st.session_state.get('answered_count', 0):
-        st.session_state['show_analysis'] = False
-        st.session_state['current_res']   = ""
+    # 競賽/練習模式進入第一題：強制清除對錯狀態
+    if (_race_mode or _practice_mode) and st.session_state.get('q_idx', 0) == 0:
+        if not st.session_state.get('_first_q_cleared'):
+            st.session_state['show_analysis'] = False
+            st.session_state['current_res']   = ""
+            st.session_state['_first_q_cleared'] = True
+    elif st.session_state.get('q_idx', 0) > 0:
+        st.session_state.pop('_first_q_cleared', None)
     st.markdown(f"### 🔴 練習中 (第 {st.session_state.q_idx + 1} / {total_q} 題　｜　已作答 {answered_c} 題) {_mode_label}")
     q = st.session_state.quiz_list[st.session_state.q_idx]
     # 判斷題型：優先用 _type，其次看欄位，最後看單元名稱
