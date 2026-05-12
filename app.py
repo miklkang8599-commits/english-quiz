@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.400 - 登入Enter鍵JS版)
+# 🧩 英文全能練習系統 (V2.9.401 - 拼單字題數重複修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.400
+# 📌 版本編號 (VERSION): 2.9.401
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.400"
+VERSION = "2.9.401"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3343,7 +3343,10 @@ if not st.session_state.quiz_loaded:
                                       df_v2['題目ID'] = df_v2.apply(
                                           lambda r: f"V_{r.get('版本','')}_{r.get('年度','')}_{r.get('冊編號','')}_{r.get('單元','')}_{r.get('課編號','')}_{r.get('句編號','')}", axis=1
                                       )
-                                  pending = df_v2[df_v2['題目ID'].isin(pending_ids)].copy() if not df_v2.empty else pd.DataFrame()
+                                  pending = df_v2[df_v2['題目ID'].isin(
+                                      {q for q in pending_ids if q.startswith('V_')} |
+                                      {f"V_{q}" for q in pending_ids if not any(q.startswith(p) for p in ('V_','R_','RM_','LP_','LS_'))}
+                                  )].copy() if not df_v2.empty else pd.DataFrame()
                                   if not pending.empty:
                                       vocab_cfg_str = str(arow.get('單字設定', '') or '')
                                       vcfg = vocab_cfg_str.split('|') if vocab_cfg_str else []
@@ -3484,10 +3487,15 @@ if not st.session_state.quiz_loaded:
                                       df_rm2['題目ID'] = df_rm2.apply(
                                           lambda r: f"RM_{r.get('版本','')}_{r.get('年度','')}_{r.get('冊編號','')}_{r.get('單元','')}_{r.get('課編號','')}_{r.get('句編號','')}", axis=1
                                       )
-                                  pending_q  = df_q2[df_q2['題目ID'].isin(pending_ids)].copy()
-                                  pending_r  = df_r2[df_r2['題目ID'].isin(pending_ids)].copy() if not df_r2.empty else pd.DataFrame()
-                                  pending_v  = df_v2[df_v2['題目ID'].isin(pending_ids)].copy() if not df_v2.empty else pd.DataFrame()
-                                  pending_rm = df_rm2[df_rm2['題目ID'].isin(pending_ids)].copy() if not df_rm2.empty else pd.DataFrame()
+                                  # 各題型只用對應格式比對（避免重複）
+                                  _v_ids  = {f"V_{q}" for q in pending_ids if not q.startswith('V_') and not q.startswith('R_') and not q.startswith('RM_') and not q.startswith('LP_') and not q.startswith('LS_')} | {q for q in pending_ids if q.startswith('V_')}
+                                  _r_ids  = {f"R_{q}" for q in pending_ids if not q.startswith('R_') and not q.startswith('V_') and not q.startswith('RM_') and not q.startswith('LP_') and not q.startswith('LS_')} | {q for q in pending_ids if q.startswith('R_')}
+                                  _rm_ids = {f"RM_{q}" for q in pending_ids if not any(q.startswith(p) for p in ('V_','R_','RM_','LP_','LS_'))} | {q for q in pending_ids if q.startswith('RM_')}
+                                  _q_ids  = {q for q in pending_ids if not any(q.startswith(p) for p in ('V_','R_','RM_','LP_','LS_'))}
+                                  pending_q  = df_q2[df_q2['題目ID'].isin(_q_ids)].copy()
+                                  pending_r  = df_r2[df_r2['題目ID'].isin(_r_ids)].copy() if not df_r2.empty else pd.DataFrame()
+                                  pending_v  = df_v2[df_v2['題目ID'].isin(_v_ids)].copy() if not df_v2.empty else pd.DataFrame()
+                                  pending_rm = df_rm2[df_rm2['題目ID'].isin(_rm_ids)].copy() if not df_rm2.empty else pd.DataFrame()
                                   if not pending_r.empty:
                                       pending_r['_type'] = 'reading'
                                   if not pending_rm.empty:
