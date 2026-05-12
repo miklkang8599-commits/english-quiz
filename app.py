@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.404 - 拼單字計時清除版)
+# 🧩 英文全能練習系統 (V2.9.405 - 拼單字題數重複根本修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.404
+# 📌 版本編號 (VERSION): 2.9.405
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.404"
+VERSION = "2.9.405"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3488,10 +3488,18 @@ if not st.session_state.quiz_loaded:
                                           lambda r: f"RM_{r.get('版本','')}_{r.get('年度','')}_{r.get('冊編號','')}_{r.get('單元','')}_{r.get('課編號','')}_{r.get('句編號','')}", axis=1
                                       )
                                   # 各題型只用對應格式比對（避免重複）
-                                  _v_ids  = {f"V_{q}" for q in pending_ids if not q.startswith('V_') and not q.startswith('R_') and not q.startswith('RM_') and not q.startswith('LP_') and not q.startswith('LS_')} | {q for q in pending_ids if q.startswith('V_')}
-                                  _r_ids  = {f"R_{q}" for q in pending_ids if not q.startswith('R_') and not q.startswith('V_') and not q.startswith('RM_') and not q.startswith('LP_') and not q.startswith('LS_')} | {q for q in pending_ids if q.startswith('R_')}
-                                  _rm_ids = {f"RM_{q}" for q in pending_ids if not any(q.startswith(p) for p in ('V_','R_','RM_','LP_','LS_'))} | {q for q in pending_ids if q.startswith('RM_')}
-                                  _q_ids  = {q for q in pending_ids if not any(q.startswith(p) for p in ('V_','R_','RM_','LP_','LS_'))}
+                                  _raw_v   = {q for q in pending_ids if q.startswith('V_')}
+                                  _raw_r   = {q for q in pending_ids if q.startswith('R_') and not q.startswith('RM_')}
+                                  _raw_rm  = {q for q in pending_ids if q.startswith('RM_')}
+                                  _raw_lp  = {q for q in pending_ids if q.startswith('LP_')}
+                                  _raw_ls  = {q for q in pending_ids if q.startswith('LS_')}
+                                  _raw_q   = {q for q in pending_ids if not any(q.startswith(p) for p in ('V_','R_','RM_','LP_','LS_'))}
+                                  # V_ 的無前綴版本不給 _q 使用
+                                  _v_bare  = {q[2:] for q in _raw_v}  # V_xxx → xxx
+                                  _q_ids   = _raw_q - _v_bare  # 排除拼單字的無前綴版本
+                                  _v_ids   = _raw_v | {f"V_{q}" for q in _raw_q & _v_bare}
+                                  _r_ids   = _raw_r | {f"R_{q}" for q in _raw_q if not q.startswith('R_')}
+                                  _rm_ids  = _raw_rm | {f"RM_{q}" for q in _raw_q if not q.startswith('RM_')}
                                   pending_q  = df_q2[df_q2['題目ID'].isin(_q_ids)].copy()
                                   pending_r  = df_r2[df_r2['題目ID'].isin(_r_ids)].copy() if not df_r2.empty else pd.DataFrame()
                                   pending_v  = df_v2[df_v2['題目ID'].isin(_v_ids)].copy() if not df_v2.empty else pd.DataFrame()
