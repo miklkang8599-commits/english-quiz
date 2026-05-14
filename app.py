@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.405 - 拼單字題數重複根本修復版)
+# 🧩 英文全能練習系統 (V2.9.406 - 拼單字計時None修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.405
+# 📌 版本編號 (VERSION): 2.9.406
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.405"
+VERSION = "2.9.406"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -4652,10 +4652,11 @@ if st.session_state.quiz_loaded:
 
         # 限時倒數
         if use_timer > 0:
-            if st.session_state.get("vocab_q_idx") != st.session_state.q_idx:
+            if st.session_state.get("vocab_q_idx") != st.session_state.q_idx or not st.session_state.get("vocab_start_time"):
                 st.session_state["vocab_start_time"] = get_now().timestamp()
                 st.session_state["vocab_q_idx"] = st.session_state.q_idx
-            elapsed = get_now().timestamp() - st.session_state.get("vocab_start_time", get_now().timestamp())
+            _vst = st.session_state.get("vocab_start_time") or get_now().timestamp()
+            elapsed = get_now().timestamp() - _vst
             remain  = max(0, use_timer - int(elapsed))
             st.markdown(f"⏱️ 剩餘時間：**{remain} 秒**")
             if remain == 0 and not st.session_state.get("show_analysis"):
