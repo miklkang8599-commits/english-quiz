@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.412 - 測驗模式命名版)
+# 🧩 英文全能練習系統 (V2.9.413 - 拼單字done_cnt修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.412
+# 📌 版本編號 (VERSION): 2.9.413
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.412"
+VERSION = "2.9.413"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3013,7 +3013,7 @@ if not st.session_state.quiz_loaded:
                     else:
                         my_correct, my_reading, my_answered = set(), set(), set()
                     my_done  = my_correct | my_reading | my_answered
-                    done_cnt = len(q_ids_all & my_done)
+                    done_cnt = len(q_ids_set & my_done)  # 用 q_ids_set（原始格式）避免重複計算
                     all_done = done_cnt >= len(q_ids_set)
                 except:
                     my_done = set()
