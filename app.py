@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.406 - 拼單字計時None修復版)
+# 🧩 英文全能練習系統 (V2.9.407 - 鍵盤模式顯示修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.406
+# 📌 版本編號 (VERSION): 2.9.407
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.406"
+VERSION = "2.9.407"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -4759,9 +4759,9 @@ if st.session_state.quiz_loaded:
 
         # ── 鍵盤模式 ──────────────────────────────────────────────────────
         else:
+            kb_ans = st.session_state.get(f"vocab_kb_{st.session_state.q_idx}", "")
+            st.markdown(f"<div style='font-size:1.4rem;letter-spacing:0.1em;padding:10px;min-height:50px;background:#f0f4ff;border-radius:8px;'>{kb_ans if kb_ans else '（點選鍵盤輸入）'}</div>", unsafe_allow_html=True)
             if not st.session_state.get("show_analysis"):
-                kb_ans = st.session_state.get(f"vocab_kb_{st.session_state.q_idx}", "")
-                st.markdown(f"<div style=\'font-size:1.4rem;letter-spacing:0.1em;padding:10px;min-height:50px;background:#f0f4ff;border-radius:8px;\'>{kb_ans if kb_ans else '（點選鍵盤輸入）'}</div>", unsafe_allow_html=True)
                 if st.button("🗑️ 清除", key=f"kb_clear_{st.session_state.q_idx}"):
                     st.session_state[f"vocab_kb_{st.session_state.q_idx}"] = ""
                     st.rerun()
