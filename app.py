@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.407 - 鍵盤模式顯示修復版)
+# 🧩 英文全能練習系統 (V2.9.408 - 拼單字show_analysis清除版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.407
+# 📌 版本編號 (VERSION): 2.9.408
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.407"
+VERSION = "2.9.408"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -4649,6 +4649,16 @@ if st.session_state.quiz_loaded:
         st.markdown(f"<div style=\'font-size:1.3rem;font-weight:600;padding:12px;background:var(--color-background-secondary);border-radius:8px;\'>📖 {meaning}</div>", unsafe_allow_html=True)
 
         st.write("")
+
+        # 若進入題目時 show_analysis 殘留但尚未作答，強制清除
+        _kb_key = f"vocab_kb_{st.session_state.q_idx}"
+        _ans_key_check = f"vocab_ans_{st.session_state.q_idx}"
+        _has_ans = bool(st.session_state.get(_kb_key, "")) or bool(st.session_state.get(_ans_key_check, []))
+        if st.session_state.get("show_analysis") and not _has_ans:
+            st.session_state["show_analysis"] = False
+            st.session_state["current_res"]   = ""
+            st.session_state["vocab_start_time"] = None
+            st.session_state["vocab_q_idx"]   = None
 
         # 限時倒數
         if use_timer > 0:
