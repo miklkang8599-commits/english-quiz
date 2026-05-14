@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.409 - 拼單字清除後rerun版)
+# 🧩 英文全能練習系統 (V2.9.410 - vocab_mode預設值修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.409
+# 📌 版本編號 (VERSION): 2.9.410
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.409"
+VERSION = "2.9.410"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -4678,17 +4678,21 @@ if st.session_state.quiz_loaded:
 
         # 模式切換
         if task_mode in ("自選", "學生自選"):
-            # 學生可隨時切換，用全域 key 保持狀態（不綁定題目 index）
+            _vm_default = st.session_state.get("vocab_mode_global", "🔤 拆字母")
+            if _vm_default not in ["🔤 拆字母", "⌨️ 鍵盤"]:
+                _vm_default = "🔤 拆字母"
             vocab_mode = st.radio(
                 "輸入模式",
                 ["🔤 拆字母", "⌨️ 鍵盤"],
                 horizontal=True,
                 key="vocab_mode_global",
-                disabled=st.session_state.get("show_analysis", False)
+                disabled=st.session_state.get("show_analysis", False),
+                index=["🔤 拆字母", "⌨️ 鍵盤"].index(_vm_default)
             )
         else:
             vocab_mode = "🔤 拆字母" if task_mode == "拆字母" else "⌨️ 鍵盤"
-            # 老師鎖定模式，不顯示切換
+        if not vocab_mode:
+            vocab_mode = "🔤 拆字母"
 
         # 初始化字母池（pool_key 含干擾字數，設定改變時自動重建）
         pool_key = f"vocab_pool_{st.session_state.q_idx}_{extra_letters}"
