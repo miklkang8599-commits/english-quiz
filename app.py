@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.415 - 自動建表同步6欄版)
+# 🧩 英文全能練習系統 (V2.9.416 - 帳號密碼4位補零版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.415
+# 📌 版本編號 (VERSION): 2.9.416
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.415"
+VERSION = "2.9.416"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -2218,7 +2218,11 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 for _, r in _df_sync.iterrows():
                     _row = {}
                     for cn, en in _col_map.items():
-                        _row[en] = str(r.get(cn, '') or '').strip()
+                        _val = str(r.get(cn, '') or '').strip()
+                        # 帳號和密碼：確保4位數字字串（補0）
+                        if en in ('account', 'password') and _val.isdigit():
+                            _val = _val.zfill(4)
+                        _row[en] = _val
                     if _row.get('name'):  # 跳過空白列
                         _rows.append(_row)
 
