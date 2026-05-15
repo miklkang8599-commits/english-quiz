@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.413 - 拼單字done_cnt修復版)
+# 🧩 英文全能練習系統 (V2.9.415 - 自動建表同步6欄版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.413
+# 📌 版本編號 (VERSION): 2.9.415
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.413"
+VERSION = "2.9.415"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -2176,6 +2176,80 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
 
     with t2:
         st.subheader("👥 學生帳號清單")
+
+        # ── 同步到 Supabase ──────────────────────────────────────────────
+        _sync_c1, _sync_c2 = st.columns([4, 1])
+        _sync_c1.caption("將 Google Sheets 學生資料同步到 Supabase students 資料表（自動建表）")
+        if _sync_c2.button("🔄 同步到 Supabase", key="sync_students_to_sb", use_container_width=True):
+            try:
+                _sb_sync = get_supabase()
+                # 讀取最新的 students 工作表
+                _df_sync = conn.read(worksheet="students", ttl=0).fillna("").astype(str).replace(r'\.0$', '', regex=True)
+                _df_sync = _df_sync[[c for c in _df_sync.columns if not str(c).startswith('Unnamed')]]
+
+                # 自動建立資料表（若不存在）
+                _create_sql = """
+                CREATE TABLE IF NOT EXISTS students (
+                    id bigserial primary key,
+                    account text,
+                    password text,
+                    name text unique not null,
+                    group_id text,
+                    school_year text,
+                    version text,
+                    updated_at timestamptz default now()
+                );
+                """
+                try:
+                    _sb_sync.rpc('execute_sql', {'sql': _create_sql}).execute()
+                except:
+                    pass  # 若 rpc 不存在，嘗試直接 upsert（資料表已存在）
+
+                # 欄位對照（中文→英文）
+                _col_map = {
+                    '帳號': 'account',
+                    '密碼': 'password',
+                    '姓名': 'name',
+                    '分組': 'group_id',
+                    '學年': 'school_year',
+                    '版本': 'version',
+                }
+                _rows = []
+                for _, r in _df_sync.iterrows():
+                    _row = {}
+                    for cn, en in _col_map.items():
+                        _row[en] = str(r.get(cn, '') or '').strip()
+                    if _row.get('name'):  # 跳過空白列
+                        _rows.append(_row)
+
+                if _rows:
+                    with st.spinner(f"⏳ 同步 {len(_rows)} 筆學生資料..."):
+                        # 分批 upsert（每批 100 筆）
+                        _batch_size = 100
+                        for _i in range(0, len(_rows), _batch_size):
+                            _batch = _rows[_i:_i+_batch_size]
+                            _sb_sync.table("students").upsert(_batch, on_conflict="name").execute()
+                    st.success(f"✅ 成功同步 {len(_rows)} 筆學生資料！\n欄位：帳號、密碼、姓名、分組、學年、版本")
+                    load_students_only.clear()
+                    # 顯示預覽
+                    st.dataframe(pd.DataFrame(_rows).head(5), use_container_width=True)
+                else:
+                    st.warning("⚠️ Google Sheets 無學生資料")
+            except Exception as _e_sync:
+                st.error(f"❌ 同步失敗：{_e_sync}")
+                st.code("""-- 請先在 Supabase SQL Editor 執行以下建表語法：
+CREATE TABLE IF NOT EXISTS students (
+    id bigserial primary key,
+    account text,
+    password text,
+    name text unique not null,
+    group_id text,
+    school_year text,
+    version text,
+    updated_at timestamptz default now()
+);""", language="sql")
+
+        st.divider()
 
         # ── 篩選 ──────────────────────────────────────────────────────────
         sa1, sa2 = st.columns(2)
