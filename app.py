@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.416 - 帳號密碼4位補零版)
+# 🧩 英文全能練習系統 (V2.9.417 - 拼單字實體鍵盤版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.416
+# 📌 版本編號 (VERSION): 2.9.417
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.416"
+VERSION = "2.9.417"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -4853,10 +4853,24 @@ if st.session_state.quiz_loaded:
         # ── 鍵盤模式 ──────────────────────────────────────────────────────
         else:
             kb_ans = st.session_state.get(f"vocab_kb_{st.session_state.q_idx}", "")
-            st.markdown(f"<div style='font-size:1.4rem;letter-spacing:0.1em;padding:10px;min-height:50px;background:#f0f4ff;border-radius:8px;'>{kb_ans if kb_ans else '（點選鍵盤輸入）'}</div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='font-size:1.4rem;letter-spacing:0.1em;padding:10px;min-height:50px;background:#f0f4ff;border-radius:8px;'>{kb_ans if kb_ans else '（點選鍵盤或直接輸入）'}</div>", unsafe_allow_html=True)
             if not st.session_state.get("show_analysis"):
-                if st.button("🗑️ 清除", key=f"kb_clear_{st.session_state.q_idx}"):
+                # 實體鍵盤輸入
+                _phys_key = f"vocab_phys_{st.session_state.q_idx}"
+                _phys_val = st.text_input(
+                    "⌨️ 實體鍵盤輸入（輸入後按 Enter）",
+                    key=_phys_key,
+                    placeholder="直接用鍵盤輸入英文...",
+                    label_visibility="collapsed"
+                )
+                if _phys_val and _phys_val.upper() != kb_ans:
+                    st.session_state[f"vocab_kb_{st.session_state.q_idx}"] = _phys_val.upper()
+                    st.rerun()
+
+                _kb_row0, _kb_row1 = st.columns([3, 1])
+                if _kb_row1.button("🗑️ 清除", key=f"kb_clear_{st.session_state.q_idx}", use_container_width=True):
                     st.session_state[f"vocab_kb_{st.session_state.q_idx}"] = ""
+                    st.session_state[_phys_key] = ""
                     st.rerun()
                 keyboard_rows = [list("qwertyuiop"), list("asdfghjkl"), list("zxcvbnm")]
                 for row in keyboard_rows:
