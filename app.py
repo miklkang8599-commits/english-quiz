@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.422 - 實體鍵盤autofocus版)
+# 🧩 英文全能練習系統 (V2.9.423 - 下一題Enter鍵版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.422
+# 📌 版本編號 (VERSION): 2.9.423
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.422"
+VERSION = "2.9.423"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -5213,6 +5213,21 @@ if st.session_state.quiz_loaded:
         nxt_col = c_nav[1]
 
     nxt_label = "下一題 ➡️" if st.session_state.q_idx + 1 < len(st.session_state.quiz_list) else ("🏆 查看成績" if _race_mode else "🏁 結束練習")
+    # Enter 鍵觸發下一題（只有 show_analysis=True 時才生效，避免干擾輸入）
+    if st.session_state.get("show_analysis"):
+        import streamlit.components.v1 as _cv1_nxt
+        _cv1_nxt.html("""<script>
+        window.parent.document.addEventListener('keydown', function _nxt(e){
+            if(e.key === 'Enter' && !e.repeat){
+                var btns = window.parent.document.querySelectorAll('button[kind="primary"]');
+                for(var b of btns){
+                    if(b.innerText.includes('下一題') || b.innerText.includes('結束練習') || b.innerText.includes('查看成績')){
+                        b.click(); break;
+                    }
+                }
+            }
+        });
+        </script>""", height=0)
     if nxt_col.button(nxt_label, type="primary", use_container_width=True):
         if st.session_state.q_idx + 1 < len(st.session_state.quiz_list):
             next_idx = st.session_state.q_idx + 1
