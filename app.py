@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.423 - 下一題Enter鍵版)
+# 🧩 英文全能練習系統 (V2.9.424 - MCQ裝置自適應版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.423
+# 📌 版本編號 (VERSION): 2.9.424
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.423"
+VERSION = "2.9.424"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -449,6 +449,16 @@ with st.sidebar:
     if st.button("🚪 登出系統", use_container_width=True, key="sidebar_logout"):
         st.session_state.clear()
         st.rerun()
+
+    # 裝置類型（影響單選題選項排列）
+    _device = st.selectbox(
+        "📱 裝置類型",
+        ["電腦/平板（2欄）", "手機（1欄）"],
+        key="device_layout",
+        label_visibility="collapsed",
+        help="選擇裝置類型，調整單選題選項排列方式"
+    )
+    st.session_state['mcq_cols'] = 1 if "手機" in _device else 2
 
     st.divider()
     st.markdown("🏆 **成就排行**")
@@ -5011,12 +5021,13 @@ if st.session_state.quiz_loaded:
         _correct_text    = parsed_opts.get(ans_key.upper(), "")
 
         # 顯示選項在題目下方（2欄）
-        _opt_cols = st.columns(2)
+        _n_cols = st.session_state.get('mcq_cols', 2)
+        _opt_cols = st.columns(_n_cols)
         for i, orig_opt in enumerate(mcq_order):
             disp_label = _display_labels[i]
             opt_text   = parsed_opts.get(orig_opt, "")
             btn_label  = f"({disp_label}) {opt_text}" if opt_text else disp_label
-            if _opt_cols[i % 2].button(btn_label, key=f"mcq_{disp_label}",
+            if _opt_cols[i % _n_cols].button(btn_label, key=f"mcq_{disp_label}",
                               use_container_width=True,
                               disabled=already_answered):
                 # 防止重複寫入（同一題同一次只寫一次）
