@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.419 - 預設實體鍵盤版)
+# 🧩 英文全能練習系統 (V2.9.420 - 實體鍵盤一次Enter版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.419
+# 📌 版本編號 (VERSION): 2.9.420
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.419"
+VERSION = "2.9.420"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -4853,39 +4853,43 @@ if st.session_state.quiz_loaded:
         # ── 鍵盤模式 ──────────────────────────────────────────────────────
         else:
             kb_ans = st.session_state.get(f"vocab_kb_{st.session_state.q_idx}", "")
-            st.markdown(f"<div style='font-size:1.4rem;letter-spacing:0.1em;padding:10px;min-height:50px;background:#f0f4ff;border-radius:8px;'>{kb_ans if kb_ans else '（點選鍵盤或直接輸入）'}</div>", unsafe_allow_html=True)
             if not st.session_state.get("show_analysis"):
-                # 實體鍵盤輸入
+                # 實體鍵盤輸入框（自動 focus）
                 _phys_key = f"vocab_phys_{st.session_state.q_idx}"
                 _phys_val = st.text_input(
-                    "⌨️ 實體鍵盤輸入（輸入後按 Enter）",
+                    "輸入答案後按 Enter",
                     key=_phys_key,
-                    placeholder="直接用鍵盤輸入英文，按 Enter 送出...",
-                    label_visibility="collapsed"
+                    placeholder="在這裡輸入英文，按 Enter 直接送出...",
                 )
                 if _phys_val:
-                    _phys_upper = _phys_val.upper()
-                    if _phys_upper != kb_ans:
-                        # 更新顯示框
-                        st.session_state[f"vocab_kb_{st.session_state.q_idx}"] = _phys_upper
-                        st.rerun()
-                    else:
-                        # 相同表示已更新，檢查是否足夠長度可送出
-                        kb_current = st.session_state.get(f"vocab_kb_{st.session_state.q_idx}", "")
-                        if len(kb_current) > 0:
-                            # Enter 觸發送出（text_input 每次 Enter 都 rerun，這裡直接送出）
-                            is_ok = _clean_vocab(kb_current) == _clean_vocab(word)
-                            if not st.session_state.get("show_analysis"):
-                                st.session_state.update({"current_res": "✅ 正確！" if is_ok else f"❌ 錯誤！正確答案：{word}", "show_analysis": True})
-                                _log_result = "練習" if st.session_state.get("practice_mode") else ("✅" if is_ok else "❌")
-                                append_to_sheet("logs", pd.DataFrame([{"時間": get_now().strftime("%Y-%m-%d %H:%M:%S"), "姓名": st.session_state.user_name, "分組": st.session_state.group_id, "題目ID": q.get("題目ID","N/A"), "結果": _log_result, "學生答案": kb_current, "任務名稱": st.session_state.get("current_task_name","")}]))
-                                st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
-                                st.rerun()
+                    # 第一次 Enter：直接轉大寫並送出（不需要第二次）
+                    _phys_upper = _clean_vocab(_phys_val)
+                    is_ok = _phys_upper == _clean_vocab(word)
+                    st.session_state[f"vocab_kb_{st.session_state.q_idx}"] = _phys_val.upper()
+                    st.session_state.update({
+                        "current_res": "✅ 正確！" if is_ok else f"❌ 錯誤！正確答案：{word}",
+                        "show_analysis": True
+                    })
+                    _log_result = "練習" if st.session_state.get("practice_mode") else ("✅" if is_ok else "❌")
+                    append_to_sheet("logs", pd.DataFrame([{
+                        "時間": get_now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "姓名": st.session_state.user_name,
+                        "分組": st.session_state.group_id,
+                        "題目ID": q.get("題目ID","N/A"),
+                        "結果": _log_result,
+                        "學生答案": _phys_val.upper(),
+                        "任務名稱": st.session_state.get("current_task_name","")
+                    }]))
+                    st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
+                    st.rerun()
+
+                # 顯示已輸入的答案（螢幕鍵盤累積）
+                if kb_ans:
+                    st.markdown(f"<div style='font-size:1.4rem;letter-spacing:0.1em;padding:10px;background:#f0f4ff;border-radius:8px;'>{kb_ans}</div>", unsafe_allow_html=True)
 
                 _kb_row0, _kb_row1 = st.columns([3, 1])
                 if _kb_row1.button("🗑️ 清除", key=f"kb_clear_{st.session_state.q_idx}", use_container_width=True):
                     st.session_state[f"vocab_kb_{st.session_state.q_idx}"] = ""
-                    st.session_state[_phys_key] = ""
                     st.rerun()
                 keyboard_rows = [list("qwertyuiop"), list("asdfghjkl"), list("zxcvbnm")]
                 for row in keyboard_rows:
@@ -4895,11 +4899,12 @@ if st.session_state.quiz_loaded:
                             st.session_state[f"vocab_kb_{st.session_state.q_idx}"] = st.session_state.get(f"vocab_kb_{st.session_state.q_idx}", "") + k.upper()
                             st.rerun()
                 kb_current = st.session_state.get(f"vocab_kb_{st.session_state.q_idx}", "")
-                if len(kb_current) >= len(_clean_vocab(word)):
+                if word and len(kb_current) >= len(_clean_vocab(word)) and len(kb_current) > 0:
                     if st.button("✅ 檢查答案", type="primary", use_container_width=True, key=f"kb_check_{st.session_state.q_idx}"):
                         is_ok = _clean_vocab(kb_current) == _clean_vocab(word)
                         st.session_state.update({"current_res": "✅ 正確！" if is_ok else f"❌ 錯誤！正確答案：{word}", "show_analysis": True})
-                        append_to_sheet("logs", pd.DataFrame([{"時間": get_now().strftime("%Y-%m-%d %H:%M:%S"), "姓名": st.session_state.user_name, "分組": st.session_state.group_id, "題目ID": q.get("題目ID","N/A"), "結果": "練習" if st.session_state.get("practice_mode") else ("✅" if is_ok else "❌"), "學生答案": kb_current, "任務名稱": st.session_state.get("current_task_name","")}]))
+                        _log_result = "練習" if st.session_state.get("practice_mode") else ("✅" if is_ok else "❌")
+                        append_to_sheet("logs", pd.DataFrame([{"時間": get_now().strftime("%Y-%m-%d %H:%M:%S"), "姓名": st.session_state.user_name, "分組": st.session_state.group_id, "題目ID": q.get("題目ID","N/A"), "結果": _log_result, "學生答案": kb_current, "任務名稱": st.session_state.get("current_task_name","")}]))
                         st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
                         st.rerun()
 
