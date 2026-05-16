@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.420 - 實體鍵盤一次Enter版)
+# 🧩 英文全能練習系統 (V2.9.421 - 拆字母預設+自動focus版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.420
+# 📌 版本編號 (VERSION): 2.9.421
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.420"
+VERSION = "2.9.421"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -4756,9 +4756,9 @@ if st.session_state.quiz_loaded:
 
         # 模式切換
         if task_mode in ("自選", "學生自選"):
-            _vm_default = st.session_state.get("vocab_mode_global", "⌨️ 鍵盤")
+            _vm_default = st.session_state.get("vocab_mode_global", "🔤 拆字母")
             if _vm_default not in ["🔤 拆字母", "⌨️ 鍵盤"]:
-                _vm_default = "⌨️ 鍵盤"
+                _vm_default = "🔤 拆字母"
             vocab_mode = st.radio(
                 "輸入模式",
                 ["🔤 拆字母", "⌨️ 鍵盤"],
@@ -4861,6 +4861,8 @@ if st.session_state.quiz_loaded:
                     key=_phys_key,
                     placeholder="在這裡輸入英文，按 Enter 直接送出...",
                 )
+                # 自動 focus 輸入框
+                st.markdown('<script>setTimeout(()=>{const inp=document.querySelectorAll("input[type=text]");if(inp.length)inp[inp.length-1].focus();},200);</script>', unsafe_allow_html=True)
                 if _phys_val:
                     # 第一次 Enter：直接轉大寫並送出（不需要第二次）
                     _phys_upper = _clean_vocab(_phys_val)
