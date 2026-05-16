@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.426 - 快速答題_clear_q修復版)
+# 🧩 英文全能練習系統 (V2.9.427 - 快速答題兩次rerun版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.426
+# 📌 版本編號 (VERSION): 2.9.427
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.426"
+VERSION = "2.9.427"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -5202,19 +5202,22 @@ if st.session_state.quiz_loaded:
                 st.session_state.pop(k, None)
 
 
-    # 快速答題模式：答完自動跳下一題
-    if _quick_mode and st.session_state.get('show_analysis') and not st.session_state.get('_quick_shown'):
-        st.session_state['_quick_shown'] = True
-        import time as _time_q
-        _time_q.sleep(0.8)
-        _clear_q()
-        if st.session_state.q_idx + 1 < len(st.session_state.quiz_list):
-            st.session_state.q_idx += 1
-            st.session_state.update({"show_analysis": False, "current_res": "", "vocab_start_time": None, "vocab_q_idx": None})
+    # 快速答題模式：答完自動跳下一題（兩次 rerun：先顯示結果，再跳題）
+    if _quick_mode and st.session_state.get('show_analysis'):
+        if not st.session_state.get('_quick_shown'):
+            # 第一次：標記已顯示，觸發第二次 rerun
+            st.session_state['_quick_shown'] = True
+            st.rerun()
         else:
-            st.session_state.update({"quiz_loaded": False, "range_confirmed": False, "quick_mode": False})
-        st.session_state.pop('_quick_shown', None)
-        st.rerun()
+            # 第二次：跳下一題
+            st.session_state.pop('_quick_shown', None)
+            _clear_q()
+            if st.session_state.q_idx + 1 < len(st.session_state.quiz_list):
+                st.session_state.q_idx += 1
+                st.session_state.update({"show_analysis": False, "current_res": "", "vocab_start_time": None, "vocab_q_idx": None})
+            else:
+                st.session_state.update({"quiz_loaded": False, "range_confirmed": False, "quick_mode": False})
+            st.rerun()
 
     # 練習模式對答後用3欄，其他用2欄
     # 所有題型都禁止回到上一題（練習模式例外）
