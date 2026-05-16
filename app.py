@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.428 - 快速答題JS計時版)
+# 🧩 英文全能練習系統 (V2.9.429 - 快速答題跳過TTS版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.428
+# 📌 版本編號 (VERSION): 2.9.429
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.428"
+VERSION = "2.9.429"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -4947,27 +4947,28 @@ if st.session_state.quiz_loaded:
         # 答對後播放 TTS（自然聲音 + 男聲）
         if st.session_state.get("show_analysis") and is_vocab:
             res = st.session_state.get("current_res", "")
-            tts_key_f = f"vocab_tts_f_{st.session_state.q_idx}"  # nova（自然）
-            tts_key_m = f"vocab_tts_m_{st.session_state.q_idx}"  # onyx（男聲）
+            tts_key_f = f"vocab_tts_f_{st.session_state.q_idx}"
+            tts_key_m = f"vocab_tts_m_{st.session_state.q_idx}"
             if "✅" in res:
                 st.success(res)
-                # 產生兩種聲音
-                if not st.session_state.get(tts_key_f) or not st.session_state.get(tts_key_m):
-                    try:
-                        import openai as _oai, base64 as _b64
-                        _client = _oai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
-                        if not st.session_state.get(tts_key_f):
-                            tts_f = _client.audio.speech.create(model="tts-1", voice="nova", input=word).content
-                            st.session_state[tts_key_f] = _b64.b64encode(tts_f).decode()
-                        if not st.session_state.get(tts_key_m):
-                            tts_m = _client.audio.speech.create(model="tts-1", voice="onyx", input=word).content
-                            st.session_state[tts_key_m] = _b64.b64encode(tts_m).decode()
-                        st.rerun()
-                    except:
-                        pass
-                if st.session_state.get(tts_key_f) or st.session_state.get(tts_key_m):
-                    import base64 as _b64, io as _io
-                    st.markdown(f"**🔊 {word}**")
+                # 快速答題模式：不載入 TTS，直接顯示對錯結果
+                if not _quick_mode:
+                    if not st.session_state.get(tts_key_f) or not st.session_state.get(tts_key_m):
+                        try:
+                            import openai as _oai, base64 as _b64
+                            _client = _oai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+                            if not st.session_state.get(tts_key_f):
+                                tts_f = _client.audio.speech.create(model="tts-1", voice="nova", input=word).content
+                                st.session_state[tts_key_f] = _b64.b64encode(tts_f).decode()
+                            if not st.session_state.get(tts_key_m):
+                                tts_m = _client.audio.speech.create(model="tts-1", voice="onyx", input=word).content
+                                st.session_state[tts_key_m] = _b64.b64encode(tts_m).decode()
+                            st.rerun()
+                        except:
+                            pass
+                    if st.session_state.get(tts_key_f) or st.session_state.get(tts_key_m):
+                        import base64 as _b64, io as _io
+                        st.markdown(f"**🔊 {word}**")
                     _tc1, _tc2 = st.columns(2)
                     if st.session_state.get(tts_key_f):
                         _tc1.caption("🎵 自然聲音")
