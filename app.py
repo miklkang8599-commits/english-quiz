@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.421 - 拆字母預設+自動focus版)
+# 🧩 英文全能練習系統 (V2.9.422 - 實體鍵盤autofocus版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.421
+# 📌 版本編號 (VERSION): 2.9.422
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.421"
+VERSION = "2.9.422"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -4861,8 +4861,16 @@ if st.session_state.quiz_loaded:
                     key=_phys_key,
                     placeholder="在這裡輸入英文，按 Enter 直接送出...",
                 )
-                # 自動 focus 輸入框
-                st.markdown('<script>setTimeout(()=>{const inp=document.querySelectorAll("input[type=text]");if(inp.length)inp[inp.length-1].focus();},200);</script>', unsafe_allow_html=True)
+                # 自動 focus：用 components.v1.html 注入 JS
+                import streamlit.components.v1 as _components
+                _components.html(
+                    """<script>
+                    window.parent.document.querySelectorAll('input[type="text"]').forEach(function(el, i, arr){
+                        if(i === arr.length - 1) { el.focus(); el.select(); }
+                    });
+                    </script>""",
+                    height=0
+                )
                 if _phys_val:
                     # 第一次 Enter：直接轉大寫並送出（不需要第二次）
                     _phys_upper = _clean_vocab(_phys_val)
