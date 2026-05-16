@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.429 - 快速答題跳過TTS版)
+# 🧩 英文全能練習系統 (V2.9.430 - 重組題學生答案記錄版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.429
+# 📌 版本編號 (VERSION): 2.9.430
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.429"
+VERSION = "2.9.430"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -4776,7 +4776,8 @@ if st.session_state.quiz_loaded:
             st.markdown(f"⏱️ 剩餘時間：**{remain} 秒**")
             if remain == 0 and not st.session_state.get("show_analysis"):
                 st.session_state.update({"current_res": f"⏰ 時間到！答案是：{word}", "show_analysis": True})
-                append_to_sheet("logs", pd.DataFrame([{"時間": get_now().strftime("%Y-%m-%d %H:%M:%S"), "姓名": st.session_state.user_name, "分組": st.session_state.group_id, "題目ID": q.get("題目ID","N/A"), "結果": "❌", "分數": "", "任務名稱": st.session_state.get("current_task_name","")}]))
+                _timeout_ans = "".join(st.session_state.get(f"vocab_ans_{st.session_state.q_idx}", [])) or st.session_state.get(f"vocab_kb_{st.session_state.q_idx}", "")
+                append_to_sheet("logs", pd.DataFrame([{"時間": get_now().strftime("%Y-%m-%d %H:%M:%S"), "姓名": st.session_state.user_name, "分組": st.session_state.group_id, "題目ID": q.get("題目ID","N/A"), "結果": "❌", "學生答案": _timeout_ans, "分數": "", "任務名稱": st.session_state.get("current_task_name","")}]))
                 st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
                 st.rerun()
 
@@ -5162,6 +5163,7 @@ if st.session_state.quiz_loaded:
                 "分組": st.session_state.group_id,
                 "題目ID": q.get('題目ID', 'N/A'),
                 "結果": "練習" if st.session_state.get("practice_mode") else ("✅" if is_ok else "❌"),
+                "學生答案": " ".join(st.session_state.get("ans", [])),
                 "任務名稱": st.session_state.get("current_task_name", "")
             }])
             append_to_sheet("logs", log_data)
