@@ -4861,11 +4861,13 @@ if st.session_state.quiz_loaded:
             if bc1.button("⬅️ 退回一步", use_container_width=True, key=f"vb_back_{st.session_state.q_idx}",
                           disabled=st.session_state.get("show_analysis", False)):
                 if current_ans:
-                    st.session_state[ans_key_v].pop()
-                    used_st = st.session_state.get(f"vocab_used_{st.session_state.q_idx}", [])
-                    if used_st:
-                        used_st.pop()
-                    st.session_state[f"vocab_used_{st.session_state.q_idx}"] = used_st
+                    _removed = st.session_state[ans_key_v].pop()
+                    # 只有非空格才從 vocab_used 移除
+                    if _removed != ' ':
+                        used_st = st.session_state.get(f"vocab_used_{st.session_state.q_idx}", [])
+                        if used_st:
+                            used_st.pop()
+                        st.session_state[f"vocab_used_{st.session_state.q_idx}"] = used_st
                     st.rerun()
             if bc2.button("🗑️ 全部清除", use_container_width=True, key=f"vb_clear_{st.session_state.q_idx}",
                           disabled=st.session_state.get("show_analysis", False)):
