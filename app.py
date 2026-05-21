@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.456 - answered_count先累加版)
+# 🧩 英文全能練習系統 (V2.9.457 - 移除autorefresh測試版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.456
+# 📌 版本編號 (VERSION): 2.9.457
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.456"
+VERSION = "2.9.457"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -4338,14 +4338,6 @@ if st.session_state.quiz_loaded:
     _answered_now = st.session_state.get('answered_count', 0)
     st.caption(f"debug: answered_count={st.session_state.get('answered_count','?')}")
     st.markdown(f"### 🔴 練習中 (第 {st.session_state.q_idx + 1} / {total_q} 題　｜　已作答 {_answered_now} 題{_timer_display}) {_mode_label}")
-    # 未作答時每秒 rerun 更新倒數；快速答題顯示結果後也要繼續（等待跳題）
-    if not st.session_state.get("show_analysis") or (_quick_mode and st.session_state.get('_quick_shown')):
-        try:
-            from streamlit_autorefresh import st_autorefresh
-            _ar_unique_key = f"timer_refresh_{st.session_state.q_idx}_{int(st.session_state.get(_q_timer_key, 0))}"
-            st_autorefresh(interval=1000, limit=_idle_limit + 5, key=_ar_unique_key)
-        except ImportError:
-            pass
     q = st.session_state.quiz_list[st.session_state.q_idx]
     # 判斷題型：優先用 _type，其次看欄位，最後看單元名稱
     _qtype         = q.get("_type", "")
