@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.453 - 答完即時更新完成數版)
+# 🧩 英文全能練習系統 (V2.9.454 - 已作答即時讀取版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.453
+# 📌 版本編號 (VERSION): 2.9.454
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.453"
+VERSION = "2.9.454"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -4269,8 +4269,8 @@ if st.session_state.quiz_loaded:
     if 'answered_count' not in st.session_state:
         st.session_state['answered_count'] = 0
 
-    total_q   = len(st.session_state.quiz_list)
-    answered_c    = st.session_state.get('answered_count', 0)
+    total_q    = len(st.session_state.quiz_list)
+    answered_c = st.session_state.get('answered_count', 0)
     _practice_mode = st.session_state.get('practice_mode', False)
     _race_mode     = st.session_state.get('race_mode', False)
     _quick_mode    = st.session_state.get('quick_mode', False)
@@ -4335,7 +4335,8 @@ if st.session_state.quiz_loaded:
     _remain = max(0, _idle_limit - _q_elapsed)
     _timer_color = "🔴" if _remain <= 15 else ("🟡" if _remain <= 30 else "🟢")
     _timer_display = f"　｜　{_timer_color} {_remain}秒" if not st.session_state.get("show_analysis") else ""
-    st.markdown(f"### 🔴 練習中 (第 {st.session_state.q_idx + 1} / {total_q} 題　｜　已作答 {answered_c} 題{_timer_display}) {_mode_label}")
+    _answered_now = st.session_state.get('answered_count', 0)
+    st.markdown(f"### 🔴 練習中 (第 {st.session_state.q_idx + 1} / {total_q} 題　｜　已作答 {_answered_now} 題{_timer_display}) {_mode_label}")
     # 未作答時每秒 rerun 更新倒數；快速答題顯示結果後也要繼續（等待跳題）
     if not st.session_state.get("show_analysis") or (_quick_mode and st.session_state.get('_quick_shown')):
         try:
