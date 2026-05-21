@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.458 - JS前端倒數計時版)
+# 🧩 英文全能練習系統 (V2.9.459 - JS計時器修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.458
+# 📌 版本編號 (VERSION): 2.9.459
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.458"
+VERSION = "2.9.459"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -4342,19 +4342,20 @@ if st.session_state.quiz_loaded:
         import streamlit.components.v1 as _cv1_js
         _cv1_js.html(f"""<script>
         (function(){{
+            if(window._quizTimer) clearInterval(window._quizTimer);
             var remain = {_remain};
-            var tid = setInterval(function(){{
+            window._quizTimer = setInterval(function(){{
                 remain--;
                 var c = remain<=15?'🔴':(remain<=30?'🟡':'🟢');
                 var h3s = window.parent.document.querySelectorAll('h3');
                 for(var el of h3s){{
                     if(el.innerText.includes('練習中')){{
-                        el.innerText = el.innerText.replace(/[🔴🟡🟢] \\d+秒/, c+' '+remain+'秒');
+                        el.innerText = el.innerText.replace(/[🔴🟡🟢].{0,5}\d+秒/, c+' '+remain+'秒');
                         break;
                     }}
                 }}
                 if(remain<=0){{
-                    clearInterval(tid);
+                    clearInterval(window._quizTimer);
                     var btns=window.parent.document.querySelectorAll('button');
                     for(var b of btns){{ if(b.innerText.includes('⏰_timeout')){{b.click();break;}} }}
                 }}
