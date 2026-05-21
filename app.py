@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.442 - 即時倒數計時版)
+# 🧩 英文全能練習系統 (V2.9.443 - 超時停止autorefresh版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.442
+# 📌 版本編號 (VERSION): 2.9.443
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.442"
+VERSION = "2.9.443"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -4300,12 +4300,14 @@ if st.session_state.quiz_loaded:
             "作答秒數": _q_elapsed,
         }
         append_to_sheet("logs", _pd_timeout.DataFrame([_timeout_row]))
-        st.warning(f"⏰ 閒置超過 {_idle_limit} 秒，自動結束。")
-        import time as _t2; _t2.sleep(1.5)
+        # 清除 autorefresh 避免空轉
+        _ar_key = f"timer_refresh_{st.session_state.q_idx}"
+        st.session_state.pop(_ar_key, None)
         st.session_state.update({
             "quiz_loaded": False, "range_confirmed": False,
             "show_analysis": False, "current_res": "",
         })
+        st.warning(f"⏰ 閒置超過 {_idle_limit} 秒，自動返回任務列表。")
         st.rerun()
     # 快速答題：答完自動跳下一題
     if _quick_mode and st.session_state.get('show_analysis') and st.session_state.get('_quick_auto_next'):
@@ -4329,11 +4331,11 @@ if st.session_state.quiz_loaded:
     _timer_color = "🔴" if _remain <= 15 else ("🟡" if _remain <= 30 else "🟢")
     _timer_display = f"　｜　{_timer_color} {_remain}秒" if not st.session_state.get("show_analysis") else ""
     st.markdown(f"### 🔴 練習中 (第 {st.session_state.q_idx + 1} / {total_q} 題　｜　已作答 {answered_c} 題{_timer_display}) {_mode_label}")
-    # 未作答時每秒自動 rerun（倒數計時用）
+    # 未作答時每秒 rerun 更新倒數
     if not st.session_state.get("show_analysis"):
         try:
             from streamlit_autorefresh import st_autorefresh
-            st_autorefresh(interval=1000, limit=None, key=f"timer_refresh_{st.session_state.q_idx}")
+            st_autorefresh(interval=1000, limit=_idle_limit + 5, key=f"timer_refresh_{st.session_state.q_idx}")
         except ImportError:
             pass
     q = st.session_state.quiz_list[st.session_state.q_idx]
