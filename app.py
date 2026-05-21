@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.448 - 每題獨立計時key版)
+# 🧩 英文全能練習系統 (V2.9.449 - 快速答題autorefresh跳題版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.448
+# 📌 版本編號 (VERSION): 2.9.449
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.448"
+VERSION = "2.9.449"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -4331,11 +4331,10 @@ if st.session_state.quiz_loaded:
     _timer_color = "🔴" if _remain <= 15 else ("🟡" if _remain <= 30 else "🟢")
     _timer_display = f"　｜　{_timer_color} {_remain}秒" if not st.session_state.get("show_analysis") else ""
     st.markdown(f"### 🔴 練習中 (第 {st.session_state.q_idx + 1} / {total_q} 題　｜　已作答 {answered_c} 題{_timer_display}) {_mode_label}")
-    # 未作答時每秒 rerun 更新倒數（所有模式都需要，包含快速答題）
-    if not st.session_state.get("show_analysis"):
+    # 未作答時每秒 rerun 更新倒數；快速答題顯示結果後也要繼續（等待跳題）
+    if not st.session_state.get("show_analysis") or (_quick_mode and st.session_state.get('_quick_shown')):
         try:
             from streamlit_autorefresh import st_autorefresh
-            # 用 q_idx + start_time 組成唯一 key，確保每題重新計數
             _ar_unique_key = f"timer_refresh_{st.session_state.q_idx}_{int(st.session_state.get(_q_timer_key, 0))}"
             st_autorefresh(interval=1000, limit=_idle_limit + 5, key=_ar_unique_key)
         except ImportError:
@@ -5303,10 +5302,10 @@ if st.session_state.quiz_loaded:
                 st.session_state.pop(k, None)
 
 
-    # 快速答題模式：顯示對錯結果後，用 JS 計時自動跳下一題
+    # 快速答題模式：顯示對錯 1 秒後自動跳下一題
     if _quick_mode and st.session_state.get('show_analysis'):
         if st.session_state.get('_quick_shown'):
-            # JS 計時器觸發後，執行跳題
+            # 第二次 rerun（autorefresh 觸發）：跳題
             st.session_state.pop('_quick_shown', None)
             _clear_q()
             if st.session_state.q_idx + 1 < len(st.session_state.quiz_list):
@@ -5316,20 +5315,9 @@ if st.session_state.quiz_loaded:
                 st.session_state.update({"quiz_loaded": False, "range_confirmed": False, "quick_mode": False})
             st.rerun()
         else:
-            # 顯示對錯結果，並用 JS 在 1 秒後觸發 rerun（點隱藏按鈕）
+            # 第一次 rerun（剛答完）：標記並等 autorefresh 觸發第二次
             st.session_state['_quick_shown'] = True
-            import streamlit.components.v1 as _cv1_q
-            _cv1_q.html("""<script>
-            setTimeout(function(){
-                var btns = window.parent.document.querySelectorAll('button');
-                for(var b of btns){
-                    if(b.innerText.includes('⚡_next')){b.click();break;}
-                }
-            }, 1000);
-            </script>""", height=0)
-            st.markdown('<style>button[kind="secondary"]:has(span:contains("⚡_next")){display:none!important}</style>', unsafe_allow_html=True)
-            if st.button("⚡_next", key="_quick_next_btn"):
-                st.rerun()
+            # 不需要額外 rerun，autorefresh 每秒自動觸發
 
     # 練習模式對答後用3欄，其他用2欄
     # 所有題型都禁止回到上一題（練習模式例外）
