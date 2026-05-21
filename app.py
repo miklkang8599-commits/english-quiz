@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.440 - 計時顯示+超時跳任務版)
+# 🧩 英文全能練習系統 (V2.9.441 - 靜態計時顯示版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.440
+# 📌 版本編號 (VERSION): 2.9.441
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.440"
+VERSION = "2.9.441"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -4324,15 +4324,11 @@ if st.session_state.quiz_loaded:
             st.session_state['_first_q_cleared'] = True
     elif st.session_state.get('q_idx', 0) > 0:
         st.session_state.pop('_first_q_cleared', None)
-    # 計時顯示
+    # 計時顯示（靜態，每次操作時更新）
     _remain = max(0, _idle_limit - _q_elapsed)
     _timer_color = "🔴" if _remain <= 15 else ("🟡" if _remain <= 30 else "🟢")
     _timer_display = f"　｜　{_timer_color} {_remain}秒" if not st.session_state.get("show_analysis") else ""
     st.markdown(f"### 🔴 練習中 (第 {st.session_state.q_idx + 1} / {total_q} 題　｜　已作答 {answered_c} 題{_timer_display}) {_mode_label}")
-    # 未作答時每秒自動刷新（讓計時倒數顯示更新）
-    if not st.session_state.get("show_analysis"):
-        import streamlit.components.v1 as _cv1_timer
-        _cv1_timer.html('<script>setTimeout(()=>window.parent.location.reload(),1000);</script>', height=0)
     q = st.session_state.quiz_list[st.session_state.q_idx]
     # 判斷題型：優先用 _type，其次看欄位，最後看單元名稱
     _qtype         = q.get("_type", "")
