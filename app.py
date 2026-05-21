@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.445 - MCQ快速答題計時修復版)
+# 🧩 英文全能練習系統 (V2.9.446 - 計時器None值修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.445
+# 📌 版本編號 (VERSION): 2.9.446
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.445"
+VERSION = "2.9.446"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -4280,9 +4280,9 @@ if st.session_state.quiz_loaded:
     # ── 單題計時 ──────────────────────────────────────────────────────────
     import time as _time_sys
     _q_timer_key = f"_q_start_time_{st.session_state.q_idx}"
-    if _q_timer_key not in st.session_state or st.session_state.get(_q_timer_key) is None:
+    if not st.session_state.get(_q_timer_key):
         st.session_state[_q_timer_key] = _time_sys.time()
-    _q_elapsed  = int(_time_sys.time() - st.session_state.get(_q_timer_key, _time_sys.time()))
+    _q_elapsed  = int(_time_sys.time() - st.session_state[_q_timer_key])
     _idle_limit = 90
 
     # 90 秒閒置：寫入超時記錄並跳回任務列表
@@ -5283,10 +5283,10 @@ if st.session_state.quiz_loaded:
         q_idx = st.session_state.q_idx
         st.session_state.update({
             "ans": [], "used_history": [], "shuf": [], "show_analysis": False, "current_res": "", "vocab_start_time": None, "vocab_q_idx": None,
-        f"_q_start_time_{q_idx}": None,
             "tts_student": None, "tts_standard": None, "stt_text_shown": "",
-            "vocab_start_time": None, "vocab_q_idx": None
         })
+        # 清除計時器（用 pop 讓 key 不存在，下題重新計時）
+        st.session_state.pop(f"_q_start_time_{q_idx}", None)
         # 清除選項順序快取和錄音評分快取
         for _ok in [f"mcq_order_{q_idx}", f"rm_order_{q_idx}", f"audio_scored_{q_idx}", f"mcq_written_{q_idx}",
                     f"vocab_tts_f_{q_idx}", f"vocab_tts_m_{q_idx}"]:
