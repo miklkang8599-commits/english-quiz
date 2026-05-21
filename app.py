@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.467 - pending_ids用q_ids_set版)
+# 🧩 英文全能練習系統 (V2.9.468 - 題目ID不去重版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.467
+# 📌 版本編號 (VERSION): 2.9.468
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.467"
+VERSION = "2.9.468"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1502,14 +1502,6 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 lp_ids  = [_get_lp_qid(r) for _, r in df_lp_final.iterrows()] if not df_lp_final.empty else []
                 ls_ids  = [_get_ls_qid(r) for _, r in df_ls_final.iterrows()] if not df_ls_final.empty else []
                 all_ids = q_ids + mcq_ids + r_ids + v_ids + rm_ids + lp_ids + ls_ids
-                # 去除重複（保持順序）
-                _seen_pub = set()
-                _dedup_pub = []
-                for _xpub in all_ids:
-                    if _xpub not in _seen_pub:
-                        _seen_pub.add(_xpub)
-                        _dedup_pub.append(_xpub)
-                all_ids = _dedup_pub
 
                 has_q   = bool(q_ids)
                 has_mcq = bool(mcq_ids)
@@ -3045,15 +3037,7 @@ if not st.session_state.quiz_loaded:
             pending_ids, _start_idx_fwd, _is_practice = set(), 0, False
             # 過濾掉 nan 和空白
             raw_ids   = [q.strip() for q in task_q_ids.split(',') if q.strip() and q.strip() != 'nan']
-            # 去除重複保持順序
-            _seen_ids = set()
-            _dedup = []
-            for _xid in raw_ids:
-                if _xid not in _seen_ids:
-                    _seen_ids.add(_xid)
-                    _dedup.append(_xid)
-            raw_ids = _dedup
-            q_ids_set = set(raw_ids)  # 用於比對（set）
+            q_ids_set = set(raw_ids)  # 用於比對（set，去重）
             # q_ids_all 包含所有格式（有V_/無V_），用於 logs 比對
             q_ids_all = set()
             for qid in raw_ids:
