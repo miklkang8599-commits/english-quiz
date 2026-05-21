@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.439 - 單題計時+90秒閒置版)
+# 🧩 英文全能練習系統 (V2.9.440 - 計時顯示+超時跳任務版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.439
+# 📌 版本編號 (VERSION): 2.9.440
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.439"
+VERSION = "2.9.440"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -4280,17 +4280,31 @@ if st.session_state.quiz_loaded:
     # ── 單題計時 ──────────────────────────────────────────────────────────
     import time as _time_sys
     _q_timer_key = f"_q_start_time_{st.session_state.q_idx}"
-    if _q_timer_key not in st.session_state:
+    if _q_timer_key not in st.session_state or st.session_state.get(_q_timer_key) is None:
         st.session_state[_q_timer_key] = _time_sys.time()
-    _q_elapsed = int(_time_sys.time() - st.session_state.get(_q_timer_key, _time_sys.time()))
-
-    # 90 秒閒置自動結束作答
+    _q_elapsed  = int(_time_sys.time() - st.session_state.get(_q_timer_key, _time_sys.time()))
     _idle_limit = 90
+
+    # 90 秒閒置：寫入超時記錄並跳回任務列表
     if _q_elapsed >= _idle_limit and not st.session_state.get("show_analysis"):
-        st.warning(f"⏰ 閒置超過 {_idle_limit} 秒，自動結束本題。")
+        import pandas as _pd_timeout
+        _timeout_row = {
+            "時間": get_now().strftime("%Y-%m-%d %H:%M:%S"),
+            "姓名": st.session_state.user_name,
+            "分組": st.session_state.group_id,
+            "題目ID": st.session_state.quiz_list[st.session_state.q_idx].get("題目ID", "N/A") if st.session_state.quiz_list else "N/A",
+            "結果": "⏰ 超時",
+            "學生答案": "",
+            "分數": "",
+            "任務名稱": st.session_state.get("current_task_name", ""),
+            "作答秒數": _q_elapsed,
+        }
+        append_to_sheet("logs", _pd_timeout.DataFrame([_timeout_row]))
+        st.warning(f"⏰ 閒置超過 {_idle_limit} 秒，自動結束。")
+        import time as _t2; _t2.sleep(1.5)
         st.session_state.update({
-            "show_analysis": True,
-            "current_res": f"⏰ 閒置超時（{_idle_limit}秒）",
+            "quiz_loaded": False, "range_confirmed": False,
+            "show_analysis": False, "current_res": "",
         })
         st.rerun()
     # 快速答題：答完自動跳下一題
@@ -4310,7 +4324,15 @@ if st.session_state.quiz_loaded:
             st.session_state['_first_q_cleared'] = True
     elif st.session_state.get('q_idx', 0) > 0:
         st.session_state.pop('_first_q_cleared', None)
-    st.markdown(f"### 🔴 練習中 (第 {st.session_state.q_idx + 1} / {total_q} 題　｜　已作答 {answered_c} 題) {_mode_label}")
+    # 計時顯示
+    _remain = max(0, _idle_limit - _q_elapsed)
+    _timer_color = "🔴" if _remain <= 15 else ("🟡" if _remain <= 30 else "🟢")
+    _timer_display = f"　｜　{_timer_color} {_remain}秒" if not st.session_state.get("show_analysis") else ""
+    st.markdown(f"### 🔴 練習中 (第 {st.session_state.q_idx + 1} / {total_q} 題　｜　已作答 {answered_c} 題{_timer_display}) {_mode_label}")
+    # 未作答時每秒自動刷新（讓計時倒數顯示更新）
+    if not st.session_state.get("show_analysis"):
+        import streamlit.components.v1 as _cv1_timer
+        _cv1_timer.html('<script>setTimeout(()=>window.parent.location.reload(),1000);</script>', height=0)
     q = st.session_state.quiz_list[st.session_state.q_idx]
     # 判斷題型：優先用 _type，其次看欄位，最後看單元名稱
     _qtype         = q.get("_type", "")
