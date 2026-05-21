@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.463 - 拼單字debug版)
+# 🧩 英文全能練習系統 (V2.9.464 - 移除sleep解除阻塞版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.463
+# 📌 版本編號 (VERSION): 2.9.464
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.463"
+VERSION = "2.9.464"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -5544,12 +5544,6 @@ if st.session_state.quiz_loaded:
 
     if st.button("🏁 🔴 結束作答 (返回主選單)", use_container_width=True):
         st.session_state.update({"quiz_loaded": False, "range_confirmed": False})
-        st.rerun()
-
-    # 未作答時每秒自動更新計時（sleep 不影響 session_state）
-    if not st.session_state.get("show_analysis"):
-        import time as _ts
-        _ts.sleep(1)
         st.rerun()
 
     show_version_caption()
