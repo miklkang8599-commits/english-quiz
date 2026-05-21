@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.452 - 計時器任務開始清除版)
+# 🧩 英文全能練習系統 (V2.9.453 - 答完即時更新完成數版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.452
+# 📌 版本編號 (VERSION): 2.9.453
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.452"
+VERSION = "2.9.453"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -2406,7 +2406,6 @@ CREATE TABLE IF NOT EXISTS students (
             _df_l_local = _load_logs_cached()
             _t3_col1.caption(f"答題記錄：{len(_df_l_local)} 筆")
             if _t3_col2.button("🔄", key="t3_refresh", help="更新答題記錄"):
-                _load_logs_cached.clear()
                 st.rerun()
                 return
 
@@ -4467,6 +4466,7 @@ if st.session_state.quiz_loaded:
                     sb_ls.table("logs").insert(en_ls).execute()
                     _tls.sleep(0.3)
                     st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
+                    _load_logs_cached.clear()
                 except Exception as _e_ls2:
                     st.error(f"寫入失敗：{_e_ls2}")
                 st.session_state.update({
@@ -4495,6 +4495,7 @@ if st.session_state.quiz_loaded:
                     sb_ls2.table("logs").insert(en_ls2).execute()
                     _tls2.sleep(0.3)
                     st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
+                    _load_logs_cached.clear()
                 except:
                     pass
                 st.session_state.update({
@@ -4588,6 +4589,7 @@ if st.session_state.quiz_loaded:
                         sb_lp.table("logs").insert(en_lp).execute()
                         _tlp.sleep(0.3)
                         st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
+                        _load_logs_cached.clear()
                     except Exception as _e_lp:
                         st.error(f"寫入失敗：{_e_lp}")
                     st.session_state.update({
@@ -4662,6 +4664,7 @@ if st.session_state.quiz_loaded:
                         sb_w.table("logs").insert(en_row).execute()
                         _time.sleep(0.3)
                         st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
+                        _load_logs_cached.clear()
                     except Exception as e:
                         st.error(f"❌ 寫入失敗：{e}")
                     st.rerun()
@@ -4803,6 +4806,7 @@ if st.session_state.quiz_loaded:
                         }])
                         append_to_sheet("logs", log_data)
                         st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
+                        _load_logs_cached.clear()
                         st.rerun()
 
                     except Exception as e:
@@ -4849,6 +4853,7 @@ if st.session_state.quiz_loaded:
                 _timeout_ans = "".join(st.session_state.get(f"vocab_ans_{st.session_state.q_idx}", [])) or st.session_state.get(f"vocab_kb_{st.session_state.q_idx}", "")
                 append_to_sheet("logs", pd.DataFrame([{"時間": get_now().strftime("%Y-%m-%d %H:%M:%S"), "姓名": st.session_state.user_name, "分組": st.session_state.group_id, "題目ID": q.get("題目ID","N/A"), "結果": "❌", "學生答案": _timeout_ans, "分數": "", "任務名稱": st.session_state.get("current_task_name",""), "作答秒數": st.session_state.get(f"_q_start_time_{st.session_state.q_idx}") and round(__import__("time").time() - st.session_state.get(f"_q_start_time_{st.session_state.q_idx}", __import__("time").time()))}]))
                 st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
+                _load_logs_cached.clear()
                 st.rerun()
 
         # 模式切換
@@ -4970,6 +4975,7 @@ if st.session_state.quiz_loaded:
                     st.session_state.update({"current_res": "✅ 正確！" if is_ok else f"❌ 錯誤！正確答案：{word}", "show_analysis": True})
                     append_to_sheet("logs", pd.DataFrame([{"時間": get_now().strftime("%Y-%m-%d %H:%M:%S"), "姓名": st.session_state.user_name, "分組": st.session_state.group_id, "題目ID": q.get("題目ID","N/A"), "結果": "練習" if st.session_state.get("practice_mode") else ("✅" if is_ok else "❌"), "學生答案": "".join(current_ans), "任務名稱": st.session_state.get("current_task_name",""), "作答秒數": st.session_state.get(f"_q_start_time_{st.session_state.q_idx}") and round(__import__("time").time() - st.session_state.get(f"_q_start_time_{st.session_state.q_idx}", __import__("time").time()))}]))
                     st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
+                    _load_logs_cached.clear()
                     st.rerun()
 
         # ── 鍵盤模式 ──────────────────────────────────────────────────────
@@ -5013,6 +5019,7 @@ if st.session_state.quiz_loaded:
                         "任務名稱": st.session_state.get("current_task_name",""), "作答秒數": round(__import__("time").time() - st.session_state.get(f"_q_start_time_{st.session_state.q_idx}", __import__("time").time()))
                     }]))
                     st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
+                    _load_logs_cached.clear()
                     st.rerun()
 
                 # 顯示已輸入的答案（螢幕鍵盤累積）
@@ -5043,6 +5050,7 @@ if st.session_state.quiz_loaded:
                         _log_result = "練習" if st.session_state.get("practice_mode") else ("✅" if is_ok else "❌")
                         append_to_sheet("logs", pd.DataFrame([{"時間": get_now().strftime("%Y-%m-%d %H:%M:%S"), "姓名": st.session_state.user_name, "分組": st.session_state.group_id, "題目ID": q.get("題目ID","N/A"), "結果": _log_result, "學生答案": kb_current, "任務名稱": st.session_state.get("current_task_name",""), "作答秒數": st.session_state.get(f"_q_start_time_{st.session_state.q_idx}") and round(__import__("time").time() - st.session_state.get(f"_q_start_time_{st.session_state.q_idx}", __import__("time").time()))}]))
                         st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
+                        _load_logs_cached.clear()
                         st.rerun()
 
         # 答對後播放 TTS（自然聲音 + 男聲）
@@ -5200,6 +5208,7 @@ if st.session_state.quiz_loaded:
                     _time.sleep(0.5)  # 等 Supabase 確認寫入
                     write_ok = True
                     st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
+                    _load_logs_cached.clear()
                 except Exception as e:
                     write_err = str(e)
                 if not write_ok:
@@ -5270,6 +5279,7 @@ if st.session_state.quiz_loaded:
             }])
             append_to_sheet("logs", log_data)
             st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
+            _load_logs_cached.clear()
             st.rerun()
 
     if st.session_state.get('show_analysis') and not is_reading and not is_reading_mcq and not is_listen_phon and not is_listen_sent:
@@ -5514,7 +5524,6 @@ if st.session_state.quiz_loaded:
                 # 按鈕
                 _btn1, _btn2 = st.columns(2)
                 if _btn1.button("🔁 再次參賽", type="primary", use_container_width=True):
-                    _load_logs_cached.clear()
                     st.session_state.update({
                         "quiz_loaded": False, "range_confirmed": False,
                         "race_mode": True,
