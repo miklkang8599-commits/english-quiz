@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.450 - 快速答題隱藏下一題按鈕版)
+# 🧩 英文全能練習系統 (V2.9.451 - 快速答題sleep跳題版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.450
+# 📌 版本編號 (VERSION): 2.9.451
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.450"
+VERSION = "2.9.451"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -5305,7 +5305,7 @@ if st.session_state.quiz_loaded:
     # 快速答題模式：顯示對錯 1 秒後自動跳下一題
     if _quick_mode and st.session_state.get('show_analysis'):
         if st.session_state.get('_quick_shown'):
-            # 第二次 rerun（autorefresh 觸發）：跳題
+            # 已顯示結果，執行跳題
             st.session_state.pop('_quick_shown', None)
             _clear_q()
             if st.session_state.q_idx + 1 < len(st.session_state.quiz_list):
@@ -5315,9 +5315,10 @@ if st.session_state.quiz_loaded:
                 st.session_state.update({"quiz_loaded": False, "range_confirmed": False, "quick_mode": False})
             st.rerun()
         else:
-            # 第一次 rerun（剛答完）：標記並等 autorefresh 觸發第二次
+            # 剛答完：標記，用 time.sleep(1) 讓畫面顯示結果後再跳
             st.session_state['_quick_shown'] = True
-            # 不需要額外 rerun，autorefresh 每秒自動觸發
+            import time as _tq; _tq.sleep(1)
+            st.rerun()
 
     # 練習模式對答後用3欄，其他用2欄
     # 所有題型都禁止回到上一題（練習模式例外）
