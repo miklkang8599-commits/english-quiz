@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.443 - 超時停止autorefresh版)
+# 🧩 英文全能練習系統 (V2.9.444 - elapsed_sec秒整數版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.443
+# 📌 版本編號 (VERSION): 2.9.444
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.443"
+VERSION = "2.9.444"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -4252,7 +4252,7 @@ if not st.session_state.quiz_loaded:
                             "題目ID":  qid,
                             "結果":    "📖 複習",
                             "學生答案": "",
-                            "任務名稱": st.session_state.get("current_task_name", ""), "作答秒數": int(__import__("time").time() - st.session_state.get(f"_q_start_time_{st.session_state.q_idx}", __import__("time").time()))
+                            "任務名稱": st.session_state.get("current_task_name", ""), "作答秒數": round(__import__("time").time() - st.session_state.get(f"_q_start_time_{st.session_state.q_idx}", __import__("time").time()))
                         }])
                         if append_to_sheet("logs", log_data):
                             rv_review_counts[qid] = rv_review_counts.get(qid, 0) + 1
@@ -4455,7 +4455,7 @@ if st.session_state.quiz_loaded:
                         "結果":    "✅" if _ls_ok else "❌",
                         "學生答案": _ls_user,
                         "分數":    "",
-                        "任務名稱": st.session_state.get("current_task_name", ""), "作答秒數": int(__import__("time").time() - st.session_state.get(f"_q_start_time_{st.session_state.q_idx}", __import__("time").time()))
+                        "任務名稱": st.session_state.get("current_task_name", ""), "作答秒數": round(__import__("time").time() - st.session_state.get(f"_q_start_time_{st.session_state.q_idx}", __import__("time").time()))
                     })
                     sb_ls.table("logs").insert(en_ls).execute()
                     _tls.sleep(0.3)
@@ -4483,7 +4483,7 @@ if st.session_state.quiz_loaded:
                         "結果":    "✅" if _ls_ok2 else "❌",
                         "學生答案": _ls_user2,
                         "分數":    "",
-                        "任務名稱": st.session_state.get("current_task_name", ""), "作答秒數": int(__import__("time").time() - st.session_state.get(f"_q_start_time_{st.session_state.q_idx}", __import__("time").time()))
+                        "任務名稱": st.session_state.get("current_task_name", ""), "作答秒數": round(__import__("time").time() - st.session_state.get(f"_q_start_time_{st.session_state.q_idx}", __import__("time").time()))
                     })
                     sb_ls2.table("logs").insert(en_ls2).execute()
                     _tls2.sleep(0.3)
@@ -4576,7 +4576,7 @@ if st.session_state.quiz_loaded:
                             "結果":    "✅" if is_lp_ok else "❌",
                             "學生答案": opt_sym,
                             "分數":    "",
-                            "任務名稱": st.session_state.get("current_task_name", ""), "作答秒數": int(__import__("time").time() - st.session_state.get(f"_q_start_time_{st.session_state.q_idx}", __import__("time").time()))
+                            "任務名稱": st.session_state.get("current_task_name", ""), "作答秒數": round(__import__("time").time() - st.session_state.get(f"_q_start_time_{st.session_state.q_idx}", __import__("time").time()))
                         })
                         sb_lp.table("logs").insert(en_lp).execute()
                         _tlp.sleep(0.3)
@@ -4650,7 +4650,7 @@ if st.session_state.quiz_loaded:
                             "結果":    "練習" if st.session_state.get("practice_mode") else ("✅" if _is_ok else "❌"),
                             "學生答案": _opt,
                             "分數":    "",
-                            "任務名稱": st.session_state.get("current_task_name", ""), "作答秒數": int(__import__("time").time() - st.session_state.get(f"_q_start_time_{st.session_state.q_idx}", __import__("time").time()))
+                            "任務名稱": st.session_state.get("current_task_name", ""), "作答秒數": round(__import__("time").time() - st.session_state.get(f"_q_start_time_{st.session_state.q_idx}", __import__("time").time()))
                         })
                         sb_w.table("logs").insert(en_row).execute()
                         _time.sleep(0.3)
@@ -4792,7 +4792,7 @@ if st.session_state.quiz_loaded:
                             "結果":    "🎤 朗讀",
                             "學生答案": stt_text,
                             "分數":    score,
-                            "任務名稱": st.session_state.get("current_task_name", ""), "作答秒數": int(__import__("time").time() - st.session_state.get(f"_q_start_time_{st.session_state.q_idx}", __import__("time").time()))
+                            "任務名稱": st.session_state.get("current_task_name", ""), "作答秒數": round(__import__("time").time() - st.session_state.get(f"_q_start_time_{st.session_state.q_idx}", __import__("time").time()))
                         }])
                         append_to_sheet("logs", log_data)
                         st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
@@ -4840,7 +4840,7 @@ if st.session_state.quiz_loaded:
             if remain == 0 and not st.session_state.get("show_analysis"):
                 st.session_state.update({"current_res": f"⏰ 時間到！答案是：{word}", "show_analysis": True})
                 _timeout_ans = "".join(st.session_state.get(f"vocab_ans_{st.session_state.q_idx}", [])) or st.session_state.get(f"vocab_kb_{st.session_state.q_idx}", "")
-                append_to_sheet("logs", pd.DataFrame([{"時間": get_now().strftime("%Y-%m-%d %H:%M:%S"), "姓名": st.session_state.user_name, "分組": st.session_state.group_id, "題目ID": q.get("題目ID","N/A"), "結果": "❌", "學生答案": _timeout_ans, "分數": "", "任務名稱": st.session_state.get("current_task_name",""), "作答秒數": st.session_state.get(f"_q_start_time_{st.session_state.q_idx}") and int(__import__("time").time() - st.session_state.get(f"_q_start_time_{st.session_state.q_idx}", __import__("time").time()))}]))
+                append_to_sheet("logs", pd.DataFrame([{"時間": get_now().strftime("%Y-%m-%d %H:%M:%S"), "姓名": st.session_state.user_name, "分組": st.session_state.group_id, "題目ID": q.get("題目ID","N/A"), "結果": "❌", "學生答案": _timeout_ans, "分數": "", "任務名稱": st.session_state.get("current_task_name",""), "作答秒數": st.session_state.get(f"_q_start_time_{st.session_state.q_idx}") and round(__import__("time").time() - st.session_state.get(f"_q_start_time_{st.session_state.q_idx}", __import__("time").time()))}]))
                 st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
                 st.rerun()
 
@@ -4961,7 +4961,7 @@ if st.session_state.quiz_loaded:
                 if word and len([c for c in current_ans if c != ' ']) >= len(_clean_vocab(word)) and not st.session_state.get("show_analysis"):
                     is_ok = _clean_vocab("".join(current_ans)) == _clean_vocab(word)
                     st.session_state.update({"current_res": "✅ 正確！" if is_ok else f"❌ 錯誤！正確答案：{word}", "show_analysis": True})
-                    append_to_sheet("logs", pd.DataFrame([{"時間": get_now().strftime("%Y-%m-%d %H:%M:%S"), "姓名": st.session_state.user_name, "分組": st.session_state.group_id, "題目ID": q.get("題目ID","N/A"), "結果": "練習" if st.session_state.get("practice_mode") else ("✅" if is_ok else "❌"), "學生答案": "".join(current_ans), "任務名稱": st.session_state.get("current_task_name",""), "作答秒數": st.session_state.get(f"_q_start_time_{st.session_state.q_idx}") and int(__import__("time").time() - st.session_state.get(f"_q_start_time_{st.session_state.q_idx}", __import__("time").time()))}]))
+                    append_to_sheet("logs", pd.DataFrame([{"時間": get_now().strftime("%Y-%m-%d %H:%M:%S"), "姓名": st.session_state.user_name, "分組": st.session_state.group_id, "題目ID": q.get("題目ID","N/A"), "結果": "練習" if st.session_state.get("practice_mode") else ("✅" if is_ok else "❌"), "學生答案": "".join(current_ans), "任務名稱": st.session_state.get("current_task_name",""), "作答秒數": st.session_state.get(f"_q_start_time_{st.session_state.q_idx}") and round(__import__("time").time() - st.session_state.get(f"_q_start_time_{st.session_state.q_idx}", __import__("time").time()))}]))
                     st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
                     st.rerun()
 
@@ -5003,7 +5003,7 @@ if st.session_state.quiz_loaded:
                         "題目ID": q.get("題目ID","N/A"),
                         "結果": _log_result,
                         "學生答案": _phys_val.upper(),
-                        "任務名稱": st.session_state.get("current_task_name",""), "作答秒數": int(__import__("time").time() - st.session_state.get(f"_q_start_time_{st.session_state.q_idx}", __import__("time").time()))
+                        "任務名稱": st.session_state.get("current_task_name",""), "作答秒數": round(__import__("time").time() - st.session_state.get(f"_q_start_time_{st.session_state.q_idx}", __import__("time").time()))
                     }]))
                     st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
                     st.rerun()
@@ -5034,7 +5034,7 @@ if st.session_state.quiz_loaded:
                         is_ok = _clean_vocab(kb_current) == _clean_vocab(word)
                         st.session_state.update({"current_res": "✅ 正確！" if is_ok else f"❌ 錯誤！正確答案：{word}", "show_analysis": True})
                         _log_result = "練習" if st.session_state.get("practice_mode") else ("✅" if is_ok else "❌")
-                        append_to_sheet("logs", pd.DataFrame([{"時間": get_now().strftime("%Y-%m-%d %H:%M:%S"), "姓名": st.session_state.user_name, "分組": st.session_state.group_id, "題目ID": q.get("題目ID","N/A"), "結果": _log_result, "學生答案": kb_current, "任務名稱": st.session_state.get("current_task_name",""), "作答秒數": st.session_state.get(f"_q_start_time_{st.session_state.q_idx}") and int(__import__("time").time() - st.session_state.get(f"_q_start_time_{st.session_state.q_idx}", __import__("time").time()))}]))
+                        append_to_sheet("logs", pd.DataFrame([{"時間": get_now().strftime("%Y-%m-%d %H:%M:%S"), "姓名": st.session_state.user_name, "分組": st.session_state.group_id, "題目ID": q.get("題目ID","N/A"), "結果": _log_result, "學生答案": kb_current, "任務名稱": st.session_state.get("current_task_name",""), "作答秒數": st.session_state.get(f"_q_start_time_{st.session_state.q_idx}") and round(__import__("time").time() - st.session_state.get(f"_q_start_time_{st.session_state.q_idx}", __import__("time").time()))}]))
                         st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
                         st.rerun()
 
@@ -5257,7 +5257,7 @@ if st.session_state.quiz_loaded:
                 "題目ID": q.get('題目ID', 'N/A'),
                 "結果": "練習" if st.session_state.get("practice_mode") else ("✅" if is_ok else "❌"),
                 "學生答案": " ".join(st.session_state.get("ans", [])),
-                "任務名稱": st.session_state.get("current_task_name", ""), "作答秒數": int(__import__("time").time() - st.session_state.get(f"_q_start_time_{st.session_state.q_idx}", __import__("time").time()))
+                "任務名稱": st.session_state.get("current_task_name", ""), "作答秒數": round(__import__("time").time() - st.session_state.get(f"_q_start_time_{st.session_state.q_idx}", __import__("time").time()))
             }])
             append_to_sheet("logs", log_data)
             st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
