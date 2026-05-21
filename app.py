@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.444 - elapsed_sec秒整數版)
+# 🧩 英文全能練習系統 (V2.9.445 - MCQ快速答題計時修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.444
+# 📌 版本編號 (VERSION): 2.9.445
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.444"
+VERSION = "2.9.445"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -5186,6 +5186,8 @@ if st.session_state.quiz_loaded:
                         "結果":    "練習" if st.session_state.get("practice_mode") else ("✅" if is_ok else "❌"),
                         "學生答案": f"原始({orig_opt})→顯示({disp_label}) {parsed_opts.get(orig_opt, '')}",
                         "分數":    "",
+                        "任務名稱": st.session_state.get("current_task_name", ""),
+                        "作答秒數": round(__import__("time").time() - st.session_state.get(f"_q_start_time_{st.session_state.q_idx}", __import__("time").time())),
                     })
                     sb_w.table("logs").insert(en_row).execute()
                     _time.sleep(0.5)  # 等 Supabase 確認寫入
