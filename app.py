@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.459 - JS計時器修復版)
+# 🧩 英文全能練習系統 (V2.9.460 - 靜態計時顯示版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.459
+# 📌 版本編號 (VERSION): 2.9.460
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.459"
+VERSION = "2.9.460"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -4331,50 +4331,14 @@ if st.session_state.quiz_loaded:
             st.session_state['_first_q_cleared'] = True
     elif st.session_state.get('q_idx', 0) > 0:
         st.session_state.pop('_first_q_cleared', None)
-    # 計時顯示（靜態，每次操作時更新）
+    # 計時顯示
     _remain = max(0, _idle_limit - _q_elapsed)
     _timer_color = "🔴" if _remain <= 15 else ("🟡" if _remain <= 30 else "🟢")
-    _timer_display = f"　｜　{_timer_color} {_remain}秒" if not st.session_state.get("show_analysis") else ""
     _answered_now = st.session_state.get('answered_count', 0)
-    st.markdown(f"### 🔴 練習中 (第 {st.session_state.q_idx + 1} / {total_q} 題　｜　已作答 {_answered_now} 題{_timer_display}) {_mode_label}")
-    # 前端 JS 倒數（不影響 session_state）
     if not st.session_state.get("show_analysis"):
-        import streamlit.components.v1 as _cv1_js
-        _cv1_js.html(f"""<script>
-        (function(){{
-            if(window._quizTimer) clearInterval(window._quizTimer);
-            var remain = {_remain};
-            window._quizTimer = setInterval(function(){{
-                remain--;
-                var c = remain<=15?'🔴':(remain<=30?'🟡':'🟢');
-                var h3s = window.parent.document.querySelectorAll('h3');
-                for(var el of h3s){{
-                    if(el.innerText.includes('練習中')){{
-                        el.innerText = el.innerText.replace(/[🔴🟡🟢].{0,5}\d+秒/, c+' '+remain+'秒');
-                        break;
-                    }}
-                }}
-                if(remain<=0){{
-                    clearInterval(window._quizTimer);
-                    var btns=window.parent.document.querySelectorAll('button');
-                    for(var b of btns){{ if(b.innerText.includes('⏰_timeout')){{b.click();break;}} }}
-                }}
-            }}, 1000);
-        }})();
-        </script>""", height=0)
-        if st.button("⏰_timeout", key=f"_tb_{st.session_state.q_idx}"):
-            import pandas as _pd_t
-            append_to_sheet("logs", _pd_t.DataFrame([{{
-                "時間": get_now().strftime("%Y-%m-%d %H:%M:%S"),
-                "姓名": st.session_state.user_name, "分組": st.session_state.group_id,
-                "題目ID": st.session_state.quiz_list[st.session_state.q_idx].get("題目ID","N/A"),
-                "結果": "⏰ 超時", "學生答案": "", "分數": "",
-                "任務名稱": st.session_state.get("current_task_name",""),
-                "作答秒數": _q_elapsed,
-            }}]))
-            st.session_state.update({{"quiz_loaded": False, "range_confirmed": False, "show_analysis": False, "current_res": ""}})
-            st.rerun()
-        st.markdown('<style>button[data-testid="baseButton-secondary"] p {visibility:hidden;}</style>', unsafe_allow_html=True)
+        st.markdown(f"### 🔴 練習中 (第 {st.session_state.q_idx + 1} / {total_q} 題　｜　已作答 {_answered_now} 題　｜　{_timer_color} {_remain}秒) {_mode_label}")
+    else:
+        st.markdown(f"### 🔴 練習中 (第 {st.session_state.q_idx + 1} / {total_q} 題　｜　已作答 {_answered_now} 題) {_mode_label}")
     q = st.session_state.quiz_list[st.session_state.q_idx]
     # 判斷題型：優先用 _type，其次看欄位，最後看單元名稱
     _qtype         = q.get("_type", "")
