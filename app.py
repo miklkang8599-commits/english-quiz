@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.454 - 已作答即時讀取版)
+# 🧩 英文全能練習系統 (V2.9.455 - debug answered_count版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.454
+# 📌 版本編號 (VERSION): 2.9.455
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.454"
+VERSION = "2.9.455"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -4336,6 +4336,7 @@ if st.session_state.quiz_loaded:
     _timer_color = "🔴" if _remain <= 15 else ("🟡" if _remain <= 30 else "🟢")
     _timer_display = f"　｜　{_timer_color} {_remain}秒" if not st.session_state.get("show_analysis") else ""
     _answered_now = st.session_state.get('answered_count', 0)
+    st.caption(f"debug: answered_count={st.session_state.get('answered_count','?')}")
     st.markdown(f"### 🔴 練習中 (第 {st.session_state.q_idx + 1} / {total_q} 題　｜　已作答 {_answered_now} 題{_timer_display}) {_mode_label}")
     # 未作答時每秒 rerun 更新倒數；快速答題顯示結果後也要繼續（等待跳題）
     if not st.session_state.get("show_analysis") or (_quick_mode and st.session_state.get('_quick_shown')):
