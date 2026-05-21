@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.462 - 快速答題也倒數版)
+# 🧩 英文全能練習系統 (V2.9.463 - 拼單字debug版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.462
+# 📌 版本編號 (VERSION): 2.9.463
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.462"
+VERSION = "2.9.463"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -4813,7 +4813,11 @@ if st.session_state.quiz_loaded:
 
         word     = str(q.get("英文單字") or "").strip()
         meaning  = str(q.get("中文意思") or "").strip()
-        _word_parts = word.strip().split()  # 用於判斷多字單字
+        _word_parts = word.strip().split()
+
+        if not word:
+            st.error(f"⚠️ 拼單字題目無英文單字，題目欄位：{list(q.keys())[:10]}")
+            st.stop()
         task_mode    = q.get("_vocab_mode", "自選")
         use_timer    = int(q.get("_vocab_timer", 0) or 0)
         extra_letters= int(q.get("_vocab_extra", 0)) if q.get("_vocab_extra") is not None else 0
