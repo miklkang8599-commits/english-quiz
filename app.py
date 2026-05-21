@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.464 - 移除sleep解除阻塞版)
+# 🧩 英文全能練習系統 (V2.9.465 - 任務題數去重修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.464
+# 📌 版本編號 (VERSION): 2.9.465
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.464"
+VERSION = "2.9.465"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1502,6 +1502,9 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 lp_ids  = [_get_lp_qid(r) for _, r in df_lp_final.iterrows()] if not df_lp_final.empty else []
                 ls_ids  = [_get_ls_qid(r) for _, r in df_ls_final.iterrows()] if not df_ls_final.empty else []
                 all_ids = q_ids + mcq_ids + r_ids + v_ids + rm_ids + lp_ids + ls_ids
+                # 去除重複（保持順序）
+                _seen = set()
+                all_ids = [x for x in all_ids if not (_seen.add(x) or x in _seen)]
 
                 has_q   = bool(q_ids)
                 has_mcq = bool(mcq_ids)
@@ -3036,8 +3039,11 @@ if not st.session_state.quiz_loaded:
             done_cnt, all_done, my_done = 0, False, set()
             pending_ids, _start_idx_fwd, _is_practice = set(), 0, False
             # 過濾掉 nan 和空白
-            raw_ids   = set([q.strip() for q in task_q_ids.split(',') if q.strip() and q.strip() != 'nan'])
-            q_ids_set = raw_ids  # 原始格式，用於題數計算
+            raw_ids   = [q.strip() for q in task_q_ids.split(',') if q.strip() and q.strip() != 'nan']
+            # 去除重複保持順序
+            _seen_ids = set()
+            raw_ids   = [x for x in raw_ids if not (_seen_ids.add(x) or x in _seen_ids)]
+            q_ids_set = set(raw_ids)  # 用於比對（set）
             # q_ids_all 包含所有格式（有V_/無V_），用於 logs 比對
             q_ids_all = set()
             for qid in raw_ids:
@@ -3046,7 +3052,7 @@ if not st.session_state.quiz_loaded:
                     q_ids_all.add(qid[2:])   # 無前綴版本
                 elif not any(qid.startswith(p) for p in ('R_','RM_','LP_','LS_')):
                     q_ids_all.add(f"V_{qid}")  # 加 V_ 前綴版本
-            task_q_count = len(q_ids_set) if q_ids_set else max(int(float(str(arow.get('題目數', 0) or 0))), 0)
+            task_q_count = len(raw_ids) if raw_ids else max(int(float(str(arow.get('題目數', 0) or 0))), 0)
 
             # 計算個人完成進度（混合任務：一般題答對 + 朗讀題有紀錄）
             task_type       = str(arow.get('類型', '一般'))
