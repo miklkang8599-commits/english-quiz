@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.466 - 去重邏輯修復版)
+# 🧩 英文全能練習系統 (V2.9.467 - pending_ids用q_ids_set版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.466
+# 📌 版本編號 (VERSION): 2.9.467
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.466"
+VERSION = "2.9.467"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3417,7 +3417,7 @@ if not st.session_state.quiz_loaded:
                             _is_practice = False
                             btn_key = f"start_task_{_task_idx}_{task_name[:20]}"
                             if st.button("🏆 開始競賽", key=btn_key, type="primary", use_container_width=True):
-                                pending_ids    = q_ids_all
+                                pending_ids    = q_ids_set
                                 _start_idx_fwd = 0
                                 import random as _rr; _rr.shuffle(list(pending_ids))  # noqa
                         else:
@@ -3431,12 +3431,12 @@ if not st.session_state.quiz_loaded:
                             if st.button(f"🚀 {label}", key=btn_key, type="primary", use_container_width=True):
                                 if _mode == "📌 測驗-繼續未完成部分":
                                     _start_idx_fwd = 0
-                                    pending_ids = q_ids_all - my_done
+                                    pending_ids = q_ids_set - my_done
                                     if not pending_ids:
-                                        pending_ids = q_ids_all
+                                        pending_ids = q_ids_set
                                 else:
                                     _start_idx_fwd = max(0, int(_start_from) - 1)
-                                    pending_ids = q_ids_all
+                                    pending_ids = q_ids_set
 
                             if not hasattr(st.session_state, "_is_practice_defined"):
                                 _is_practice = _is_practice if "_is_practice" in dir() else False
