@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.469 - 同步學生刪除版)
+# 🧩 英文全能練習系統 (V2.9.470 - 重組題TTS版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.469
+# 📌 版本編號 (VERSION): 2.9.470
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.469"
+VERSION = "2.9.470"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -5291,6 +5291,35 @@ if st.session_state.quiz_loaded:
 
     if st.session_state.get('show_analysis') and not is_reading and not is_reading_mcq and not is_listen_phon and not is_listen_sent:
         st.warning(st.session_state.current_res)
+        # 重組題：顯示 TTS（男聲 + 自然聲音，0.8倍速）
+        if not is_mcq and not is_vocab:
+            _reorder_ans = str(q.get('重組英文答案') or q.get('英文答案') or '').strip()
+            if _reorder_ans and not _quick_mode:
+                _tts_f_key = f"reorder_tts_f_{st.session_state.q_idx}"
+                _tts_m_key = f"reorder_tts_m_{st.session_state.q_idx}"
+                if not st.session_state.get(_tts_f_key) or not st.session_state.get(_tts_m_key):
+                    try:
+                        import openai as _oai_r, base64 as _b64_r
+                        _cli_r = _oai_r.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+                        if not st.session_state.get(_tts_f_key):
+                            _tts_f = _cli_r.audio.speech.create(model="tts-1", voice="nova", input=_reorder_ans).content
+                            st.session_state[_tts_f_key] = _b64_r.b64encode(_tts_f).decode()
+                        if not st.session_state.get(_tts_m_key):
+                            _tts_m = _cli_r.audio.speech.create(model="tts-1", voice="onyx", input=_reorder_ans).content
+                            st.session_state[_tts_m_key] = _b64_r.b64encode(_tts_m).decode()
+                        st.rerun()
+                    except:
+                        pass
+                if st.session_state.get(_tts_f_key) or st.session_state.get(_tts_m_key):
+                    import base64 as _b64_r
+                    st.markdown(f"**🔊 {_reorder_ans}**")
+                    _tc1, _tc2 = st.columns(2)
+                    if st.session_state.get(_tts_f_key):
+                        _tc1.caption("🎵 自然聲音")
+                        _tc1.markdown(f'<audio controls style="width:100%"><source src="data:audio/mpeg;base64,{st.session_state[_tts_f_key]}" type="audio/mpeg"></audio><script>document.querySelectorAll("audio").forEach(a=>{{a.playbackRate=0.8;}});</script>', unsafe_allow_html=True)
+                    if st.session_state.get(_tts_m_key):
+                        _tc2.caption("🎵 男聲")
+                        _tc2.markdown(f'<audio controls style="width:100%"><source src="data:audio/mpeg;base64,{st.session_state[_tts_m_key]}" type="audio/mpeg"></audio><script>document.querySelectorAll("audio").forEach(a=>{{a.playbackRate=0.8;}});</script>', unsafe_allow_html=True)
         # 單選題：答題後一律顯示解析
         if is_mcq:
             mcq_analysis = str(q.get('解析') or q.get('單選解析') or '').strip()
@@ -5313,7 +5342,8 @@ if st.session_state.quiz_loaded:
         st.session_state.pop(f"_q_start_time_{q_idx}", None)
         # 清除選項順序快取和錄音評分快取
         for _ok in [f"mcq_order_{q_idx}", f"rm_order_{q_idx}", f"audio_scored_{q_idx}", f"mcq_written_{q_idx}",
-                    f"vocab_tts_f_{q_idx}", f"vocab_tts_m_{q_idx}"]:
+                    f"vocab_tts_f_{q_idx}", f"vocab_tts_m_{q_idx}",
+                    f"reorder_tts_f_{q_idx}", f"reorder_tts_m_{q_idx}"]:
             st.session_state.pop(_ok, None)
         # 清除該題目的所有 vocab pool（含新格式 vocab_pool_{q_idx}_{extra}）
         for k in list(st.session_state.keys()):
