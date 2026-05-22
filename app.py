@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.468 - 題目ID不去重版)
+# 🧩 英文全能練習系統 (V2.9.469 - 同步學生刪除版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.468
+# 📌 版本編號 (VERSION): 2.9.469
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.468"
+VERSION = "2.9.469"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -2239,15 +2239,23 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
 
                 if _rows:
                     with st.spinner(f"⏳ 同步 {len(_rows)} 筆學生資料..."):
-                        # 分批 upsert（每批 100 筆）
+                        # 刪除已不在 Google Sheets 的學生
+                        _names_in_sheet = [r['name'] for r in _rows]
+                        # 取得 Supabase 現有學生
+                        _existing = _sb_sync.table("students").select("name").execute()
+                        _existing_names = [r['name'] for r in (_existing.data or [])]
+                        _to_delete = [n for n in _existing_names if n not in _names_in_sheet]
+                        if _to_delete:
+                            for _dn in _to_delete:
+                                _sb_sync.table("students").delete().eq("name", _dn).execute()
+                        # upsert 新增/更新
                         _batch_size = 100
                         for _i in range(0, len(_rows), _batch_size):
                             _batch = _rows[_i:_i+_batch_size]
                             _sb_sync.table("students").upsert(_batch, on_conflict="name").execute()
-                    st.success(f"✅ 成功同步 {len(_rows)} 筆學生資料！\n欄位：帳號、密碼、姓名、分組、學年、版本")
+                    _del_msg = f"，已刪除 {len(_to_delete)} 筆" if _to_delete else ""
+                    st.success(f"✅ 成功同步 {len(_rows)} 筆學生資料{_del_msg}！")
                     load_students_only.clear()
-                    # 顯示預覽
-                    st.dataframe(pd.DataFrame(_rows).head(5), use_container_width=True)
                 else:
                     st.warning("⚠️ Google Sheets 無學生資料")
             except Exception as _e_sync:
