@@ -14,7 +14,10 @@
 #    7. [Box B] 新增「📖 題目講解」tab：篩選學生與題目範圍、顯示各學生
 #              最近答案、老師可輸入講解備註、點選完成後寫入 logs (結果='📖 講解')。
 # ==============================================================================
-
+# 在 dashboard.py 最上面加：
+from streamlit_autorefresh import st_autorefresh
+# 每 4 分鐘 ping 一次（不重載頁面）
+st_autorefresh(interval=240000, limit=None, key="keepalive")
 import streamlit as st
 import pandas as pd
 import random
