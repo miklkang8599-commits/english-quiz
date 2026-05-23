@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.475 - 跟著唸TTS內容hash版)
+# 🧩 英文全能練習系統 (V2.9.476 - shadow_rec_key修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.475
+# 📌 版本編號 (VERSION): 2.9.476
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.475"
+VERSION = "2.9.476"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -4414,7 +4414,7 @@ if st.session_state.quiz_loaded:
 
         # 學生錄音（選填）
         st.markdown("**🎙️ 自我練習錄音（選填）**")
-        st.audio_input("點擊錄音", key=f"shadow_rec_{_task_id_sh}_{st.session_state.q_idx}", label_visibility="collapsed")
+        st.audio_input("點擊錄音", key=f"shadow_rec_{st.session_state.q_idx}_{_sh_hash}", label_visibility="collapsed")
 
         # 四個導航按鈕（移除再聽一次，改為三個）
         st.divider()
