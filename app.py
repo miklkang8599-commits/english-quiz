@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.473 - 跟著唸TTS任務隔離版)
+# 🧩 英文全能練習系統 (V2.9.474 - 跟著唸換題清TTS版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.473
+# 📌 版本編號 (VERSION): 2.9.474
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.473"
+VERSION = "2.9.474"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -4405,7 +4405,8 @@ if st.session_state.quiz_loaded:
                 _sc2.caption("🎵 自然聲音")
                 _sc2.markdown(
                     f'<audio controls style="width:100%">'
-                    f'<source src="data:audio/mpeg;base64,{st.session_state[_sh_f_key]}" type="audio/mpeg"></audio>',
+                    f'<source src="data:audio/mpeg;base64,{st.session_state[_sh_f_key]}" type="audio/mpeg"></audio>'
+                    f'<script>document.querySelectorAll("audio").forEach(a=>{{if(!a.dataset.sr){{a.playbackRate=0.7;a.dataset.sr=1;}}}});</script>',
                     unsafe_allow_html=True
                 )
 
@@ -4413,9 +4414,9 @@ if st.session_state.quiz_loaded:
         st.markdown("**🎙️ 自我練習錄音（選填）**")
         st.audio_input("點擊錄音", key=f"shadow_rec_{_task_id_sh}_{st.session_state.q_idx}", label_visibility="collapsed")
 
-        # 四個導航按鈕
+        # 四個導航按鈕（移除再聽一次，改為三個）
         st.divider()
-        _sh_c1, _sh_c2, _sh_c3, _sh_c4 = st.columns(4)
+        _sh_c1, _sh_c2, _sh_c3 = st.columns(3)
         _total_sh = len(st.session_state.quiz_list)
         _idx_sh   = st.session_state.q_idx
 
@@ -4424,22 +4425,15 @@ if st.session_state.quiz_loaded:
                           disabled=(_idx_sh == 0)):
             st.session_state.update({"ans": [], "shuf": [], "show_analysis": False, "current_res": ""})
             st.session_state.pop(f"_q_start_time_{_idx_sh}", None)
-            # 清除新題的 TTS（避免殘留）
-            st.session_state.pop(f"shadow_tts_f_{_task_id_sh}_{_idx_sh - 1}", None)
-            st.session_state.pop(f"shadow_tts_m_{_task_id_sh}_{_idx_sh - 1}", None)
+            # 清除「當前題」的 TTS，讓上一題正確重新載入自己的聲音
+            st.session_state.pop(_sh_f_key, None)
+            st.session_state.pop(_sh_m_key, None)
             st.session_state.q_idx -= 1
             st.rerun()
 
-        # 再聽一次（清除 TTS cache 強制重新播放）
-        if _sh_c2.button("🔁 再聽一次", key="sh_replay", use_container_width=True):
-            st.session_state.pop(_sh_m_key, None)
-            st.session_state.pop(_sh_f_key, None)
-            st.rerun()
-
         # 下一題
-        if _sh_c3.button("➡️ 下一題", key="sh_next", use_container_width=True,
+        if _sh_c2.button("➡️ 下一題", key="sh_next", use_container_width=True,
                           disabled=(_idx_sh + 1 >= _total_sh), type="primary"):
-            # 寫入 log（跟著唸）
             import time as _sh_t
             _sh_elapsed = round(_sh_t.time() - st.session_state.get(f"_q_start_time_{_idx_sh}", _sh_t.time()))
             append_to_sheet("logs", pd.DataFrame([{
@@ -4453,14 +4447,14 @@ if st.session_state.quiz_loaded:
             st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
             st.session_state.update({"ans": [], "shuf": [], "show_analysis": False, "current_res": ""})
             st.session_state.pop(f"_q_start_time_{_idx_sh}", None)
-            # 清除下一題的 TTS（確保重新載入）
-            st.session_state.pop(f"shadow_tts_f_{_task_id_sh}_{_idx_sh + 1}", None)
-            st.session_state.pop(f"shadow_tts_m_{_task_id_sh}_{_idx_sh + 1}", None)
+            # 清除「當前題」的 TTS，讓下一題重新載入自己的聲音
+            st.session_state.pop(_sh_f_key, None)
+            st.session_state.pop(_sh_m_key, None)
             st.session_state.q_idx += 1
             st.rerun()
 
         # 結束
-        if _sh_c4.button("🏁 結束", key="sh_end", use_container_width=True):
+        if _sh_c3.button("🏁 結束", key="sh_end", use_container_width=True):
             st.session_state.update({"quiz_loaded": False, "range_confirmed": False, "shadow_mode": False})
             st.rerun()
 
