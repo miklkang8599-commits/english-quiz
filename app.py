@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.472 - 跟著唸修復版)
+# 🧩 英文全能練習系統 (V2.9.473 - 跟著唸TTS任務隔離版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.472
+# 📌 版本編號 (VERSION): 2.9.473
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.472"
+VERSION = "2.9.473"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -4364,8 +4364,9 @@ if st.session_state.quiz_loaded:
     if _shadow_mode:
         _sh_ans = str(q.get('重組英文答案') or q.get('英文答案') or q.get('英文單字') or '').strip()
         _sh_zh  = str(q.get('重組中文題目') or q.get('中文意思') or q.get('中文') or '').strip()
-        _sh_f_key = f"shadow_tts_f_{st.session_state.q_idx}"
-        _sh_m_key = f"shadow_tts_m_{st.session_state.q_idx}"
+        _task_id_sh = st.session_state.get('current_task_name', '')[:20]
+        _sh_f_key = f"shadow_tts_f_{_task_id_sh}_{st.session_state.q_idx}"
+        _sh_m_key = f"shadow_tts_m_{_task_id_sh}_{st.session_state.q_idx}"
 
         # 顯示英文和中文
         st.markdown(f"## 🔊 {_sh_ans}")
@@ -4410,10 +4411,7 @@ if st.session_state.quiz_loaded:
 
         # 學生錄音（選填）
         st.markdown("**🎙️ 自我練習錄音（選填）**")
-        _sh_audio = st.audio_input("點擊錄音", key=f"shadow_rec_{st.session_state.q_idx}", label_visibility="collapsed")
-        if _sh_audio:
-            st.audio(_sh_audio)
-            st.caption("✅ 錄音完成，可播放比較")
+        st.audio_input("點擊錄音", key=f"shadow_rec_{_task_id_sh}_{st.session_state.q_idx}", label_visibility="collapsed")
 
         # 四個導航按鈕
         st.divider()
@@ -4427,8 +4425,8 @@ if st.session_state.quiz_loaded:
             st.session_state.update({"ans": [], "shuf": [], "show_analysis": False, "current_res": ""})
             st.session_state.pop(f"_q_start_time_{_idx_sh}", None)
             # 清除新題的 TTS（避免殘留）
-            st.session_state.pop(f"shadow_tts_f_{_idx_sh - 1}", None)
-            st.session_state.pop(f"shadow_tts_m_{_idx_sh - 1}", None)
+            st.session_state.pop(f"shadow_tts_f_{_task_id_sh}_{_idx_sh - 1}", None)
+            st.session_state.pop(f"shadow_tts_m_{_task_id_sh}_{_idx_sh - 1}", None)
             st.session_state.q_idx -= 1
             st.rerun()
 
@@ -4456,8 +4454,8 @@ if st.session_state.quiz_loaded:
             st.session_state.update({"ans": [], "shuf": [], "show_analysis": False, "current_res": ""})
             st.session_state.pop(f"_q_start_time_{_idx_sh}", None)
             # 清除下一題的 TTS（確保重新載入）
-            st.session_state.pop(f"shadow_tts_f_{_idx_sh + 1}", None)
-            st.session_state.pop(f"shadow_tts_m_{_idx_sh + 1}", None)
+            st.session_state.pop(f"shadow_tts_f_{_task_id_sh}_{_idx_sh + 1}", None)
+            st.session_state.pop(f"shadow_tts_m_{_task_id_sh}_{_idx_sh + 1}", None)
             st.session_state.q_idx += 1
             st.rerun()
 
