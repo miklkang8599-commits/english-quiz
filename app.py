@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.471 - 跟著唸模式版)
+# 🧩 英文全能練習系統 (V2.9.472 - 跟著唸修復版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.471
+# 📌 版本編號 (VERSION): 2.9.472
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.471"
+VERSION = "2.9.472"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3241,6 +3241,7 @@ if not st.session_state.quiz_loaded:
 
                             _is_practice = (_retry_mode == "🏋️ 練習模式")
                             _is_quick    = (_retry_mode == "⚡ 快速答題")
+                            _is_shadow   = (_retry_mode == "🎤 跟著唸")
                             _do_retry    = False
                             if st.button(f"🚀 開始{_retry_mode}", key=f"retry_go_{_task_idx}", type="primary", use_container_width=True):
                                 _do_retry = True
@@ -3385,13 +3386,18 @@ if not st.session_state.quiz_loaded:
                         _mode = "📌 測驗-繼續未完成部分"  # default
                         _start_from = 1
                         if not is_race_task:
+                            # 跟著唸只適用於重組/拼單字題型
+                            _shadow_ok = is_vocab_task or task_type in ("一般", "混合", "")
+                            _mode_opts = ["📌 測驗-繼續未完成部分", "🔢 測驗-從第幾題開始", "⚡ 快速答題", "🏋️ 練習模式"]
+                            if _shadow_ok:
+                                _mode_opts.append("🎤 跟著唸")
                             _mode = st.radio(
                                 "練習方式",
-                                ["📌 測驗-繼續未完成部分", "🔢 測驗-從第幾題開始", "⚡ 快速答題", "🏋️ 練習模式", "🎤 跟著唸"],
+                                _mode_opts,
                                 horizontal=True,
                                 key=f"start_mode_{_task_idx}"
                             )
-                            if _mode in ("🔢 測驗-從第幾題開始", "🏋️ 練習模式", "⚡ 快速答題"):
+                            if _mode in ("🔢 測驗-從第幾題開始", "🏋️ 練習模式", "⚡ 快速答題", "🎤 跟著唸"):
                                 _start_from = st.number_input(
                                     "從第幾題（依任務原始題號）",
                                     min_value=1, max_value=task_q_count, value=1,
@@ -3401,6 +3407,8 @@ if not st.session_state.quiz_loaded:
                                     st.caption("🏋️ 練習模式：可回上一題，作答紀錄標記為「練習」不列入正式記錄")
                                 elif _mode == "⚡ 快速答題":
                                     st.caption("⚡ 快速答題：答完立即顯示對錯，自動跳下一題")
+                                elif _mode == "🎤 跟著唸":
+                                    st.caption("🎤 跟著唸：播放英文 TTS，可自行錄音練習，無需作答")
 
                         # 競賽模式任務：只顯示競賽按鈕，不顯示一般模式選項
                         pending_ids    = set()  # 預設空，按鈕按下才賦值
@@ -3420,7 +3428,8 @@ if not st.session_state.quiz_loaded:
                             label   = "📌 測驗-繼續未完成部分" if _mode == "📌 測驗-繼續未完成部分" else \
                                       (f"🏋️ 練習模式 從第 {_start_from} 題" if _is_practice else \
                                       (f"⚡ 快速答題 從第 {_start_from} 題" if _is_quick else \
-                                       f"🔢 測驗-從第 {_start_from} 題開始"))
+                                      (f"🎤 跟著唸 從第 {_start_from} 題" if _is_shadow else \
+                                       f"🔢 測驗-從第 {_start_from} 題開始")))
                             if st.button(f"🚀 {label}", key=btn_key, type="primary", use_container_width=True):
                                 if _mode == "📌 測驗-繼續未完成部分":
                                     _start_idx_fwd = 0
@@ -4417,6 +4426,9 @@ if st.session_state.quiz_loaded:
                           disabled=(_idx_sh == 0)):
             st.session_state.update({"ans": [], "shuf": [], "show_analysis": False, "current_res": ""})
             st.session_state.pop(f"_q_start_time_{_idx_sh}", None)
+            # 清除新題的 TTS（避免殘留）
+            st.session_state.pop(f"shadow_tts_f_{_idx_sh - 1}", None)
+            st.session_state.pop(f"shadow_tts_m_{_idx_sh - 1}", None)
             st.session_state.q_idx -= 1
             st.rerun()
 
@@ -4443,6 +4455,9 @@ if st.session_state.quiz_loaded:
             st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
             st.session_state.update({"ans": [], "shuf": [], "show_analysis": False, "current_res": ""})
             st.session_state.pop(f"_q_start_time_{_idx_sh}", None)
+            # 清除下一題的 TTS（確保重新載入）
+            st.session_state.pop(f"shadow_tts_f_{_idx_sh + 1}", None)
+            st.session_state.pop(f"shadow_tts_m_{_idx_sh + 1}", None)
             st.session_state.q_idx += 1
             st.rerun()
 
