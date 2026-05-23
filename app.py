@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.470 - 重組題TTS版)
+# 🧩 英文全能練習系統 (V2.9.471 - 跟著唸模式版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.470
+# 📌 版本編號 (VERSION): 2.9.471
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.470"
+VERSION = "2.9.471"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3229,7 +3229,7 @@ if not st.session_state.quiz_loaded:
                             st.markdown("**選擇答題方式：**")
                             _retry_mode = st.radio(
                                 "答題方式",
-                                ["📌 測驗-繼續未完成部分", "🔢 測驗-從第幾題開始", "⚡ 快速答題", "🏋️ 練習模式"],
+                                ["📌 測驗-繼續未完成部分", "🔢 測驗-從第幾題開始", "⚡ 快速答題", "🏋️ 練習模式", "🎤 跟著唸"],
                                 horizontal=False,
                                 key=f"retry_mode_{_task_idx}"
                             )
@@ -3268,7 +3268,7 @@ if not st.session_state.quiz_loaded:
                                     st.session_state.update({
                                         "quiz_list": records,
                                         "q_idx": min(_start_idx, len(records)-1),
-                                        "quiz_loaded": True, "answered_count": 0, "_timers_cleared": False, "current_task_name": task_id_key, "practice_mode": _is_practice, "quick_mode": locals().get("_is_quick", False), "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
+                                        "quiz_loaded": True, "answered_count": 0, "_timers_cleared": False, "current_task_name": task_id_key, "practice_mode": _is_practice, "quick_mode": locals().get("_is_quick", False), "shadow_mode": locals().get("_is_shadow", False), "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
                                         "ans": [], "used_history": [], "shuf": [], "show_analysis": False, "current_res": "", "vocab_start_time": None, "vocab_q_idx": None
                                     })
                                     st.rerun()
@@ -3370,7 +3370,7 @@ if not st.session_state.quiz_loaded:
                                     st.session_state.update({
                                         "quiz_list": records,
                                         "q_idx": min(_start_idx, len(records)-1),
-                                        "quiz_loaded": True, "answered_count": 0, "_timers_cleared": False, "current_task_name": task_id_key, "practice_mode": _is_practice, "quick_mode": locals().get("_is_quick", False), "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
+                                        "quiz_loaded": True, "answered_count": 0, "_timers_cleared": False, "current_task_name": task_id_key, "practice_mode": _is_practice, "quick_mode": locals().get("_is_quick", False), "shadow_mode": locals().get("_is_shadow", False), "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
                                         "ans": [], "used_history": [], "shuf": [], "show_analysis": False, "current_res": "", "vocab_start_time": None, "vocab_q_idx": None
                                     })
                                     st.rerun()
@@ -3387,7 +3387,7 @@ if not st.session_state.quiz_loaded:
                         if not is_race_task:
                             _mode = st.radio(
                                 "練習方式",
-                                ["📌 測驗-繼續未完成部分", "🔢 測驗-從第幾題開始", "⚡ 快速答題", "🏋️ 練習模式"],
+                                ["📌 測驗-繼續未完成部分", "🔢 測驗-從第幾題開始", "⚡ 快速答題", "🏋️ 練習模式", "🎤 跟著唸"],
                                 horizontal=True,
                                 key=f"start_mode_{_task_idx}"
                             )
@@ -3415,6 +3415,7 @@ if not st.session_state.quiz_loaded:
                         else:
                             _is_practice  = (_mode == "🏋️ 練習模式")
                             _is_quick     = (_mode == "⚡ 快速答題")
+                            _is_shadow    = (_mode == "🎤 跟著唸")
                             btn_key = f"start_task_{_task_idx}_{task_name[:20]}"
                             label   = "📌 測驗-繼續未完成部分" if _mode == "📌 測驗-繼續未完成部分" else \
                                       (f"🏋️ 練習模式 從第 {_start_from} 題" if _is_practice else \
@@ -3450,7 +3451,7 @@ if not st.session_state.quiz_loaded:
                                           del st.session_state[_k]
                                       st.session_state.update({
                                           "quiz_list": records,
-                                          "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "_timers_cleared": False, "current_task_name": task_id_key, "practice_mode": _is_practice, "quick_mode": locals().get("_is_quick", False), "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
+                                          "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "_timers_cleared": False, "current_task_name": task_id_key, "practice_mode": _is_practice, "quick_mode": locals().get("_is_quick", False), "shadow_mode": locals().get("_is_shadow", False), "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
                                           "ans": [], "used_history": [], "shuf": [], "show_analysis": False, "current_res": "", "vocab_start_time": None, "vocab_q_idx": None
                                       })
                                       st.rerun()
@@ -3485,7 +3486,7 @@ if not st.session_state.quiz_loaded:
                                           del st.session_state[_k]
                                       st.session_state.update({
                                           "quiz_list": records,
-                                          "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "_timers_cleared": False, "current_task_name": task_id_key, "practice_mode": _is_practice, "quick_mode": locals().get("_is_quick", False), "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
+                                          "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "_timers_cleared": False, "current_task_name": task_id_key, "practice_mode": _is_practice, "quick_mode": locals().get("_is_quick", False), "shadow_mode": locals().get("_is_shadow", False), "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
                                           "ans": [], "used_history": [], "shuf": [], "show_analysis": False, "current_res": "", "vocab_start_time": None, "vocab_q_idx": None
                                       })
                                       st.rerun()
@@ -3506,7 +3507,7 @@ if not st.session_state.quiz_loaded:
                                           del st.session_state[_k]
                                       st.session_state.update({
                                           "quiz_list": records,
-                                          "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "_timers_cleared": False, "current_task_name": task_id_key, "practice_mode": _is_practice, "quick_mode": locals().get("_is_quick", False), "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
+                                          "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "_timers_cleared": False, "current_task_name": task_id_key, "practice_mode": _is_practice, "quick_mode": locals().get("_is_quick", False), "shadow_mode": locals().get("_is_shadow", False), "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
                                           "ans": [], "used_history": [], "shuf": [], "show_analysis": False, "current_res": "", "vocab_start_time": None, "vocab_q_idx": None
                                       })
                                       st.rerun()
@@ -3559,7 +3560,7 @@ if not st.session_state.quiz_loaded:
                                               del st.session_state[_k]
                                           st.session_state.update({
                                               "quiz_list": records,
-                                              "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "_timers_cleared": False, "current_task_name": task_id_key, "practice_mode": _is_practice, "quick_mode": locals().get("_is_quick", False), "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
+                                              "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "_timers_cleared": False, "current_task_name": task_id_key, "practice_mode": _is_practice, "quick_mode": locals().get("_is_quick", False), "shadow_mode": locals().get("_is_shadow", False), "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
                                               "ans": [], "used_history": [], "shuf": [], "show_analysis": False, "current_res": "", "vocab_start_time": None, "vocab_q_idx": None
                                           })
                                           st.rerun()
@@ -3579,7 +3580,7 @@ if not st.session_state.quiz_loaded:
                                               del st.session_state[_k]
                                           st.session_state.update({
                                               "quiz_list": records,
-                                              "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "_timers_cleared": False, "current_task_name": task_id_key, "practice_mode": _is_practice, "quick_mode": locals().get("_is_quick", False), "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
+                                              "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "_timers_cleared": False, "current_task_name": task_id_key, "practice_mode": _is_practice, "quick_mode": locals().get("_is_quick", False), "shadow_mode": locals().get("_is_shadow", False), "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
                                               "ans": [], "used_history": [], "shuf": [], "show_analysis": False, "current_res": "", "vocab_start_time": None, "vocab_q_idx": None
                                           })
                                           st.rerun()
@@ -3675,7 +3676,7 @@ if not st.session_state.quiz_loaded:
                                           del st.session_state[_k]
                                       st.session_state.update({
                                           "quiz_list": pending.to_dict('records'),
-                                          "q_idx": min(_start_idx_fwd, len(pending)-1), "quiz_loaded": True, "answered_count": 0, "_timers_cleared": False, "current_task_name": task_id_key, "practice_mode": _is_practice, "quick_mode": locals().get("_is_quick", False), "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
+                                          "q_idx": min(_start_idx_fwd, len(pending)-1), "quiz_loaded": True, "answered_count": 0, "_timers_cleared": False, "current_task_name": task_id_key, "practice_mode": _is_practice, "quick_mode": locals().get("_is_quick", False), "shadow_mode": locals().get("_is_shadow", False), "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
                                           "ans": [], "used_history": [], "shuf": [], "show_analysis": False, "current_res": "", "vocab_start_time": None, "vocab_q_idx": None
                                       })
                                       st.rerun()
@@ -3699,7 +3700,7 @@ if not st.session_state.quiz_loaded:
                                         del st.session_state[_k]
                                     st.session_state.update({
                                         "quiz_list": records,
-                                        "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "_timers_cleared": False, "current_task_name": task_id_key, "practice_mode": _is_practice, "quick_mode": locals().get("_is_quick", False), "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
+                                        "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "_timers_cleared": False, "current_task_name": task_id_key, "practice_mode": _is_practice, "quick_mode": locals().get("_is_quick", False), "shadow_mode": locals().get("_is_shadow", False), "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
                                         "ans": [], "used_history": [], "shuf": [], "show_analysis": False, "current_res": "", "vocab_start_time": None, "vocab_q_idx": None
                                     })
                                     st.rerun()
@@ -4282,7 +4283,8 @@ if st.session_state.quiz_loaded:
     _practice_mode = st.session_state.get('practice_mode', False)
     _race_mode     = st.session_state.get('race_mode', False)
     _quick_mode    = st.session_state.get('quick_mode', False)
-    _mode_label    = "🏆 競賽模式" if _race_mode else ("🏋️ 練習模式" if _practice_mode else ("⚡ 快速答題" if _quick_mode else ""))
+    _shadow_mode   = st.session_state.get('shadow_mode', False)
+    _mode_label    = "🏆 競賽模式" if _race_mode else ("🏋️ 練習模式" if _practice_mode else ("⚡ 快速答題" if _quick_mode else ("🎤 跟著唸" if _shadow_mode else "")))
 
     # ── 單題計時 ──────────────────────────────────────────────────────────
     import time as _time_sys
@@ -4348,6 +4350,110 @@ if st.session_state.quiz_loaded:
     else:
         st.markdown(f"### 🔴 練習中 (第 {st.session_state.q_idx + 1} / {total_q} 題　｜　已作答 {_answered_now} 題) {_mode_label}")
     q = st.session_state.quiz_list[st.session_state.q_idx]
+
+    # ── 跟著唸模式 ────────────────────────────────────────────────────────
+    if _shadow_mode:
+        _sh_ans = str(q.get('重組英文答案') or q.get('英文答案') or q.get('英文單字') or '').strip()
+        _sh_zh  = str(q.get('重組中文題目') or q.get('中文意思') or q.get('中文') or '').strip()
+        _sh_f_key = f"shadow_tts_f_{st.session_state.q_idx}"
+        _sh_m_key = f"shadow_tts_m_{st.session_state.q_idx}"
+
+        # 顯示英文和中文
+        st.markdown(f"## 🔊 {_sh_ans}")
+        if _sh_zh:
+            st.markdown(f"**📖 {_sh_zh}**")
+        st.divider()
+
+        # 載入 TTS
+        if _sh_ans and (not st.session_state.get(_sh_f_key) or not st.session_state.get(_sh_m_key)):
+            with st.spinner("載入語音..."):
+                try:
+                    import openai as _oai_sh, base64 as _b64_sh
+                    _cli_sh = _oai_sh.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+                    if not st.session_state.get(_sh_f_key):
+                        _tf = _cli_sh.audio.speech.create(model="tts-1", voice="nova", input=_sh_ans).content
+                        st.session_state[_sh_f_key] = _b64_sh.b64encode(_tf).decode()
+                    if not st.session_state.get(_sh_m_key):
+                        _tm = _cli_sh.audio.speech.create(model="tts-1", voice="onyx", input=_sh_ans).content
+                        st.session_state[_sh_m_key] = _b64_sh.b64encode(_tm).decode()
+                    st.rerun()
+                except Exception as _e_sh:
+                    st.error(f"TTS 載入失敗：{_e_sh}")
+
+        # 顯示播放器（男聲預設自動播放）
+        if st.session_state.get(_sh_f_key) or st.session_state.get(_sh_m_key):
+            _sc1, _sc2 = st.columns(2)
+            if st.session_state.get(_sh_m_key):
+                _sc1.caption("🎵 男聲（自動播放）")
+                _sc1.markdown(
+                    f'<audio controls autoplay style="width:100%">'
+                    f'<source src="data:audio/mpeg;base64,{st.session_state[_sh_m_key]}" type="audio/mpeg"></audio>'
+                    f'<script>document.querySelectorAll("audio").forEach(a=>{{a.playbackRate=0.7;}});</script>',
+                    unsafe_allow_html=True
+                )
+            if st.session_state.get(_sh_f_key):
+                _sc2.caption("🎵 自然聲音")
+                _sc2.markdown(
+                    f'<audio controls style="width:100%">'
+                    f'<source src="data:audio/mpeg;base64,{st.session_state[_sh_f_key]}" type="audio/mpeg"></audio>',
+                    unsafe_allow_html=True
+                )
+
+        # 學生錄音（選填）
+        st.markdown("**🎙️ 自我練習錄音（選填）**")
+        _sh_audio = st.audio_input("點擊錄音", key=f"shadow_rec_{st.session_state.q_idx}", label_visibility="collapsed")
+        if _sh_audio:
+            st.audio(_sh_audio)
+            st.caption("✅ 錄音完成，可播放比較")
+
+        # 四個導航按鈕
+        st.divider()
+        _sh_c1, _sh_c2, _sh_c3, _sh_c4 = st.columns(4)
+        _total_sh = len(st.session_state.quiz_list)
+        _idx_sh   = st.session_state.q_idx
+
+        # 上一題
+        if _sh_c1.button("⬅️ 上一題", key="sh_prev", use_container_width=True,
+                          disabled=(_idx_sh == 0)):
+            st.session_state.update({"ans": [], "shuf": [], "show_analysis": False, "current_res": ""})
+            st.session_state.pop(f"_q_start_time_{_idx_sh}", None)
+            st.session_state.q_idx -= 1
+            st.rerun()
+
+        # 再聽一次（清除 TTS cache 強制重新播放）
+        if _sh_c2.button("🔁 再聽一次", key="sh_replay", use_container_width=True):
+            st.session_state.pop(_sh_m_key, None)
+            st.session_state.pop(_sh_f_key, None)
+            st.rerun()
+
+        # 下一題
+        if _sh_c3.button("➡️ 下一題", key="sh_next", use_container_width=True,
+                          disabled=(_idx_sh + 1 >= _total_sh), type="primary"):
+            # 寫入 log（跟著唸）
+            import time as _sh_t
+            _sh_elapsed = round(_sh_t.time() - st.session_state.get(f"_q_start_time_{_idx_sh}", _sh_t.time()))
+            append_to_sheet("logs", pd.DataFrame([{
+                "時間": get_now().strftime("%Y-%m-%d %H:%M:%S"),
+                "姓名": st.session_state.user_name, "分組": st.session_state.group_id,
+                "題目ID": q.get("題目ID", "N/A"), "結果": "🎤 跟著唸",
+                "學生答案": "", "分數": "",
+                "任務名稱": st.session_state.get("current_task_name", ""),
+                "作答秒數": _sh_elapsed,
+            }]))
+            st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
+            st.session_state.update({"ans": [], "shuf": [], "show_analysis": False, "current_res": ""})
+            st.session_state.pop(f"_q_start_time_{_idx_sh}", None)
+            st.session_state.q_idx += 1
+            st.rerun()
+
+        # 結束
+        if _sh_c4.button("🏁 結束", key="sh_end", use_container_width=True):
+            st.session_state.update({"quiz_loaded": False, "range_confirmed": False, "shadow_mode": False})
+            st.rerun()
+
+        show_version_caption()
+        st.stop()
+    # ── 跟著唸模式結束 ───────────────────────────────────────────────────
     # 判斷題型：優先用 _type，其次看欄位，最後看單元名稱
     _qtype         = q.get("_type", "")
     _has_mcq_ans   = bool(str(q.get("單選答案") or "").strip())
