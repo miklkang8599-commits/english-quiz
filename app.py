@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.474 - 跟著唸換題清TTS版)
+# 🧩 英文全能練習系統 (V2.9.475 - 跟著唸TTS內容hash版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.474
+# 📌 版本編號 (VERSION): 2.9.475
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.474"
+VERSION = "2.9.475"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -4364,9 +4364,11 @@ if st.session_state.quiz_loaded:
     if _shadow_mode:
         _sh_ans = str(q.get('重組英文答案') or q.get('英文答案') or q.get('英文單字') or '').strip()
         _sh_zh  = str(q.get('重組中文題目') or q.get('中文意思') or q.get('中文') or '').strip()
-        _task_id_sh = st.session_state.get('current_task_name', '')[:20]
-        _sh_f_key = f"shadow_tts_f_{_task_id_sh}_{st.session_state.q_idx}"
-        _sh_m_key = f"shadow_tts_m_{_task_id_sh}_{st.session_state.q_idx}"
+        # 用 q_idx + 內容 hash 作為唯一 key，確保換題一定重新載入
+        import hashlib as _hl
+        _sh_hash = _hl.md5(_sh_ans.encode()).hexdigest()[:8]
+        _sh_f_key = f"shadow_tts_f_{st.session_state.q_idx}_{_sh_hash}"
+        _sh_m_key = f"shadow_tts_m_{st.session_state.q_idx}_{_sh_hash}"
 
         # 顯示英文和中文
         st.markdown(f"## 🔊 {_sh_ans}")
@@ -4425,9 +4427,10 @@ if st.session_state.quiz_loaded:
                           disabled=(_idx_sh == 0)):
             st.session_state.update({"ans": [], "shuf": [], "show_analysis": False, "current_res": ""})
             st.session_state.pop(f"_q_start_time_{_idx_sh}", None)
-            # 清除「當前題」的 TTS，讓上一題正確重新載入自己的聲音
-            st.session_state.pop(_sh_f_key, None)
-            st.session_state.pop(_sh_m_key, None)
+            # 清除所有 shadow TTS（確保換題重新載入）
+            for _k in list(st.session_state.keys()):
+                if _k.startswith("shadow_tts_"):
+                    st.session_state.pop(_k, None)
             st.session_state.q_idx -= 1
             st.rerun()
 
@@ -4447,9 +4450,10 @@ if st.session_state.quiz_loaded:
             st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
             st.session_state.update({"ans": [], "shuf": [], "show_analysis": False, "current_res": ""})
             st.session_state.pop(f"_q_start_time_{_idx_sh}", None)
-            # 清除「當前題」的 TTS，讓下一題重新載入自己的聲音
-            st.session_state.pop(_sh_f_key, None)
-            st.session_state.pop(_sh_m_key, None)
+            # 清除所有 shadow TTS（確保換題重新載入）
+            for _k in list(st.session_state.keys()):
+                if _k.startswith("shadow_tts_"):
+                    st.session_state.pop(_k, None)
             st.session_state.q_idx += 1
             st.rerun()
 
