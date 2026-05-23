@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.476 - shadow_rec_key修復版)
+# 🧩 英文全能練習系統 (V2.9.477 - 跟著唸JS停舊播新版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.476
+# 📌 版本編號 (VERSION): 2.9.477
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.476"
+VERSION = "2.9.477"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -4398,19 +4398,31 @@ if st.session_state.quiz_loaded:
             if st.session_state.get(_sh_m_key):
                 _sc1.caption("🎵 男聲（自動播放）")
                 _sc1.markdown(
-                    f'<audio controls autoplay style="width:100%">'
-                    f'<source src="data:audio/mpeg;base64,{st.session_state[_sh_m_key]}" type="audio/mpeg"></audio>'
-                    f'<script>document.querySelectorAll("audio").forEach(a=>{{a.playbackRate=0.7;}});</script>',
+                    f'<audio id="sh_male" controls style="width:100%">'
+                    f'<source src="data:audio/mpeg;base64,{st.session_state[_sh_m_key]}" type="audio/mpeg"></audio>',
                     unsafe_allow_html=True
                 )
             if st.session_state.get(_sh_f_key):
                 _sc2.caption("🎵 自然聲音")
                 _sc2.markdown(
-                    f'<audio controls style="width:100%">'
-                    f'<source src="data:audio/mpeg;base64,{st.session_state[_sh_f_key]}" type="audio/mpeg"></audio>'
-                    f'<script>document.querySelectorAll("audio").forEach(a=>{{if(!a.dataset.sr){{a.playbackRate=0.7;a.dataset.sr=1;}}}});</script>',
+                    f'<audio id="sh_female" controls style="width:100%">'
+                    f'<source src="data:audio/mpeg;base64,{st.session_state[_sh_f_key]}" type="audio/mpeg"></audio>',
                     unsafe_allow_html=True
                 )
+            # JS：停止所有舊音頻，設速度，播放男聲
+            import streamlit.components.v1 as _cv1_sh
+            _cv1_sh.html("""<script>
+            (function(){
+                var par = window.parent.document;
+                var audios = par.querySelectorAll('audio');
+                audios.forEach(function(a){ a.pause(); a.currentTime=0; a.playbackRate=0.7; });
+                setTimeout(function(){
+                    var male = par.querySelector('#sh_male');
+                    if(!male) male = audios[0];
+                    if(male){ male.playbackRate=0.7; male.play().catch(function(){}); }
+                }, 300);
+            })();
+            </script>""", height=0)
 
         # 學生錄音（選填）
         st.markdown("**🎙️ 自我練習錄音（選填）**")
