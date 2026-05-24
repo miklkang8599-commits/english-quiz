@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.478 - 跟著唸st.audio版)
+# 🧩 英文全能練習系統 (V2.9.479 - 跟著唸男聲0.75x播2次版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.478
+# 📌 版本編號 (VERSION): 2.9.479
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.478"
+VERSION = "2.9.479"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -4397,8 +4397,23 @@ if st.session_state.quiz_loaded:
             import base64 as _b64_sh, io as _io_sh
             _sc1, _sc2 = st.columns(2)
             if st.session_state.get(_sh_m_key):
-                _sc1.caption("🎵 男聲")
-                _sc1.audio(_io_sh.BytesIO(_b64_sh.b64decode(st.session_state[_sh_m_key])), format="audio/mpeg", autoplay=True)
+                _sc1.caption("🎵 男聲（自動播放×2，0.75倍速）")
+                _m_b64 = st.session_state[_sh_m_key]
+                import streamlit.components.v1 as _cv1_sh
+                _sc1.empty()
+                _cv1_sh.html(f"""
+                <audio id="male_audio" src="data:audio/mpeg;base64,{_m_b64}" style="width:100%;display:block" controls></audio>
+                <script>
+                var a = document.getElementById('male_audio');
+                var count = 0;
+                a.playbackRate = 0.75;
+                a.play();
+                a.onended = function(){{
+                    count++;
+                    if(count < 2){{ a.currentTime=0; a.play(); }}
+                }};
+                </script>
+                """, height=60)
             if st.session_state.get(_sh_f_key):
                 _sc2.caption("🎵 自然聲音")
                 _sc2.audio(_io_sh.BytesIO(_b64_sh.b64decode(st.session_state[_sh_f_key])), format="audio/mpeg")
