@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.480 - 跟著唸AI評分版)
+# 🧩 英文全能練習系統 (V2.9.481 - 跟著唸AI評分logs版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.480
+# 📌 版本編號 (VERSION): 2.9.481
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.480"
+VERSION = "2.9.481"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -4449,6 +4449,21 @@ if st.session_state.quiz_loaded:
                         _score = max(0, min(100, int(_re_sc.sub(r'[^0-9]', '', _score_resp.choices[0].message.content.strip()) or '0')))
                         _emoji = "✅ 優秀！" if _score >= 90 else ("🟡 不錯！" if _score >= 70 else ("🟠 需加強" if _score >= 50 else "❌ 請再試試"))
                         st.session_state[_sh_score_key] = {"score": _score, "emoji": _emoji, "stt": _stt}
+                        # 寫入 log（參考朗讀格式）
+                        import time as _sh_st
+                        append_to_sheet("logs", pd.DataFrame([{
+                            "時間":    get_now().strftime("%Y-%m-%d %H:%M:%S"),
+                            "姓名":    st.session_state.user_name,
+                            "分組":    st.session_state.group_id,
+                            "題目ID":  q.get("題目ID", "N/A"),
+                            "結果":    "🎤 跟著唸",
+                            "學生答案": _stt,
+                            "分數":    _score,
+                            "任務名稱": st.session_state.get("current_task_name", ""),
+                            "作答秒數": round(_sh_st.time() - st.session_state.get(f"_q_start_time_{st.session_state.q_idx}", _sh_st.time())),
+                        }]))
+                        st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
+                        _load_logs_cached.clear()
                         st.rerun()
                     except Exception as _e_sc:
                         st.error(f"評分失敗：{_e_sc}")
