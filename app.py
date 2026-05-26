@@ -1,7 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.479 - 跟著唸男聲0.75x播2次版)
+# 🧩 英文全能練習系統 (V2.9.480 - 跟著唸AI評分版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.479
+# 📌 版本編號 (VERSION): 2.9.480
 # 📅 更新日期: 2026-03-14
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.479"
+VERSION = "2.9.480"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -4420,7 +4420,43 @@ if st.session_state.quiz_loaded:
 
         # 學生錄音（選填）
         st.markdown("**🎙️ 自我練習錄音（選填）**")
-        st.audio_input("點擊錄音", key=f"shadow_rec_{st.session_state.q_idx}_{_sh_hash}", label_visibility="collapsed")
+        _sh_rec = st.audio_input("點擊錄音", key=f"shadow_rec_{st.session_state.q_idx}_{_sh_hash}", label_visibility="collapsed")
+        if _sh_rec:
+            _sh_score_key = f"shadow_score_{st.session_state.q_idx}_{_sh_hash}"
+            if st.button("🤖 AI 評分", key=f"sh_ai_{st.session_state.q_idx}", type="primary"):
+                with st.spinner("🔄 評分中，請稍候..."):
+                    try:
+                        import openai as _oai_sc, re as _re_sc
+                        _cli_sc = _oai_sc.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+                        # Whisper STT
+                        _sh_rec.seek(0)
+                        _transcript = _cli_sc.audio.transcriptions.create(
+                            model="whisper-1",
+                            file=("audio.wav", _sh_rec, "audio/wav"),
+                            language="en"
+                        )
+                        _stt = _transcript.text.strip()
+                        _std_clean = _re_sc.sub(r'[.,?!:;\'\"()\-]', '', _sh_ans).strip()
+                        _stt_clean  = _re_sc.sub(r'[.,?!:;\'\"()\-]', '', _stt).strip()
+                        # GPT-4o-mini 評分
+                        _score_resp = _cli_sc.chat.completions.create(
+                            model="gpt-4o-mini", max_tokens=10,
+                            messages=[{"role": "user", "content":
+                                f"You are an English pronunciation evaluator.\n"
+                                f"Standard: \"{_std_clean}\"\nStudent said: \"{_stt_clean}\"\n"
+                                f"Score accuracy 0-100. Reply with ONLY a single integer."}]
+                        )
+                        _score = max(0, min(100, int(_re_sc.sub(r'[^0-9]', '', _score_resp.choices[0].message.content.strip()) or '0')))
+                        _emoji = "✅ 優秀！" if _score >= 90 else ("🟡 不錯！" if _score >= 70 else ("🟠 需加強" if _score >= 50 else "❌ 請再試試"))
+                        st.session_state[_sh_score_key] = {"score": _score, "emoji": _emoji, "stt": _stt}
+                        st.rerun()
+                    except Exception as _e_sc:
+                        st.error(f"評分失敗：{_e_sc}")
+            # 顯示評分結果
+            if st.session_state.get(_sh_score_key):
+                _sr = st.session_state[_sh_score_key]
+                st.markdown(f"### {_sr['emoji']} {_sr['score']} 分")
+                st.caption(f"AI 聽到：{_sr['stt']}")
 
         # 四個導航按鈕（移除再聽一次，改為三個）
         st.divider()
