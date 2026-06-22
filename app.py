@@ -1,7 +1,7 @@
 # ==============================================================================
 # 🧩 英文全能練習系統 (V2.9.482 - 跟著唸AI評分logs版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.485
+# 📌 版本編號 (VERSION): 2.9.486
 # 📅 更新日期: 2026-06-22
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -16,6 +16,8 @@
 #    9. [UI] 學生答題模式選項簡化：移除「測驗-繼續未完成部分」與
 #              「測驗-從第幾題開始」，預設改為「⚡ 快速答題」。
 #              （含「再次練習」的 retry radio 同步移除）
+#   10. [修復] 再次測驗載入題目前強制清除 load_core_data 快取，
+#              避免 df_q/df_mcq 殘留上一個任務的資料導致 ID 比對失敗。
 # 🆕 新增功能：
 #    7. [Box B] 新增「📖 題目講解」tab：篩選學生與題目範圍、顯示各學生
 #              最近答案、老師可輸入講解備註、點選完成後寫入 logs (結果='📖 講解')。
@@ -30,7 +32,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.485"
+VERSION = "2.9.486"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -2145,6 +2147,8 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                                 st.markdown("**🖨️ 下載 PDF**")
         
                                 def _get_task_questions(qids):
+                                    load_core_data.clear()  # 強制清除快取，確保載入當前任務資料
+                                    df_q, df_s, df_mcq = load_core_data()
                                     df_q2 = pd.concat([df_q, df_mcq.assign(_type='mcq')], ignore_index=True) if not df_mcq.empty else df_q.copy()
                                     df_q2['題目ID'] = df_q2.apply(lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1)
                                     df_q2 = df_q2.drop_duplicates(subset='題目ID', keep='last')
@@ -3287,6 +3291,8 @@ if not st.session_state.quiz_loaded:
                                     st.rerun()
                             else:
                                 _all_dfs = []
+                                load_core_data.clear()  # 強制清除快取，確保載入當前任務資料
+                                df_q, df_s, df_mcq = load_core_data()
                                 df_q2 = pd.concat([df_q, df_mcq.assign(_type='mcq')], ignore_index=True) if not df_mcq.empty else df_q.copy()
                                 df_q2['題目ID'] = df_q2.apply(lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1)
                                 df_q2 = df_q2.drop_duplicates(subset='題目ID', keep='last')
@@ -3602,6 +3608,8 @@ if not st.session_state.quiz_loaded:
                                           st.rerun()
   
                               elif is_mixed_task:
+                                  load_core_data.clear()  # 強制清除快取，確保載入當前任務資料
+                                  df_q, df_s, df_mcq = load_core_data()
                                   df_q2 = pd.concat([df_q, df_mcq.assign(_type='mcq')], ignore_index=True) if not df_mcq.empty else df_q.copy()
                                   df_q2['題目ID'] = df_q2.apply(lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1)
                                   df_q2 = df_q2.drop_duplicates(subset='題目ID', keep='last')
@@ -3699,6 +3707,10 @@ if not st.session_state.quiz_loaded:
   
                               elif (can_preload or q_ids_all) and pending_ids:
                                   # 直接從 df_q 取出未完成題目載入（優先用題目ID清單）
+                                load_core_data.clear()  # 強制清除快取，確保載入當前任務資料
+                                df_q, df_s, df_mcq = load_core_data()
+                                load_core_data.clear()  # 強制清除快取，確保載入當前任務資料
+                                df_q, df_s, df_mcq = load_core_data()
                                 df_q2 = pd.concat([df_q, df_mcq.assign(_type='mcq')], ignore_index=True) if not df_mcq.empty else df_q.copy()
                                 df_q2['題目ID'] = df_q2.apply(lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1)
                                 df_q2 = df_q2.drop_duplicates(subset='題目ID', keep='last')
