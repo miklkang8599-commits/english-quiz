@@ -1,7 +1,7 @@
 # ==============================================================================
 # 🧩 英文全能練習系統 (V2.9.482 - 跟著唸AI評分logs版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.483
+# 📌 版本編號 (VERSION): 2.9.484
 # 📅 更新日期: 2026-06-22
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -15,6 +15,7 @@
 #              識別為單選題型並切出 (A)(B)(C)(D) 選項按鈕。
 #    9. [UI] 學生答題模式選項簡化：移除「測驗-繼續未完成部分」與
 #              「測驗-從第幾題開始」，預設改為「⚡ 快速答題」。
+#              （含「再次練習」的 retry radio 同步移除）
 # 🆕 新增功能：
 #    7. [Box B] 新增「📖 題目講解」tab：篩選學生與題目範圍、顯示各學生
 #              最近答案、老師可輸入講解備註、點選完成後寫入 logs (結果='📖 講解')。
@@ -29,7 +30,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.483"
+VERSION = "2.9.484"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3240,7 +3241,7 @@ if not st.session_state.quiz_loaded:
                             st.markdown("**選擇答題方式：**")
                             _retry_mode = st.radio(
                                 "答題方式",
-                                ["📌 測驗-繼續未完成部分", "🔢 測驗-從第幾題開始", "⚡ 快速答題", "🏋️ 練習模式", "🎤 跟著唸"],
+                                ["⚡ 快速答題", "🏋️ 練習模式", "🎤 跟著唸"],
                                 horizontal=False,
                                 key=f"retry_mode_{_task_idx}"
                             )
@@ -3248,7 +3249,7 @@ if not st.session_state.quiz_loaded:
                             retry_start = _rc3.number_input(
                                 "從第幾題", min_value=1, max_value=task_q_count, value=1,
                                 key=f"retry_start_{_task_idx}"
-                            ) if _retry_mode != "📌 測驗-繼續未完成部分" else 1
+                            )
 
                             _is_practice = (_retry_mode == "🏋️ 練習模式")
                             _is_quick    = (_retry_mode == "⚡ 快速答題")
