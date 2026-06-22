@@ -1,7 +1,7 @@
 # ==============================================================================
 # 🧩 英文全能練習系統 (V2.9.482 - 跟著唸AI評分logs版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.486
+# 📌 版本編號 (VERSION): 2.9.487
 # 📅 更新日期: 2026-06-22
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -18,6 +18,8 @@
 #              （含「再次練習」的 retry radio 同步移除）
 #   10. [修復] 再次測驗載入題目前強制清除 load_core_data 快取，
 #              避免 df_q/df_mcq 殘留上一個任務的資料導致 ID 比對失敗。
+#   11. [邏輯] 移除所有答題模式中「答錯重複出題」機制，答錯不再
+#              把題目加到 quiz_list 末尾重考。
 # 🆕 新增功能：
 #    7. [Box B] 新增「📖 題目講解」tab：篩選學生與題目範圍、顯示各學生
 #              最近答案、老師可輸入講解備註、點選完成後寫入 logs (結果='📖 講解')。
@@ -32,7 +34,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.486"
+VERSION = "2.9.487"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -5379,19 +5381,7 @@ if st.session_state.quiz_loaded:
                     "current_res": "✅ 正確！" if is_ok else _err_msg,
                     "show_analysis": True
                 })
-                # 答錯：把此題加到 quiz_list 末尾重考（避免重複加）
-                if not is_ok:
-                    _qid_now = q.get('題目ID','')
-                    _quiz    = st.session_state.get('quiz_list', [])
-                    _already_appended = any(
-                        r.get('題目ID') == _qid_now and r.get('_retry', False)
-                        for r in _quiz
-                    )
-                    if not _already_appended and _qid_now:
-                        _retry_q = dict(q)
-                        _retry_q['_retry'] = True
-                        _quiz.append(_retry_q)
-                        st.session_state['quiz_list'] = _quiz
+                # 答錯不重複出題
                 # 先寫入再 rerun，確保寫入完成
                 write_ok = False
                 write_err = ""
