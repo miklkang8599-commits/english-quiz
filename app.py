@@ -5306,14 +5306,14 @@ if st.session_state.quiz_loaded:
             else:
                 next_opts = [o for o in ["A","B","C","D"] if o > opt]
                 if next_opts:
-                    pattern = rf'\({opt}\)\s*(.*?)\s*\({next_opts[0]}\)'
+                    pattern = rf'\(\s*{opt}\s*\)\s*(.*?)\s*\(\s*{next_opts[0]}\s*\)'
                 else:
-                    pattern = rf'\({opt}\)\s*(.*?)$'
+                    pattern = rf'\(\s*{opt}\s*\)\s*(.*?)$'
                 m = re.search(pattern, mcq_full, re.DOTALL)
                 parsed_opts[opt] = m.group(1).strip() if m else ""
 
         # 只顯示題目本文（不含選項），選項另外顯示在下方
-        _q_body = re.split(r'\s*\(A\)', mcq_full)[0].strip()
+        _q_body = re.split(r'\s*\(\s*A\s*\)', mcq_full)[0].strip()
         st.markdown(
             f"<div style='font-size:1.1rem; font-weight:600; padding:8px 0; white-space:pre-wrap;'>"
             f"題目：{_q_body}</div>",
