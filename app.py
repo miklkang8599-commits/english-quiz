@@ -1,8 +1,8 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.481 - 跟著唸AI評分logs版)
+# 🧩 英文全能練習系統 (V2.9.482 - 跟著唸AI評分logs版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.481
-# 📅 更新日期: 2026-03-14
+# 📌 版本編號 (VERSION): 2.9.482
+# 📅 更新日期: 2026-06-22
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
 #    2. [資料] conn.create() → append 邏輯，logs/assignments 不再被覆蓋。
@@ -10,6 +10,9 @@
 #    4. [穩定] 句編號 int() 轉換改用 pd.to_numeric 加保護。
 #    5. [效能] load_dynamic_data 加上 @st.cache_data(ttl=10)。
 #    6. [穩定] 資料載入失敗時提早 st.stop()，避免後續 None 崩潰。
+#    8. [修復] 指派任務載入單選題時（考古題-H/K/N 等版本），
+#              df_mcq concat 前補上 _type='mcq'，確保答題頁正確
+#              識別為單選題型並切出 (A)(B)(C)(D) 選項按鈕。
 # 🆕 新增功能：
 #    7. [Box B] 新增「📖 題目講解」tab：篩選學生與題目範圍、顯示各學生
 #              最近答案、老師可輸入講解備註、點選完成後寫入 logs (結果='📖 講解')。
@@ -24,7 +27,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.481"
+VERSION = "2.9.482"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1084,14 +1087,20 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 tc = st.columns(5)
                 t1v = tc[0].selectbox("版本",  sorted(df_q["版本"].unique()), key="t1_v")
                 t1u = tc[1].selectbox("單元",  sorted(df_q[df_q["版本"] == t1v]["單元"].unique()), key="t1_u")
-                t1y = tc[2].selectbox("年度",  sorted(df_q[(df_q["版本"] == t1v) & (df_q["單元"] == t1u)]["年度"].unique()), key="t1_y")
-                t1b = tc[3].selectbox("冊編號", sorted(df_q[(df_q["版本"] == t1v) & (df_q["單元"] == t1u) & (df_q["年度"] == t1y)]["冊編號"].unique()), key="t1_b")
-                t1l = tc[4].selectbox("課編號", sorted(df_q[(df_q["版本"] == t1v) & (df_q["單元"] == t1u) & (df_q["年度"] == t1y) & (df_q["冊編號"] == t1b)]["課編號"].unique()), key="t1_l")
+                _t1y_opts = ["（不限）"] + sorted(df_q[(df_q["版本"] == t1v) & (df_q["單元"] == t1u)]["年度"].unique())
+                t1y = tc[2].selectbox("年度",  _t1y_opts, key="t1_y")
+                _t1y_filter = df_q["年度"] == t1y if t1y != "（不限）" else pd.Series([True]*len(df_q), index=df_q.index)
+                _t1b_opts = ["（不限）"] + sorted(df_q[(df_q["版本"] == t1v) & (df_q["單元"] == t1u) & _t1y_filter]["冊編號"].unique())
+                t1b = tc[3].selectbox("冊編號", _t1b_opts, key="t1_b")
+                _t1b_filter = df_q["冊編號"] == t1b if t1b != "（不限）" else pd.Series([True]*len(df_q), index=df_q.index)
+                _t1l_opts = ["（不限）"] + sorted(df_q[(df_q["版本"] == t1v) & (df_q["單元"] == t1u) & _t1y_filter & _t1b_filter]["課編號"].unique())
+                t1l = tc[4].selectbox("課編號", _t1l_opts, key="t1_l")
 
                 df_t1_scope = df_q[
                     (df_q["版本"] == t1v) & (df_q["單元"] == t1u) &
-                    (df_q["年度"] == t1y) & (df_q["冊編號"] == t1b) &
-                    (df_q["課編號"] == t1l)
+                    (df_q["年度"] == t1y if t1y != "（不限）" else True) &
+                    (df_q["冊編號"] == t1b if t1b != "（不限）" else True) &
+                    (df_q["課編號"] == t1l if t1l != "（不限）" else True)
                 ].copy()
 
                 extra_cols = st.columns(2)
@@ -2133,7 +2142,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                                 st.markdown("**🖨️ 下載 PDF**")
         
                                 def _get_task_questions(qids):
-                                    df_q2 = pd.concat([df_q, df_mcq], ignore_index=True) if not df_mcq.empty else df_q.copy()
+                                    df_q2 = pd.concat([df_q, df_mcq.assign(_type='mcq')], ignore_index=True) if not df_mcq.empty else df_q.copy()
                                     df_q2['題目ID'] = df_q2.apply(lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1)
                                     df_q2 = df_q2.drop_duplicates(subset='題目ID', keep='last')
                                     df_q2['題目ID'] = df_q2.apply(
@@ -3134,7 +3143,7 @@ if not st.session_state.quiz_loaded:
                             return f"{pfx}{r.get('版本','')}_{r.get('年度','')}_{r.get('冊編號','')}_{r.get('單元','')}_{r.get('課編號','')}_{r.get('句編號','')}"
 
                         # 重組 + 單選（合併去重）
-                        _rq2 = pd.concat([df_q, df_mcq], ignore_index=True) if not df_mcq.empty else df_q.copy()
+                        _rq2 = pd.concat([df_q, df_mcq.assign(_type='mcq')], ignore_index=True) if not df_mcq.empty else df_q.copy()
                         if not _rq2.empty:
                             _rq2 = _rq2.copy()
                             _rq2['題目ID'] = _rq2.apply(lambda r: _race_qid(r), axis=1)
@@ -3275,7 +3284,7 @@ if not st.session_state.quiz_loaded:
                                     st.rerun()
                             else:
                                 _all_dfs = []
-                                df_q2 = pd.concat([df_q, df_mcq], ignore_index=True) if not df_mcq.empty else df_q.copy()
+                                df_q2 = pd.concat([df_q, df_mcq.assign(_type='mcq')], ignore_index=True) if not df_mcq.empty else df_q.copy()
                                 df_q2['題目ID'] = df_q2.apply(lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1)
                                 df_q2 = df_q2.drop_duplicates(subset='題目ID', keep='last')
                                 df_q2['題目ID'] = df_q2.apply(lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1)
@@ -3595,7 +3604,7 @@ if not st.session_state.quiz_loaded:
                                           st.rerun()
   
                               elif is_mixed_task:
-                                  df_q2 = pd.concat([df_q, df_mcq], ignore_index=True) if not df_mcq.empty else df_q.copy()
+                                  df_q2 = pd.concat([df_q, df_mcq.assign(_type='mcq')], ignore_index=True) if not df_mcq.empty else df_q.copy()
                                   df_q2['題目ID'] = df_q2.apply(lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1)
                                   df_q2 = df_q2.drop_duplicates(subset='題目ID', keep='last')
                                   df_q2['題目ID'] = df_q2.apply(
@@ -3692,7 +3701,7 @@ if not st.session_state.quiz_loaded:
   
                               elif (can_preload or q_ids_all) and pending_ids:
                                   # 直接從 df_q 取出未完成題目載入（優先用題目ID清單）
-                                df_q2 = pd.concat([df_q, df_mcq], ignore_index=True) if not df_mcq.empty else df_q.copy()
+                                df_q2 = pd.concat([df_q, df_mcq.assign(_type='mcq')], ignore_index=True) if not df_mcq.empty else df_q.copy()
                                 df_q2['題目ID'] = df_q2.apply(lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1)
                                 df_q2 = df_q2.drop_duplicates(subset='題目ID', keep='last')
                                 df_q2['題目ID'] = df_q2.apply(
