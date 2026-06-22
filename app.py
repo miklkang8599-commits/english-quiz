@@ -1,7 +1,7 @@
 # ==============================================================================
 # 🧩 英文全能練習系統 (V2.9.482 - 跟著唸AI評分logs版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.484
+# 📌 版本編號 (VERSION): 2.9.485
 # 📅 更新日期: 2026-06-22
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -30,7 +30,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.484"
+VERSION = "2.9.485"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3387,6 +3387,8 @@ if not st.session_state.quiz_loaded:
                                         "ans": [], "used_history": [], "shuf": [], "show_analysis": False, "current_res": "", "vocab_start_time": None, "vocab_q_idx": None
                                     })
                                     st.rerun()
+                                else:
+                                    st.error(f"❌ 找不到任務題目，請重新整理頁面再試。（q_ids_set 共 {len(q_ids_set)} 題）")
                     else:
                         task_content = str(arow.get('內容', ''))
                         parts        = [p.strip() for p in task_content.split('|')]
@@ -3704,6 +3706,11 @@ if not st.session_state.quiz_loaded:
                                     lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1
                                 )
                                 pending_q = df_q2[df_q2['題目ID'].isin(pending_ids)].copy()
+                                if pending_q.empty and pending_ids:
+                                    # ID 比對失敗：顯示診斷資訊
+                                    _sample_q = list(q_ids_set)[:2]
+                                    _sample_df = df_q2['題目ID'].tolist()[:2]
+                                    st.error(f"❌ 題目載入失敗。任務ID範例：{_sample_q}　資料庫ID範例：{_sample_df}")
                                 if not pending_q.empty:
                                     # 依句編號排序（不隨機）
                                     if '句編號' in pending_q.columns:
