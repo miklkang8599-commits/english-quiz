@@ -1,7 +1,7 @@
 # ==============================================================================
 # 🧩 英文全能練習系統 (V2.9.482 - 跟著唸AI評分logs版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.482
+# 📌 版本編號 (VERSION): 2.9.483
 # 📅 更新日期: 2026-06-22
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -13,6 +13,8 @@
 #    8. [修復] 指派任務載入單選題時（考古題-H/K/N 等版本），
 #              df_mcq concat 前補上 _type='mcq'，確保答題頁正確
 #              識別為單選題型並切出 (A)(B)(C)(D) 選項按鈕。
+#    9. [UI] 學生答題模式選項簡化：移除「測驗-繼續未完成部分」與
+#              「測驗-從第幾題開始」，預設改為「⚡ 快速答題」。
 # 🆕 新增功能：
 #    7. [Box B] 新增「📖 題目講解」tab：篩選學生與題目範圍、顯示各學生
 #              最近答案、老師可輸入講解備註、點選完成後寫入 logs (結果='📖 講解')。
@@ -27,7 +29,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.482"
+VERSION = "2.9.483"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3392,12 +3394,12 @@ if not st.session_state.quiz_loaded:
 
                         # 三個選項（含練習模式）- 競賽任務不顯示
                         # 三個選項（含練習模式）- 競賽任務不顯示
-                        _mode = "📌 測驗-繼續未完成部分"  # default
+                        _mode = "⚡ 快速答題"  # default
                         _start_from = 1
                         if not is_race_task:
                             # 跟著唸只適用於重組/拼單字題型
                             _shadow_ok = is_vocab_task or task_type in ("一般", "混合", "")
-                            _mode_opts = ["📌 測驗-繼續未完成部分", "🔢 測驗-從第幾題開始", "⚡ 快速答題", "🏋️ 練習模式"]
+                            _mode_opts = ["⚡ 快速答題", "🏋️ 練習模式"]
                             if _shadow_ok:
                                 _mode_opts.append("🎤 跟著唸")
                             _mode = st.radio(
@@ -3406,7 +3408,7 @@ if not st.session_state.quiz_loaded:
                                 horizontal=True,
                                 key=f"start_mode_{_task_idx}"
                             )
-                            if _mode in ("🔢 測驗-從第幾題開始", "🏋️ 練習模式", "⚡ 快速答題", "🎤 跟著唸"):
+                            if _mode in ("🏋️ 練習模式", "⚡ 快速答題", "🎤 跟著唸"):
                                 _start_from = st.number_input(
                                     "從第幾題（依任務原始題號）",
                                     min_value=1, max_value=task_q_count, value=1,
@@ -3434,20 +3436,13 @@ if not st.session_state.quiz_loaded:
                             _is_quick     = (_mode == "⚡ 快速答題")
                             _is_shadow    = (_mode == "🎤 跟著唸")
                             btn_key = f"start_task_{_task_idx}_{task_name[:20]}"
-                            label   = "📌 測驗-繼續未完成部分" if _mode == "📌 測驗-繼續未完成部分" else \
-                                      (f"🏋️ 練習模式 從第 {_start_from} 題" if _is_practice else \
+                            label   = (f"🏋️ 練習模式 從第 {_start_from} 題" if _is_practice else \
                                       (f"⚡ 快速答題 從第 {_start_from} 題" if _is_quick else \
                                       (f"🎤 跟著唸 從第 {_start_from} 題" if _is_shadow else \
-                                       f"🔢 測驗-從第 {_start_from} 題開始")))
+                                       f"⚡ 快速答題 從第 {_start_from} 題")))
                             if st.button(f"🚀 {label}", key=btn_key, type="primary", use_container_width=True):
-                                if _mode == "📌 測驗-繼續未完成部分":
-                                    _start_idx_fwd = 0
-                                    pending_ids = q_ids_set - my_done
-                                    if not pending_ids:
-                                        pending_ids = q_ids_set
-                                else:
-                                    _start_idx_fwd = max(0, int(_start_from) - 1)
-                                    pending_ids = q_ids_set
+                                _start_idx_fwd = max(0, int(_start_from) - 1)
+                                pending_ids = q_ids_set
 
                             if not hasattr(st.session_state, "_is_practice_defined"):
                                 _is_practice = _is_practice if "_is_practice" in dir() else False
