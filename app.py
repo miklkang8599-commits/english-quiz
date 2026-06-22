@@ -1,7 +1,7 @@
 # ==============================================================================
 # 🧩 英文全能練習系統 (V2.9.482 - 跟著唸AI評分logs版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.487
+# 📌 版本編號 (VERSION): 2.9.488
 # 📅 更新日期: 2026-06-22
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -20,6 +20,7 @@
 #              避免 df_q/df_mcq 殘留上一個任務的資料導致 ID 比對失敗。
 #   11. [邏輯] 移除所有答題模式中「答錯重複出題」機制，答錯不再
 #              把題目加到 quiz_list 末尾重考。
+#   12. [UI] 移除側欄「榮譽榜」與「更新排行榜」功能。
 # 🆕 新增功能：
 #    7. [Box B] 新增「📖 題目講解」tab：篩選學生與題目範圍、顯示各學生
 #              最近答案、老師可輸入講解備註、點選完成後寫入 logs (結果='📖 講解')。
@@ -34,7 +35,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.487"
+VERSION = "2.9.488"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -471,75 +472,6 @@ with st.sidebar:
     )
     st.session_state['mcq_cols'] = 1 if "手機" in _device else 2
 
-    st.divider()
-    st.markdown("🏆 **成就排行**")
-    now_sb = get_now()
-    today  = now_sb.date()
-
-    # 時段選擇：用 selectbox（不產生額外按鈕 rerun）
-    _periods = ["今日", "昨天", "前天", "三天", "七天", "30天"]
-    period = st.selectbox("📅 統計期間", _periods, key="sb_period", label_visibility="collapsed")
-
-    _d = {
-        "今日": (today, today),
-        "昨天": (today - timedelta(days=1), today - timedelta(days=1)),
-        "前天": (today - timedelta(days=2), today - timedelta(days=2)),
-        "三天": (today - timedelta(days=2), today),
-        "七天": (today - timedelta(days=6), today),
-        "30天": (today - timedelta(days=29), today),
-    }
-    date_from, date_to = _d.get(period, (today, today))
-    date_from_str = date_from.strftime("%Y-%m-%d")
-    date_to_str   = date_to.strftime("%Y-%m-%d")
-    st.caption(f"📅 {date_from_str} ～ {date_to_str}")
-
-    # 更新按鈕：只有按了才重新計算
-    _lb_cache_key = f"_lb_{period}_{st.session_state.group_id}"
-    _need_update  = False  # 不自動計算，等使用者按更新
-
-    if st.button("🔄 更新排行榜", use_container_width=True, key="lb_refresh") or _need_update:
-        df_l = _get_df_l()
-        try:
-            target_group = st.session_state.group_id if not is_admin(st.session_state.group_id) else None
-            df_lb_all = _load_logs_cached()
-            if not df_lb_all.empty:
-                df_lb = df_lb_all.copy()
-                if target_group:
-                    df_lb = df_lb[df_lb["分組"] == target_group]
-                df_lb = df_lb[
-                    (df_lb["時間"].str[:10] >= date_from_str) &
-                    (df_lb["時間"].str[:10] <= date_to_str)
-                ]
-                df_lb_ans = df_lb[
-                    ~df_lb["結果"].str.contains("📖|練習", na=False)
-                ]
-                if target_group:
-                    members = sorted(df_s[df_s["分組"] == target_group]["姓名"].tolist())
-                else:
-                    members = sorted(df_s[~df_s["分組"].isin(["ADMIN","TEACHER"])]["姓名"].tolist())
-                member_stats = []
-                for m in members:
-                    m_logs = df_lb_ans[df_lb_ans["姓名"] == m]
-                    member_stats.append((m, len(m_logs[m_logs["結果"] == "✅"]), len(m_logs)))
-                member_stats.sort(key=lambda x: x[1], reverse=True)
-                st.session_state[_lb_cache_key] = member_stats
-            else:
-                st.session_state[_lb_cache_key] = []
-        except Exception as e:
-            st.caption(f"排行榜載入失敗：{e}")
-
-    # 顯示快取結果（不重新計算）
-    member_stats = st.session_state.get(_lb_cache_key, [])
-    if member_stats:
-        for rank, (m, correct, total_ans) in enumerate(member_stats, 1):
-            medal = "🥇" if rank == 1 else ("🥈" if rank == 2 else ("🥉" if rank == 3 else "👤"))
-            color = "#c8a400" if rank == 1 else ("#9e9e9e" if rank == 2 else ("#cd7f32" if rank == 3 else "#333"))
-            st.markdown(
-                f'<div style="font-size:12px;color:{color};">{medal} {m}: {correct} ({total_ans} 題)</div>',
-                unsafe_allow_html=True
-            )
-    else:
-        st.caption("暫無資料，請按更新")
     st.caption(f"Ver {VERSION}")
 
 # 共用：產生含學生名字的班級標籤
