@@ -1,7 +1,7 @@
 # ==============================================================================
 # 🧩 英文全能練習系統 (V2.9.482 - 跟著唸AI評分logs版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.496
+# 📌 版本編號 (VERSION): 2.9.498
 # 📅 更新日期: 2026-06-22
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -45,7 +45,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.496"
+VERSION = "2.9.498"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -5035,7 +5035,8 @@ if st.session_state.quiz_loaded:
         extra_letters= int(q.get("_vocab_extra", 0)) if q.get("_vocab_extra") is not None else 0
 
 
-        st.markdown(f"<div style=\'font-size:1.3rem;font-weight:600;padding:12px;background:var(--color-background-secondary);border-radius:8px;\'>📖 {meaning}</div>", unsafe_allow_html=True)
+        if not _replay_mode:
+            st.markdown(f"<div style=\'font-size:1.3rem;font-weight:600;padding:12px;background:var(--color-background-secondary);border-radius:8px;\'>📖 {meaning}</div>", unsafe_allow_html=True)
 
         st.write("")
 
@@ -5345,12 +5346,17 @@ if st.session_state.quiz_loaded:
                 _rp_audio = st.session_state.get(_rp_tts_key, "")
                 st.markdown(f"🔊 **多次撥放** ｜ 本題播放：**{_rp_count + 1} / {_replay_per_q}** 次　｜　循環：**{_rp_loop_done + 1} / {_replay_loops}** 次")
                 st.markdown(f"### 🔊 {word}")
-                st.caption(f"📖 {meaning}")
 
                 if _rp_audio:
-                    import base64 as _b64_rp
-                    _audio_bytes = _b64_rp.b64decode(_rp_audio)
-                    st.audio(_audio_bytes, format="audio/mpeg", autoplay=False)
+                    import streamlit.components.v1 as _cv1_rp
+                    _cv1_rp.html(f"""
+                    <audio id="rp_audio" src="data:audio/mpeg;base64,{_rp_audio}" style="width:100%;display:block" controls></audio>
+                    <script>
+                    var a = document.getElementById('rp_audio');
+                    a.playbackRate = 1.0;
+                    a.play();
+                    </script>
+                    """, height=60)
                     st.markdown("👆 播放音檔後，按下方按鈕繼續")
 
                     if st.button(f"▶️ 已聽完，下一次（{_rp_count + 1}/{_replay_per_q}）",
