@@ -1,7 +1,7 @@
 # ==============================================================================
 # 🧩 英文全能練習系統 (V2.9.482 - 跟著唸AI評分logs版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.494
+# 📌 版本編號 (VERSION): 2.9.495
 # 📅 更新日期: 2026-06-22
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -45,7 +45,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.494"
+VERSION = "2.9.495"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -5357,9 +5357,8 @@ if st.session_state.quiz_loaded:
                         f"}})();</script>",
                         height=0
                     )
-                    # 估算單字音檔長度（每個字母約 0.15 秒，最少 1.5 秒），加 1 秒間隔
-                    _word_dur = max(1.5, len(word) * 0.15) + 1.0
-                    _rp_time.sleep(_word_dur)
+                    # 短暫等待讓 JS 音檔開始播放
+                    _rp_time.sleep(0.3)
 
                     # 計數 +1
                     _rp_count += 1
