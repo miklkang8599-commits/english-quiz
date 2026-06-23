@@ -1,7 +1,7 @@
 # ==============================================================================
 # 🧩 英文全能練習系統 (V2.9.482 - 跟著唸AI評分logs版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.489
+# 📌 版本編號 (VERSION): 2.9.490
 # 📅 更新日期: 2026-06-22
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -21,8 +21,8 @@
 #   11. [邏輯] 移除所有答題模式中「答錯重複出題」機制，答錯不再
 #              把題目加到 quiz_list 末尾重考。
 #   12. [UI] 移除側欄「榮譽榜」與「更新排行榜」功能。
-#   13. [UI] 指派任務篩選條件（版本/單元/年度/冊編號/課編號）全部
-#              新增「（不限）」選項，選後視為全部適用。
+#   13. [UI] 指派任務篩選條件（版本/單元/年度/冊編號/課編號）改為
+#              multiselect 複選，空白 = 全部適用，可同時選多個值。
 #              適用題型：重組、單選、朗讀、拼單字。
 # 🆕 新增功能：
 #    7. [Box B] 新增「📖 題目講解」tab：篩選學生與題目範圍、顯示各學生
@@ -38,7 +38,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.489"
+VERSION = "2.9.490"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1025,29 +1025,21 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             if df_q.empty:
                 st.warning("重組工作表尚無資料。")
             else:
-                st.markdown("**⚙️ 重組題範圍**")
+                st.markdown("**⚙️ 重組題範圍**（空白 = 全部適用）")
                 tc = st.columns(5)
-                _t1v_opts = ["（不限）"] + sorted(df_q["版本"].unique())
-                t1v = tc[0].selectbox("版本",  _t1v_opts, key="t1_v")
-                _t1v_filter = df_q["版本"] == t1v if t1v != "（不限）" else pd.Series([True]*len(df_q), index=df_q.index)
-                _t1u_opts = ["（不限）"] + sorted(df_q[_t1v_filter]["單元"].unique())
-                t1u = tc[1].selectbox("單元",  _t1u_opts, key="t1_u")
-                _t1u_filter = df_q["單元"] == t1u if t1u != "（不限）" else pd.Series([True]*len(df_q), index=df_q.index)
-                _t1y_opts = ["（不限）"] + sorted(df_q[_t1v_filter & _t1u_filter]["年度"].unique())
-                t1y = tc[2].selectbox("年度",  _t1y_opts, key="t1_y")
-                _t1y_filter = df_q["年度"] == t1y if t1y != "（不限）" else pd.Series([True]*len(df_q), index=df_q.index)
-                _t1b_opts = ["（不限）"] + sorted(df_q[_t1v_filter & _t1u_filter & _t1y_filter]["冊編號"].unique())
-                t1b = tc[3].selectbox("冊編號", _t1b_opts, key="t1_b")
-                _t1b_filter = df_q["冊編號"] == t1b if t1b != "（不限）" else pd.Series([True]*len(df_q), index=df_q.index)
-                _t1l_opts = ["（不限）"] + sorted(df_q[_t1v_filter & _t1u_filter & _t1y_filter & _t1b_filter]["課編號"].unique())
-                t1l = tc[4].selectbox("課編號", _t1l_opts, key="t1_l")
+                t1v = tc[0].multiselect("版本",  sorted(df_q["版本"].unique()), key="t1_v")
+                _t1v_filter = df_q["版本"].isin(t1v) if t1v else pd.Series([True]*len(df_q), index=df_q.index)
+                t1u = tc[1].multiselect("單元",  sorted(df_q[_t1v_filter]["單元"].unique()), key="t1_u")
+                _t1u_filter = df_q["單元"].isin(t1u) if t1u else pd.Series([True]*len(df_q), index=df_q.index)
+                t1y = tc[2].multiselect("年度",  sorted(df_q[_t1v_filter & _t1u_filter]["年度"].unique()), key="t1_y")
+                _t1y_filter = df_q["年度"].isin(t1y) if t1y else pd.Series([True]*len(df_q), index=df_q.index)
+                t1b = tc[3].multiselect("冊編號", sorted(df_q[_t1v_filter & _t1u_filter & _t1y_filter]["冊編號"].unique()), key="t1_b")
+                _t1b_filter = df_q["冊編號"].isin(t1b) if t1b else pd.Series([True]*len(df_q), index=df_q.index)
+                t1l = tc[4].multiselect("課編號", sorted(df_q[_t1v_filter & _t1u_filter & _t1y_filter & _t1b_filter]["課編號"].unique()), key="t1_l")
 
                 df_t1_scope = df_q[
-                    (df_q["版本"] == t1v if t1v != "（不限）" else True) &
-                    (df_q["單元"] == t1u if t1u != "（不限）" else True) &
-                    (df_q["年度"] == t1y if t1y != "（不限）" else True) &
-                    (df_q["冊編號"] == t1b if t1b != "（不限）" else True) &
-                    (df_q["課編號"] == t1l if t1l != "（不限）" else True)
+                    _t1v_filter & _t1u_filter & _t1y_filter & _t1b_filter &
+                    (df_q["課編號"].isin(t1l) if t1l else pd.Series([True]*len(df_q), index=df_q.index))
                 ].copy()
 
                 extra_cols = st.columns(2)
@@ -1096,29 +1088,21 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             if df_mcq.empty:
                 st.warning("單選工作表尚無資料。")
             else:
-                st.markdown("**⚙️ 單選題範圍**")
+                st.markdown("**⚙️ 單選題範圍**（空白 = 全部適用）")
                 mc = st.columns(5)
-                _mv_opts = ["（不限）"] + sorted(df_mcq["版本"].unique())
-                mv = mc[0].selectbox("版本",  _mv_opts, key="mc_v")
-                _mv_filter = df_mcq["版本"] == mv if mv != "（不限）" else pd.Series([True]*len(df_mcq), index=df_mcq.index)
-                _mu_opts = ["（不限）"] + sorted(df_mcq[_mv_filter]["單元"].unique())
-                mu = mc[1].selectbox("單元",  _mu_opts, key="mc_u")
-                _mu_filter = df_mcq["單元"] == mu if mu != "（不限）" else pd.Series([True]*len(df_mcq), index=df_mcq.index)
-                _my_opts = ["（不限）"] + sorted(df_mcq[_mv_filter & _mu_filter]["年度"].unique())
-                my = mc[2].selectbox("年度",  _my_opts, key="mc_y")
-                _my_filter = df_mcq["年度"] == my if my != "（不限）" else pd.Series([True]*len(df_mcq), index=df_mcq.index)
-                _mb_opts = ["（不限）"] + sorted(df_mcq[_mv_filter & _mu_filter & _my_filter]["冊編號"].unique())
-                mb = mc[3].selectbox("冊編號", _mb_opts, key="mc_b")
-                _mb_filter = df_mcq["冊編號"] == mb if mb != "（不限）" else pd.Series([True]*len(df_mcq), index=df_mcq.index)
-                _ml_opts = ["（不限）"] + sorted(df_mcq[_mv_filter & _mu_filter & _my_filter & _mb_filter]["課編號"].unique())
-                ml = mc[4].selectbox("課編號", _ml_opts, key="mc_l")
+                mv = mc[0].multiselect("版本",  sorted(df_mcq["版本"].unique()), key="mc_v")
+                _mv_filter = df_mcq["版本"].isin(mv) if mv else pd.Series([True]*len(df_mcq), index=df_mcq.index)
+                mu = mc[1].multiselect("單元",  sorted(df_mcq[_mv_filter]["單元"].unique()), key="mc_u")
+                _mu_filter = df_mcq["單元"].isin(mu) if mu else pd.Series([True]*len(df_mcq), index=df_mcq.index)
+                my = mc[2].multiselect("年度",  sorted(df_mcq[_mv_filter & _mu_filter]["年度"].unique()), key="mc_y")
+                _my_filter = df_mcq["年度"].isin(my) if my else pd.Series([True]*len(df_mcq), index=df_mcq.index)
+                mb = mc[3].multiselect("冊編號", sorted(df_mcq[_mv_filter & _mu_filter & _my_filter]["冊編號"].unique()), key="mc_b")
+                _mb_filter = df_mcq["冊編號"].isin(mb) if mb else pd.Series([True]*len(df_mcq), index=df_mcq.index)
+                ml = mc[4].multiselect("課編號", sorted(df_mcq[_mv_filter & _mu_filter & _my_filter & _mb_filter]["課編號"].unique()), key="mc_l")
 
                 df_mcq_scope = df_mcq[
-                    (df_mcq["版本"] == mv if mv != "（不限）" else True) &
-                    (df_mcq["單元"] == mu if mu != "（不限）" else True) &
-                    (df_mcq["年度"] == my if my != "（不限）" else True) &
-                    (df_mcq["冊編號"] == mb if mb != "（不限）" else True) &
-                    (df_mcq["課編號"] == ml if ml != "（不限）" else True)
+                    _mv_filter & _mu_filter & _my_filter & _mb_filter &
+                    (df_mcq["課編號"].isin(ml) if ml else pd.Series([True]*len(df_mcq), index=df_mcq.index))
                 ].copy()
                 mc_total_before = len(df_mcq_scope)  # 文法/難度篩選前的總題數
 
@@ -1186,29 +1170,21 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 if '單元' not in df_r2.columns:
                     df_r2['單元'] = '朗讀'
 
-                st.markdown("**⚙️ 朗讀題範圍**")
+                st.markdown("**⚙️ 朗讀題範圍**（空白 = 全部適用）")
                 rc_ = st.columns(5)
-                _rv_opts = ["（不限）"] + sorted(df_r2['版本'].unique())
-                rv_ = rc_[0].selectbox("版本",  _rv_opts, key="rt_v")
-                _rv_filter = df_r2["版本"] == rv_ if rv_ != "（不限）" else pd.Series([True]*len(df_r2), index=df_r2.index)
-                _ru_opts = ["（不限）"] + sorted(df_r2[_rv_filter]['單元'].unique())
-                ru_ = rc_[1].selectbox("單元",  _ru_opts, key="rt_u")
-                _ru_filter = df_r2["單元"] == ru_ if ru_ != "（不限）" else pd.Series([True]*len(df_r2), index=df_r2.index)
-                _ry_opts = ["（不限）"] + sorted(df_r2[_rv_filter & _ru_filter]['年度'].unique())
-                ry_ = rc_[2].selectbox("年度",  _ry_opts, key="rt_y")
-                _ry_filter = df_r2["年度"] == ry_ if ry_ != "（不限）" else pd.Series([True]*len(df_r2), index=df_r2.index)
-                _rb_opts = ["（不限）"] + sorted(df_r2[_rv_filter & _ru_filter & _ry_filter]['冊編號'].unique())
-                rb_ = rc_[3].selectbox("冊編號", _rb_opts, key="rt_b")
-                _rb_filter = df_r2["冊編號"] == rb_ if rb_ != "（不限）" else pd.Series([True]*len(df_r2), index=df_r2.index)
-                _rl_opts = ["（不限）"] + sorted(df_r2[_rv_filter & _ru_filter & _ry_filter & _rb_filter]['課編號'].unique())
-                rl_ = rc_[4].selectbox("課編號", _rl_opts, key="rt_l")
+                rv_ = rc_[0].multiselect("版本",  sorted(df_r2['版本'].unique()), key="rt_v")
+                _rv_filter = df_r2["版本"].isin(rv_) if rv_ else pd.Series([True]*len(df_r2), index=df_r2.index)
+                ru_ = rc_[1].multiselect("單元",  sorted(df_r2[_rv_filter]['單元'].unique()), key="rt_u")
+                _ru_filter = df_r2["單元"].isin(ru_) if ru_ else pd.Series([True]*len(df_r2), index=df_r2.index)
+                ry_ = rc_[2].multiselect("年度",  sorted(df_r2[_rv_filter & _ru_filter]['年度'].unique()), key="rt_y")
+                _ry_filter = df_r2["年度"].isin(ry_) if ry_ else pd.Series([True]*len(df_r2), index=df_r2.index)
+                rb_ = rc_[3].multiselect("冊編號", sorted(df_r2[_rv_filter & _ru_filter & _ry_filter]['冊編號'].unique()), key="rt_b")
+                _rb_filter = df_r2["冊編號"].isin(rb_) if rb_ else pd.Series([True]*len(df_r2), index=df_r2.index)
+                rl_ = rc_[4].multiselect("課編號", sorted(df_r2[_rv_filter & _ru_filter & _ry_filter & _rb_filter]['課編號'].unique()), key="rt_l")
 
                 df_r_final = df_r2[
-                    (df_r2['版本'] == rv_ if rv_ != "（不限）" else True) &
-                    (df_r2['單元'] == ru_ if ru_ != "（不限）" else True) &
-                    (df_r2['年度'] == ry_ if ry_ != "（不限）" else True) &
-                    (df_r2['冊編號'] == rb_ if rb_ != "（不限）" else True) &
-                    (df_r2['課編號'] == rl_ if rl_ != "（不限）" else True)
+                    _rv_filter & _ru_filter & _ry_filter & _rb_filter &
+                    (df_r2['課編號'].isin(rl_) if rl_ else pd.Series([True]*len(df_r2), index=df_r2.index))
                 ].copy()
 
                 # 文法／難度篩選（選填）
@@ -1261,29 +1237,21 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                         lambda r: f"V_{r.get('版本','')}_{r.get('年度','')}_{r.get('冊編號','')}_{r.get('單元','')}_{r.get('課編號','')}_{r.get('句編號','')}", axis=1
                     )
 
-                st.markdown("**⚙️ 單字題範圍**")
+                st.markdown("**⚙️ 單字題範圍**（空白 = 全部適用）")
                 vc_ = st.columns(5)
-                _vv_opts = ["（不限）"] + sorted(df_v2['版本'].unique())
-                vv_ = vc_[0].selectbox("版本",  _vv_opts, key="vt_v")
-                _vv_filter = df_v2["版本"] == vv_ if vv_ != "（不限）" else pd.Series([True]*len(df_v2), index=df_v2.index)
-                _vu_opts = ["（不限）"] + (sorted(df_v2[_vv_filter]['單元'].unique()) if '單元' in df_v2.columns else ['單字'])
-                vu_ = vc_[1].selectbox("單元",  _vu_opts, key="vt_u")
-                _vu_filter = df_v2["單元"] == vu_ if (vu_ != "（不限）" and '單元' in df_v2.columns) else pd.Series([True]*len(df_v2), index=df_v2.index)
-                _vy_opts = ["（不限）"] + sorted(df_v2[_vv_filter & _vu_filter]['年度'].unique())
-                vy_ = vc_[2].selectbox("年度",  _vy_opts, key="vt_y")
-                _vy_filter = df_v2["年度"] == vy_ if vy_ != "（不限）" else pd.Series([True]*len(df_v2), index=df_v2.index)
-                _vb_opts = ["（不限）"] + sorted(df_v2[_vv_filter & _vu_filter & _vy_filter]['冊編號'].unique())
-                vb_ = vc_[3].selectbox("冊編號", _vb_opts, key="vt_b")
-                _vb_filter = df_v2["冊編號"] == vb_ if vb_ != "（不限）" else pd.Series([True]*len(df_v2), index=df_v2.index)
-                _vl_opts = ["（不限）"] + sorted(df_v2[_vv_filter & _vu_filter & _vy_filter & _vb_filter]['課編號'].unique())
-                vl_ = vc_[4].selectbox("課編號", _vl_opts, key="vt_l")
+                vv_ = vc_[0].multiselect("版本",  sorted(df_v2['版本'].unique()), key="vt_v")
+                _vv_filter = df_v2["版本"].isin(vv_) if vv_ else pd.Series([True]*len(df_v2), index=df_v2.index)
+                vu_ = vc_[1].multiselect("單元",  sorted(df_v2[_vv_filter]['單元'].unique()) if '單元' in df_v2.columns else ['單字'], key="vt_u")
+                _vu_filter = df_v2["單元"].isin(vu_) if (vu_ and '單元' in df_v2.columns) else pd.Series([True]*len(df_v2), index=df_v2.index)
+                vy_ = vc_[2].multiselect("年度",  sorted(df_v2[_vv_filter & _vu_filter]['年度'].unique()), key="vt_y")
+                _vy_filter = df_v2["年度"].isin(vy_) if vy_ else pd.Series([True]*len(df_v2), index=df_v2.index)
+                vb_ = vc_[3].multiselect("冊編號", sorted(df_v2[_vv_filter & _vu_filter & _vy_filter]['冊編號'].unique()), key="vt_b")
+                _vb_filter = df_v2["冊編號"].isin(vb_) if vb_ else pd.Series([True]*len(df_v2), index=df_v2.index)
+                vl_ = vc_[4].multiselect("課編號", sorted(df_v2[_vv_filter & _vu_filter & _vy_filter & _vb_filter]['課編號'].unique()), key="vt_l")
 
                 df_v_scope_t1 = df_v2[
-                    (df_v2['版本'] == vv_ if vv_ != "（不限）" else True) &
-                    (df_v2['單元'] == vu_ if (vu_ != "（不限）" and '單元' in df_v2.columns) else True) &
-                    (df_v2['年度'] == vy_ if vy_ != "（不限）" else True) &
-                    (df_v2['冊編號'] == vb_ if vb_ != "（不限）" else True) &
-                    (df_v2['課編號'] == vl_ if vl_ != "（不限）" else True)
+                    _vv_filter & _vu_filter & _vy_filter & _vb_filter &
+                    (df_v2['課編號'].isin(vl_) if vl_ else pd.Series([True]*len(df_v2), index=df_v2.index))
                 ].copy()
 
                 # 文法／難度篩選（選填）
