@@ -1,7 +1,7 @@
 # ==============================================================================
 # 🧩 英文全能練習系統 (V2.9.482 - 跟著唸AI評分logs版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.495
+# 📌 版本編號 (VERSION): 2.9.496
 # 📅 更新日期: 2026-06-22
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -45,7 +45,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.495"
+VERSION = "2.9.496"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -5348,42 +5348,35 @@ if st.session_state.quiz_loaded:
                 st.caption(f"📖 {meaning}")
 
                 if _rp_audio:
-                    # 用 JS Audio() 播放（不受瀏覽器 autoplay 封鎖）
-                    import streamlit.components.v1 as _rp_comp
-                    _rp_comp.html(
-                        f"<script>(function(){{"
-                        f"var a=new Audio('data:audio/mpeg;base64,{_rp_audio}');"
-                        f"a.play().catch(function(e){{console.log(e);}});"
-                        f"}})();</script>",
-                        height=0
-                    )
-                    # 短暫等待讓 JS 音檔開始播放
-                    _rp_time.sleep(0.3)
+                    import base64 as _b64_rp
+                    _audio_bytes = _b64_rp.b64decode(_rp_audio)
+                    st.audio(_audio_bytes, format="audio/mpeg", autoplay=False)
+                    st.markdown("👆 播放音檔後，按下方按鈕繼續")
 
-                    # 計數 +1
-                    _rp_count += 1
-                    st.session_state[_rp_key] = _rp_count
-
-                    if _rp_count >= _replay_per_q:
-                        # 本題播完，跳下一題
-                        st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
-                        _quiz = st.session_state.get("quiz_list", [])
-                        _next_idx = st.session_state.q_idx + 1
-                        if _next_idx >= len(_quiz):
-                            # 本輪結束
-                            _rp_loop_done += 1
-                            st.session_state["replay_loop_done"] = _rp_loop_done
-                            if _rp_loop_done >= _replay_loops:
-                                st.session_state.update({"quiz_loaded": False, "range_confirmed": False, "replay_mode": False})
-                                st.rerun()
+                    if st.button(f"▶️ 已聽完，下一次（{_rp_count + 1}/{_replay_per_q}）",
+                                 key=f"rp_next_{st.session_state.q_idx}_{_rp_count}",
+                                 type="primary", use_container_width=True):
+                        _rp_count += 1
+                        st.session_state[_rp_key] = _rp_count
+                        if _rp_count >= _replay_per_q:
+                            # 本題播完，跳下一題
+                            st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
+                            _quiz = st.session_state.get("quiz_list", [])
+                            _next_idx = st.session_state.q_idx + 1
+                            if _next_idx >= len(_quiz):
+                                # 本輪結束
+                                _rp_loop_done += 1
+                                st.session_state["replay_loop_done"] = _rp_loop_done
+                                if _rp_loop_done >= _replay_loops:
+                                    st.session_state.update({"quiz_loaded": False, "range_confirmed": False, "replay_mode": False})
+                                else:
+                                    st.session_state.q_idx = 0
+                                    for _k in [k for k in list(st.session_state.keys()) if k.startswith("_replay_count_")]:
+                                        del st.session_state[_k]
                             else:
-                                st.session_state.q_idx = 0
-                                for _k in [k for k in list(st.session_state.keys()) if k.startswith("_replay_count_")]:
-                                    del st.session_state[_k]
-                        else:
-                            st.session_state.q_idx = _next_idx
-                            st.session_state.pop(_rp_key, None)
-                    st.rerun()
+                                st.session_state.q_idx = _next_idx
+                                st.session_state.pop(_rp_key, None)
+                        st.rerun()
 
         # 答對後播放 TTS（自然聲音 + 男聲）
         if st.session_state.get("show_analysis") and is_vocab:
