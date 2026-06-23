@@ -1,7 +1,7 @@
 # ==============================================================================
 # 🧩 英文全能練習系統 (V2.9.482 - 跟著唸AI評分logs版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.491
+# 📌 版本編號 (VERSION): 2.9.492
 # 📅 更新日期: 2026-06-22
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -29,6 +29,8 @@
 #              🔊 多次撥放：男聲TTS自動撥放，設定每題次數（預設5）與
 #              全部循環次數（預設2），自動跳題循環。
 #              🎤 跟著唸 改名為 🎤 跟著唸和錄音。
+#   15. [UI] 所有答題模式新增「結束題號」輸入欄（0 = 到最後），
+#              與起始題號並列，開始時自動裁切 quiz_list 範圍。
 # 🆕 新增功能：
 #    7. [Box B] 新增「📖 題目講解」tab：篩選學生與題目範圍、顯示各學生
 #              最近答案、老師可輸入講解備註、點選完成後寫入 logs (結果='📖 講解')。
@@ -43,7 +45,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.491"
+VERSION = "2.9.492"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3226,6 +3228,10 @@ if not st.session_state.quiz_loaded:
                                 retry_r = df_r2[df_r2['題目ID'].isin(q_ids_set)].copy()
                                 if not retry_r.empty:
                                     records = retry_r.to_dict('records')
+                                    # 裁切結束題號
+                                    _end_idx_local = locals().get('_end_idx_fwd', None)
+                                    if _end_idx_local is not None and _end_idx_local >= 0:
+                                        records = records[:_end_idx_local + 1]
                                     for rec in records:
                                         rec['_type'] = 'reading'
                                     for _k in [k for k in list(st.session_state.keys()) if k.startswith("vocab_pool_") or k.startswith("vocab_ans_") or k.startswith("vocab_used_") or k.startswith("mcq_order_") or k.startswith("rm_order_") or k.startswith("mcq_written_")]:
@@ -3332,6 +3338,10 @@ if not st.session_state.quiz_loaded:
                                 if _all_dfs:
                                     retry_all = pd.concat(_all_dfs, ignore_index=True)
                                     records   = retry_all.to_dict('records')
+                                    # 裁切結束題號
+                                    _end_idx_local = locals().get('_end_idx_fwd', None)
+                                    if _end_idx_local is not None and _end_idx_local >= 0:
+                                        records = records[:_end_idx_local + 1]
                                     for _k in [k for k in list(st.session_state.keys()) if k.startswith("vocab_pool_") or k.startswith("vocab_ans_") or k.startswith("vocab_used_") or k.startswith("mcq_order_") or k.startswith("rm_order_") or k.startswith("mcq_written_")]:
                                         del st.session_state[_k]
                                     st.session_state.update({
@@ -3368,10 +3378,16 @@ if not st.session_state.quiz_loaded:
                                 key=f"start_mode_{_task_idx}"
                             )
                             if _mode in ("🏋️ 練習模式", "⚡ 快速答題", "🎤 跟著唸和錄音", "⌨️ 多次打字練習", "🔊 多次撥放"):
-                                _start_from = st.number_input(
-                                    "從第幾題（依任務原始題號）",
+                                _range_cols = st.columns(2)
+                                _start_from = _range_cols[0].number_input(
+                                    "從第幾題",
                                     min_value=1, max_value=task_q_count, value=1,
                                     key=f"start_from_{_task_idx}"
+                                )
+                                _end_from = _range_cols[1].number_input(
+                                    "到第幾題（0 = 到最後）",
+                                    min_value=0, max_value=task_q_count, value=0,
+                                    key=f"end_from_{_task_idx}"
                                 )
                                 if _mode == "🏋️ 練習模式":
                                     st.caption("🏋️ 練習模式：可回上一題，作答紀錄標記為「練習」不列入正式記錄")
@@ -3406,15 +3422,18 @@ if not st.session_state.quiz_loaded:
                             _typing_target_val = st.session_state.get(f"typing_target_{_task_idx}", 3) if _is_typing else 3
                             _replay_per_q_val  = st.session_state.get(f"replay_per_q_{_task_idx}", 5) if _is_replay else 5
                             _replay_loops_val  = st.session_state.get(f"replay_loops_{_task_idx}", 2) if _is_replay else 2
+                            _end_from_val = st.session_state.get(f"end_from_{_task_idx}", 0)
+                            _range_suffix = f" 第{_start_from}～{_end_from_val}題" if _end_from_val > 0 else f" 從第{_start_from}題"
                             btn_key = f"start_task_{_task_idx}_{task_name[:20]}"
-                            label   = (f"🏋️ 練習模式 從第 {_start_from} 題" if _is_practice else \
-                                      (f"⚡ 快速答題 從第 {_start_from} 題" if _is_quick else \
-                                      (f"🎤 跟著唸和錄音 從第 {_start_from} 題" if _is_shadow else \
-                                      (f"⌨️ 多次打字練習 從第 {_start_from} 題" if _is_typing else \
-                                      (f"🔊 多次撥放 從第 {_start_from} 題" if _is_replay else \
-                                       f"⚡ 快速答題 從第 {_start_from} 題")))))
+                            label   = (f"🏋️ 練習模式{_range_suffix}" if _is_practice else \
+                                      (f"⚡ 快速答題{_range_suffix}" if _is_quick else \
+                                      (f"🎤 跟著唸和錄音{_range_suffix}" if _is_shadow else \
+                                      (f"⌨️ 多次打字練習{_range_suffix}" if _is_typing else \
+                                      (f"🔊 多次撥放{_range_suffix}" if _is_replay else \
+                                       f"⚡ 快速答題{_range_suffix}")))))
                             if st.button(f"🚀 {label}", key=btn_key, type="primary", use_container_width=True):
                                 _start_idx_fwd = max(0, int(_start_from) - 1)
+                                _end_idx_fwd   = (int(_end_from_val) - 1) if _end_from_val > 0 else None
                                 pending_ids = q_ids_set
 
                             if not hasattr(st.session_state, "_is_practice_defined"):
@@ -3430,6 +3449,10 @@ if not st.session_state.quiz_loaded:
                                   pending = df_r2[df_r2['題目ID'].isin(pending_ids)].copy()
                                   if not pending.empty:
                                       records = pending.to_dict('records')
+                                      # 裁切結束題號
+                                      _end_idx_local = locals().get('_end_idx_fwd', None)
+                                      if _end_idx_local is not None and _end_idx_local >= 0:
+                                          records = records[:_end_idx_local + 1]
                                       for r in records:
                                           r['_type'] = 'reading'
                                       # 清除所有舊的字母池，避免題目字母錯誤
@@ -3488,6 +3511,10 @@ if not st.session_state.quiz_loaded:
                                   pending = df_rm2[df_rm2['題目ID'].isin(pending_ids)].copy() if not df_rm2.empty else pd.DataFrame()
                                   if not pending.empty:
                                       records = pending.to_dict('records')
+                                      # 裁切結束題號
+                                      _end_idx_local = locals().get('_end_idx_fwd', None)
+                                      if _end_idx_local is not None and _end_idx_local >= 0:
+                                          records = records[:_end_idx_local + 1]
                                       for rec in records:
                                           rec['_type'] = 'reading_mcq'
                                       # 清除所有舊的字母池，避免題目字母錯誤
@@ -3564,6 +3591,10 @@ if not st.session_state.quiz_loaded:
                                       if not pending_ls.empty:
                                           pending_ls['_ls_words'] = pending_ls['聽力重組英文答案'].apply(_ls_split_words)
                                           records = pending_ls.to_dict('records')
+                                          # 裁切結束題號
+                                          _end_idx_local = locals().get('_end_idx_fwd', None)
+                                          if _end_idx_local is not None and _end_idx_local >= 0:
+                                              records = records[:_end_idx_local + 1]
                                           for _k in [k for k in list(st.session_state.keys()) if k.startswith("vocab_pool_") or k.startswith("vocab_ans_") or k.startswith("vocab_used_") or k.startswith("ls_ans_") or k.startswith("ls_used_") or k.startswith("ls_shuf_")]:
                                               del st.session_state[_k]
                                           st.session_state.update({
@@ -3695,6 +3726,10 @@ if not st.session_state.quiz_loaded:
                                         pending_q['_sn'] = pd.to_numeric(pending_q['句編號'], errors='coerce').fillna(0)
                                         pending_q = pending_q.sort_values('_sn').drop(columns=['_sn'])
                                     records = pending_q.to_dict('records')
+                                    # 裁切結束題號
+                                    _end_idx_local = locals().get('_end_idx_fwd', None)
+                                    if _end_idx_local is not None and _end_idx_local >= 0:
+                                        records = records[:_end_idx_local + 1]
                                     for _k in [k for k in list(st.session_state.keys()) if k.startswith("vocab_pool_") or k.startswith("vocab_ans_") or k.startswith("vocab_used_") or k.startswith("mcq_order_") or k.startswith("rm_order_") or k.startswith("mcq_written_")]:
                                         del st.session_state[_k]
                                     st.session_state.update({
