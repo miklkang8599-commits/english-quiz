@@ -1,7 +1,7 @@
 # ==============================================================================
 # 🧩 英文全能練習系統 (V2.9.482 - 跟著唸AI評分logs版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.490
+# 📌 版本編號 (VERSION): 2.9.491
 # 📅 更新日期: 2026-06-22
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,6 +24,11 @@
 #   13. [UI] 指派任務篩選條件（版本/單元/年度/冊編號/課編號）改為
 #              multiselect 複選，空白 = 全部適用，可同時選多個值。
 #              適用題型：重組、單選、朗讀、拼單字。
+#   14. [功能] 拼單字任務新增兩種答題模式：
+#              ⌨️ 多次打字練習：設定目標正確次數（預設3次），達標才跳下題；
+#              🔊 多次撥放：男聲TTS自動撥放，設定每題次數（預設5）與
+#              全部循環次數（預設2），自動跳題循環。
+#              🎤 跟著唸 改名為 🎤 跟著唸和錄音。
 # 🆕 新增功能：
 #    7. [Box B] 新增「📖 題目講解」tab：篩選學生與題目範圍、顯示各學生
 #              最近答案、老師可輸入講解備註、點選完成後寫入 logs (結果='📖 講解')。
@@ -38,7 +43,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.490"
+VERSION = "2.9.491"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3345,22 +3350,24 @@ if not st.session_state.quiz_loaded:
                         remaining    = task_q_count - done_cnt
 
                         # 三個選項（含練習模式）- 競賽任務不顯示
-                        # 三個選項（含練習模式）- 競賽任務不顯示
+                        # 模式選項 - 競賽任務不顯示
                         _mode = "⚡ 快速答題"  # default
                         _start_from = 1
                         if not is_race_task:
-                            # 跟著唸只適用於重組/拼單字題型
                             _shadow_ok = is_vocab_task or task_type in ("一般", "混合", "")
-                            _mode_opts = ["⚡ 快速答題", "🏋️ 練習模式"]
-                            if _shadow_ok:
-                                _mode_opts.append("🎤 跟著唸")
+                            if is_vocab_task:
+                                _mode_opts = ["⚡ 快速答題", "⌨️ 多次打字練習", "🔊 多次撥放", "🏋️ 練習模式", "🎤 跟著唸和錄音"]
+                            else:
+                                _mode_opts = ["⚡ 快速答題", "🏋️ 練習模式"]
+                                if _shadow_ok:
+                                    _mode_opts.append("🎤 跟著唸和錄音")
                             _mode = st.radio(
                                 "練習方式",
                                 _mode_opts,
                                 horizontal=True,
                                 key=f"start_mode_{_task_idx}"
                             )
-                            if _mode in ("🏋️ 練習模式", "⚡ 快速答題", "🎤 跟著唸"):
+                            if _mode in ("🏋️ 練習模式", "⚡ 快速答題", "🎤 跟著唸和錄音", "⌨️ 多次打字練習", "🔊 多次撥放"):
                                 _start_from = st.number_input(
                                     "從第幾題（依任務原始題號）",
                                     min_value=1, max_value=task_q_count, value=1,
@@ -3370,8 +3377,15 @@ if not st.session_state.quiz_loaded:
                                     st.caption("🏋️ 練習模式：可回上一題，作答紀錄標記為「練習」不列入正式記錄")
                                 elif _mode == "⚡ 快速答題":
                                     st.caption("⚡ 快速答題：答完立即顯示對錯，自動跳下一題")
-                                elif _mode == "🎤 跟著唸":
-                                    st.caption("🎤 跟著唸：播放英文 TTS，可自行錄音練習，無需作答")
+                                elif _mode == "🎤 跟著唸和錄音":
+                                    st.caption("🎤 跟著唸和錄音：播放英文 TTS，可自行錄音練習，無需作答")
+                                elif _mode == "⌨️ 多次打字練習":
+                                    _typing_target = st.number_input("答對幾次才跳下題", min_value=1, max_value=10, value=3, key=f"typing_target_{_task_idx}")
+                                    st.caption(f"⌨️ 多次打字練習：需連續答對 {_typing_target} 次才進下一題，答錯繼續練習")
+                                elif _mode == "🔊 多次撥放":
+                                    _replay_per_q  = st.number_input("每題撥放次數", min_value=1, max_value=20, value=5, key=f"replay_per_q_{_task_idx}")
+                                    _replay_loops  = st.number_input("全部循環次數", min_value=1, max_value=10, value=2, key=f"replay_loops_{_task_idx}")
+                                    st.caption(f"🔊 多次撥放：每題男聲撥放 {_replay_per_q} 次後自動跳下題，全部循環 {_replay_loops} 次")
 
                         # 競賽模式任務：只顯示競賽按鈕，不顯示一般模式選項
                         pending_ids    = set()  # 預設空，按鈕按下才賦值
@@ -3386,12 +3400,19 @@ if not st.session_state.quiz_loaded:
                         else:
                             _is_practice  = (_mode == "🏋️ 練習模式")
                             _is_quick     = (_mode == "⚡ 快速答題")
-                            _is_shadow    = (_mode == "🎤 跟著唸")
+                            _is_shadow    = (_mode == "🎤 跟著唸和錄音")
+                            _is_typing    = (_mode == "⌨️ 多次打字練習")
+                            _is_replay    = (_mode == "🔊 多次撥放")
+                            _typing_target_val = st.session_state.get(f"typing_target_{_task_idx}", 3) if _is_typing else 3
+                            _replay_per_q_val  = st.session_state.get(f"replay_per_q_{_task_idx}", 5) if _is_replay else 5
+                            _replay_loops_val  = st.session_state.get(f"replay_loops_{_task_idx}", 2) if _is_replay else 2
                             btn_key = f"start_task_{_task_idx}_{task_name[:20]}"
                             label   = (f"🏋️ 練習模式 從第 {_start_from} 題" if _is_practice else \
                                       (f"⚡ 快速答題 從第 {_start_from} 題" if _is_quick else \
-                                      (f"🎤 跟著唸 從第 {_start_from} 題" if _is_shadow else \
-                                       f"⚡ 快速答題 從第 {_start_from} 題")))
+                                      (f"🎤 跟著唸和錄音 從第 {_start_from} 題" if _is_shadow else \
+                                      (f"⌨️ 多次打字練習 從第 {_start_from} 題" if _is_typing else \
+                                      (f"🔊 多次撥放 從第 {_start_from} 題" if _is_replay else \
+                                       f"⚡ 快速答題 從第 {_start_from} 題")))))
                             if st.button(f"🚀 {label}", key=btn_key, type="primary", use_container_width=True):
                                 _start_idx_fwd = max(0, int(_start_from) - 1)
                                 pending_ids = q_ids_set
@@ -3452,7 +3473,9 @@ if not st.session_state.quiz_loaded:
                                       st.session_state.update({
                                           "quiz_list": records,
                                           "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "_timers_cleared": False, "current_task_name": task_id_key, "practice_mode": _is_practice, "quick_mode": locals().get("_is_quick", False), "shadow_mode": locals().get("_is_shadow", False), "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
-                                          "ans": [], "used_history": [], "shuf": [], "show_analysis": False, "current_res": "", "vocab_start_time": None, "vocab_q_idx": None
+                                          "ans": [], "used_history": [], "shuf": [], "show_analysis": False, "current_res": "", "vocab_start_time": None, "vocab_q_idx": None,
+                                          "typing_mode": locals().get("_is_typing", False), "typing_target": locals().get("_typing_target_val", 3),
+                                          "replay_mode": locals().get("_is_replay", False), "replay_per_q": locals().get("_replay_per_q_val", 5), "replay_loops": locals().get("_replay_loops_val", 2), "replay_loop_done": 0,
                                       })
                                       st.rerun()
   
@@ -4260,7 +4283,12 @@ if st.session_state.quiz_loaded:
     _race_mode     = st.session_state.get('race_mode', False)
     _quick_mode    = st.session_state.get('quick_mode', False)
     _shadow_mode   = st.session_state.get('shadow_mode', False)
-    _mode_label    = "🏆 競賽模式" if _race_mode else ("🏋️ 練習模式" if _practice_mode else ("⚡ 快速答題" if _quick_mode else ("🎤 跟著唸" if _shadow_mode else "")))
+    _typing_mode   = st.session_state.get('typing_mode', False)
+    _typing_target = int(st.session_state.get('typing_target', 3))
+    _replay_mode   = st.session_state.get('replay_mode', False)
+    _replay_per_q  = int(st.session_state.get('replay_per_q', 5))
+    _replay_loops  = int(st.session_state.get('replay_loops', 2))
+    _mode_label    = "🏆 競賽模式" if _race_mode else ("🏋️ 練習模式" if _practice_mode else ("⚡ 快速答題" if _quick_mode else ("🎤 跟著唸和錄音" if _shadow_mode else ("⌨️ 多次打字練習" if _typing_mode else ("🔊 多次撥放" if _replay_mode else "")))))
 
     # ── 單題計時 ──────────────────────────────────────────────────────────
     import time as _time_sys
@@ -5201,6 +5229,134 @@ if st.session_state.quiz_loaded:
                         _load_logs_cached.clear()
                         st.rerun()
 
+        # ── 多次打字練習模式 ───────────────────────────────────────────────
+        if _typing_mode and is_vocab:
+            _tc_key   = f"_typing_correct_{st.session_state.q_idx}"
+            _tc_count = int(st.session_state.get(_tc_key, 0))
+            _tc_input_key = f"_typing_input_{st.session_state.q_idx}_{_tc_count}"
+
+            st.markdown(f"⌨️ **多次打字練習** ｜ 已答對：**{_tc_count} / {_typing_target}** 次")
+            st.progress(_tc_count / _typing_target)
+
+            if _tc_count < _typing_target:
+                _tc_val = st.text_input(
+                    "輸入答案後按 Enter",
+                    key=_tc_input_key,
+                    placeholder="在這裡輸入英文，按 Enter 送出...",
+                )
+                import streamlit.components.v1 as _components
+                _components.html(
+                    """<script>
+                    window.parent.document.querySelectorAll('input[type="text"]').forEach(function(el, i, arr){
+                        if(i === arr.length - 1) { el.focus(); el.select(); }
+                    });
+                    </script>""", height=0
+                )
+                if _tc_val:
+                    _is_ok_tc = _clean_vocab(_tc_val) == _clean_vocab(word)
+                    if _is_ok_tc:
+                        _tc_count += 1
+                        st.session_state[_tc_key] = _tc_count
+                        append_to_sheet("logs", pd.DataFrame([{
+                            "時間": get_now().strftime("%Y-%m-%d %H:%M:%S"),
+                            "姓名": st.session_state.user_name, "分組": st.session_state.group_id,
+                            "題目ID": q.get("題目ID","N/A"), "結果": "✅",
+                            "學生答案": _tc_val.upper(), "任務名稱": st.session_state.get("current_task_name",""),
+                            "作答秒數": round(__import__("time").time() - st.session_state.get(f"_q_start_time_{st.session_state.q_idx}", __import__("time").time()))
+                        }]))
+                        _load_logs_cached.clear()
+                        if _tc_count >= _typing_target:
+                            st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
+                            st.success(f"✅ 達到 {_typing_target} 次正確！進入下一題")
+                            st.rerun()
+                        else:
+                            st.success(f"✅ 正確！再答 {_typing_target - _tc_count} 次")
+                            st.rerun()
+                    else:
+                        append_to_sheet("logs", pd.DataFrame([{
+                            "時間": get_now().strftime("%Y-%m-%d %H:%M:%S"),
+                            "姓名": st.session_state.user_name, "分組": st.session_state.group_id,
+                            "題目ID": q.get("題目ID","N/A"), "結果": "❌",
+                            "學生答案": _tc_val.upper(), "任務名稱": st.session_state.get("current_task_name",""),
+                            "作答秒數": round(__import__("time").time() - st.session_state.get(f"_q_start_time_{st.session_state.q_idx}", __import__("time").time()))
+                        }]))
+                        _load_logs_cached.clear()
+                        st.warning(f"❌ 錯誤！正確答案：**{word}**，繼續練習")
+                        st.rerun()
+            else:
+                # 已達目標，等待自動跳題（answered_count 已累加）
+                st.success(f"✅ 已達 {_typing_target} 次正確！")
+
+        # ── 多次撥放模式 ────────────────────────────────────────────────────
+        if _replay_mode and is_vocab:
+            import base64 as _b64
+            _rp_key      = f"_replay_count_{st.session_state.q_idx}"
+            _rp_tts_key  = f"_replay_tts_{st.session_state.q_idx}"
+            _rp_count    = int(st.session_state.get(_rp_key, 0))
+            _rp_loop_done= int(st.session_state.get("replay_loop_done", 0))
+
+            # 載入 TTS 男聲（只載入一次）
+            if not st.session_state.get(_rp_tts_key):
+                try:
+                    import openai as _oai
+                    _client = _oai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+                    tts_m = _client.audio.speech.create(model="tts-1", voice="onyx", input=word).content
+                    st.session_state[_rp_tts_key] = _b64.b64encode(tts_m).decode()
+                    st.rerun()
+                except Exception as _e:
+                    st.error(f"TTS 載入失敗：{_e}")
+
+            _rp_audio = st.session_state.get(_rp_tts_key, "")
+            st.markdown(f"🔊 **多次撥放** ｜ 本題播放：**{_rp_count} / {_replay_per_q}** 次　｜　循環：**{_rp_loop_done} / {_replay_loops}** 次")
+            if _rp_audio:
+                st.markdown(f"**🔊 {word}**")
+                _autoplay_js = f"""
+                <audio id="rp_audio_{st.session_state.q_idx}_{_rp_count}" autoplay style="width:100%">
+                    <source src="data:audio/mpeg;base64,{_rp_audio}" type="audio/mpeg">
+                </audio>
+                """
+                st.markdown(_autoplay_js, unsafe_allow_html=True)
+
+            _rp_col1, _rp_col2 = st.columns(2)
+            if _rp_col1.button("▶️ 已播放，跳下一次", key=f"rp_next_{st.session_state.q_idx}_{_rp_count}", use_container_width=True):
+                _rp_count += 1
+                st.session_state[_rp_key] = _rp_count
+                append_to_sheet("logs", pd.DataFrame([{
+                    "時間": get_now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "姓名": st.session_state.user_name, "分組": st.session_state.group_id,
+                    "題目ID": q.get("題目ID","N/A"), "結果": "📻 撥放",
+                    "學生答案": f"第{_rp_count}次", "任務名稱": st.session_state.get("current_task_name",""),
+                    "作答秒數": ""
+                }]))
+                _load_logs_cached.clear()
+                if _rp_count >= _replay_per_q:
+                    # 本題播完，跳下一題
+                    _quiz = st.session_state.get("quiz_list", [])
+                    _next_idx = st.session_state.q_idx + 1
+                    if _next_idx >= len(_quiz):
+                        # 本輪結束
+                        _rp_loop_done += 1
+                        st.session_state["replay_loop_done"] = _rp_loop_done
+                        if _rp_loop_done >= _replay_loops:
+                            st.session_state.update({"quiz_loaded": False, "range_confirmed": False, "replay_mode": False})
+                            st.success("🎉 多次撥放完成！")
+                        else:
+                            st.session_state.q_idx = 0
+                            # 清除所有本輪撥放計數
+                            for _k in [k for k in st.session_state if k.startswith("_replay_count_")]:
+                                del st.session_state[_k]
+                    else:
+                        st.session_state.q_idx = _next_idx
+                    st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
+                st.rerun()
+
+            if _rp_col2.button("⏭️ 跳過此題", key=f"rp_skip_{st.session_state.q_idx}", use_container_width=True):
+                _quiz = st.session_state.get("quiz_list", [])
+                _next_idx = st.session_state.q_idx + 1
+                if _next_idx < len(_quiz):
+                    st.session_state.q_idx = _next_idx
+                st.rerun()
+
         # 答對後播放 TTS（自然聲音 + 男聲）
         if st.session_state.get("show_analysis") and is_vocab:
             res = st.session_state.get("current_res", "")
@@ -5479,7 +5635,8 @@ if st.session_state.quiz_loaded:
             if k.startswith(f"vocab_pool_{q_idx}") or k.startswith(f"ls_tts_{q_idx}") or k in [
                 f"vocab_ans_{q_idx}", f"vocab_used_{q_idx}",
                 f"vocab_kb_{q_idx}", f"vocab_tts_{q_idx}",
-                f"ls_ans_{q_idx}", f"ls_used_{q_idx}", f"ls_shuf_{q_idx}"
+                f"ls_ans_{q_idx}", f"ls_used_{q_idx}", f"ls_shuf_{q_idx}",
+                f"_typing_correct_{q_idx}", f"_replay_count_{q_idx}", f"_replay_tts_{q_idx}"
             ]:
                 st.session_state.pop(k, None)
 
@@ -5500,6 +5657,19 @@ if st.session_state.quiz_loaded:
             # 剛答完：標記，用 time.sleep(1) 讓畫面顯示結果後再跳
             st.session_state['_quick_shown'] = True
             import time as _tq; _tq.sleep(1)
+            st.rerun()
+
+    # 多次打字練習達標：自動跳下一題
+    if _typing_mode and is_vocab:
+        _tc_key_nav = f"_typing_correct_{st.session_state.q_idx}"
+        if int(st.session_state.get(_tc_key_nav, 0)) >= _typing_target:
+            _clear_q()
+            if st.session_state.q_idx + 1 < len(st.session_state.quiz_list):
+                st.session_state.q_idx += 1
+                st.session_state.update({"show_analysis": False, "current_res": "", "vocab_start_time": None, "vocab_q_idx": None})
+            else:
+                st.session_state.update({"quiz_loaded": False, "range_confirmed": False, "typing_mode": False})
+                st.success("🎉 多次打字練習完成！")
             st.rerun()
 
     # 練習模式對答後用3欄，其他用2欄
