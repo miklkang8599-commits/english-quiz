@@ -1,7 +1,7 @@
 # ==============================================================================
 # 🧩 英文全能練習系統 (V2.9.482 - 跟著唸AI評分logs版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.492
+# 📌 版本編號 (VERSION): 2.9.493
 # 📅 更新日期: 2026-06-22
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -45,7 +45,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.492"
+VERSION = "2.9.493"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -5324,7 +5324,7 @@ if st.session_state.quiz_loaded:
 
         # ── 多次撥放模式 ────────────────────────────────────────────────────
         if _replay_mode and is_vocab:
-            import base64 as _b64
+            import base64 as _b64, time as _rp_time
             _rp_key      = f"_replay_count_{st.session_state.q_idx}"
             _rp_tts_key  = f"_replay_tts_{st.session_state.q_idx}"
             _rp_count    = int(st.session_state.get(_rp_key, 0))
@@ -5342,30 +5342,28 @@ if st.session_state.quiz_loaded:
                     st.error(f"TTS 載入失敗：{_e}")
 
             _rp_audio = st.session_state.get(_rp_tts_key, "")
-            st.markdown(f"🔊 **多次撥放** ｜ 本題播放：**{_rp_count} / {_replay_per_q}** 次　｜　循環：**{_rp_loop_done} / {_replay_loops}** 次")
-            if _rp_audio:
-                st.markdown(f"**🔊 {word}**")
-                _autoplay_js = f"""
-                <audio id="rp_audio_{st.session_state.q_idx}_{_rp_count}" autoplay style="width:100%">
-                    <source src="data:audio/mpeg;base64,{_rp_audio}" type="audio/mpeg">
-                </audio>
-                """
-                st.markdown(_autoplay_js, unsafe_allow_html=True)
+            st.markdown(f"🔊 **多次撥放** ｜ 本題播放：**{_rp_count + 1} / {_replay_per_q}** 次　｜　循環：**{_rp_loop_done + 1} / {_replay_loops}** 次")
+            st.markdown(f"### 🔊 {word}")
+            st.caption(f"📖 {meaning}")
 
-            _rp_col1, _rp_col2 = st.columns(2)
-            if _rp_col1.button("▶️ 已播放，跳下一次", key=f"rp_next_{st.session_state.q_idx}_{_rp_count}", use_container_width=True):
+            if _rp_audio:
+                # autoplay 音檔
+                st.markdown(
+                    f'<audio autoplay style="width:100%">'
+                    f'<source src="data:audio/mpeg;base64,{_rp_audio}" type="audio/mpeg"></audio>',
+                    unsafe_allow_html=True
+                )
+                # 估算單字音檔長度（每個字母約 0.15 秒，最少 1 秒），加 0.8 秒間隔
+                _word_dur = max(1.0, len(word) * 0.15) + 0.8
+                _rp_time.sleep(_word_dur)
+
+                # 計數 +1
                 _rp_count += 1
                 st.session_state[_rp_key] = _rp_count
-                append_to_sheet("logs", pd.DataFrame([{
-                    "時間": get_now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "姓名": st.session_state.user_name, "分組": st.session_state.group_id,
-                    "題目ID": q.get("題目ID","N/A"), "結果": "📻 撥放",
-                    "學生答案": f"第{_rp_count}次", "任務名稱": st.session_state.get("current_task_name",""),
-                    "作答秒數": ""
-                }]))
-                _load_logs_cached.clear()
+
                 if _rp_count >= _replay_per_q:
                     # 本題播完，跳下一題
+                    st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
                     _quiz = st.session_state.get("quiz_list", [])
                     _next_idx = st.session_state.q_idx + 1
                     if _next_idx >= len(_quiz):
@@ -5374,22 +5372,14 @@ if st.session_state.quiz_loaded:
                         st.session_state["replay_loop_done"] = _rp_loop_done
                         if _rp_loop_done >= _replay_loops:
                             st.session_state.update({"quiz_loaded": False, "range_confirmed": False, "replay_mode": False})
-                            st.success("🎉 多次撥放完成！")
+                            st.rerun()
                         else:
                             st.session_state.q_idx = 0
-                            # 清除所有本輪撥放計數
-                            for _k in [k for k in st.session_state if k.startswith("_replay_count_")]:
+                            for _k in [k for k in list(st.session_state.keys()) if k.startswith("_replay_count_")]:
                                 del st.session_state[_k]
                     else:
                         st.session_state.q_idx = _next_idx
-                    st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
-                st.rerun()
-
-            if _rp_col2.button("⏭️ 跳過此題", key=f"rp_skip_{st.session_state.q_idx}", use_container_width=True):
-                _quiz = st.session_state.get("quiz_list", [])
-                _next_idx = st.session_state.q_idx + 1
-                if _next_idx < len(_quiz):
-                    st.session_state.q_idx = _next_idx
+                        st.session_state.pop(_rp_key, None)
                 st.rerun()
 
         # 答對後播放 TTS（自然聲音 + 男聲）
