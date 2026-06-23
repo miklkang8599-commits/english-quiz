@@ -1,7 +1,7 @@
 # ==============================================================================
 # 🧩 英文全能練習系統 (V2.9.482 - 跟著唸AI評分logs版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.493
+# 📌 版本編號 (VERSION): 2.9.494
 # 📅 更新日期: 2026-06-22
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -45,7 +45,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.493"
+VERSION = "2.9.494"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -5067,320 +5067,324 @@ if st.session_state.quiz_loaded:
                 _load_logs_cached.clear()
                 st.rerun()
 
-        # 模式切換
-        if task_mode in ("自選", "學生自選"):
-            _vm_default = st.session_state.get("vocab_mode_global", "🔤 拆字母")
-            if _vm_default not in ["🔤 拆字母", "⌨️ 鍵盤"]:
-                _vm_default = "🔤 拆字母"
-            vocab_mode = st.radio(
-                "輸入模式",
-                ["🔤 拆字母", "⌨️ 鍵盤"],
-                horizontal=True,
-                key="vocab_mode_global",
-                disabled=st.session_state.get("show_analysis", False),
-                index=["🔤 拆字母", "⌨️ 鍵盤"].index(_vm_default)
-            )
-            # 模式切換時清除另一模式的輸入記錄
-            _prev_mode = st.session_state.get("_vocab_prev_mode")
-            if _prev_mode and _prev_mode != vocab_mode:
-                _q = st.session_state.q_idx
-                if vocab_mode == "⌨️ 鍵盤":
-                    # 切換到鍵盤：清除字母池答案
-                    st.session_state[f"vocab_ans_{_q}"] = []
-                    st.session_state[f"vocab_used_{_q}"] = []
-                else:
-                    # 切換到字母池：清除鍵盤答案
-                    st.session_state[f"vocab_kb_{_q}"] = ""
-            st.session_state["_vocab_prev_mode"] = vocab_mode
-        else:
-            vocab_mode = "🔤 拆字母" if task_mode == "拆字母" else "⌨️ 鍵盤"
-        if not vocab_mode:
-            vocab_mode = "🔤 拆字母"
-
-        # 初始化字母池（pool_key 含干擾字數，設定改變時自動重建）
-        pool_key = f"vocab_pool_{st.session_state.q_idx}_{extra_letters}"
-        if pool_key not in st.session_state:
-            # 清除同題目舊的 pool（不同干擾字數的）
-            for _k in [k for k in st.session_state if k.startswith(f"vocab_pool_{st.session_state.q_idx}_")]:
-                if _k != pool_key:
-                    del st.session_state[_k]
-            _clean_word = _clean_vocab(word)
-            # 多單字提示：顯示每個字的字母數
-            _word_parts = word.strip().split()
-            if len(_word_parts) > 1:
-                _hint = " + ".join([f"{len(_clean_vocab(p))}字母" for p in _word_parts])
-                st.caption(f"💡 提示：共 {len(_word_parts)} 個字（{_hint}），字母池已去除空格")
-            letters = list(_clean_word)
-            _random.shuffle(letters)
-            candidates = [c for c in _string.ascii_uppercase if c not in _clean_word]
-            extra = _random.sample(candidates, min(extra_letters, len(candidates)))
-            all_letters = letters + extra
-            _random.shuffle(all_letters)
-            st.session_state[pool_key] = all_letters
-        letter_pool = st.session_state[pool_key]
-
-        ans_key_v = f"vocab_ans_{st.session_state.q_idx}"
-        if ans_key_v not in st.session_state:
-            st.session_state[ans_key_v] = []
-
-        # ── 拆字母模式 ────────────────────────────────────────────────────
-        if "拆字母" in vocab_mode:
-            current_ans = st.session_state[ans_key_v]
-            # 答案顯示區
-            if current_ans:
-                letters_html = "".join([
-                    f"<span style='display:inline-block;padding:4px 10px;margin:2px;background:#4a90d9;color:white;border-radius:6px;font-size:1.3rem;font-weight:700;'>{c.lower()}</span>"
-                    for c in current_ans
-                ])
-                ans_display = letters_html
-            else:
-                ans_display = "<span style='color:#aaa;font-size:1rem;'>點選下方字母</span>"
-            st.markdown(f"<div style='padding:10px;min-height:50px;background:#f0f4ff;border-radius:8px;'>{ans_display}</div>", unsafe_allow_html=True)
-
-            bc1, bc2, bc3 = st.columns(3)
-            if bc1.button("⬅️ 退回一步", use_container_width=True, key=f"vb_back_{st.session_state.q_idx}",
-                          disabled=st.session_state.get("show_analysis", False)):
-                if current_ans:
-                    _removed = st.session_state[ans_key_v].pop()
-                    # 只有非空格才從 vocab_used 移除
-                    if _removed != ' ':
-                        used_st = st.session_state.get(f"vocab_used_{st.session_state.q_idx}", [])
-                        if used_st:
-                            used_st.pop()
-                        st.session_state[f"vocab_used_{st.session_state.q_idx}"] = used_st
-                    st.rerun()
-            if bc2.button("🗑️ 全部清除", use_container_width=True, key=f"vb_clear_{st.session_state.q_idx}",
-                          disabled=st.session_state.get("show_analysis", False)):
-                st.session_state[ans_key_v] = []
-                st.session_state[f"vocab_used_{st.session_state.q_idx}"] = []
-                st.rerun()
-            # 多字單字才顯示空格鍵
-            if len(_word_parts) > 1:
-                if bc3.button("␣ 空格", use_container_width=True, key=f"vb_space_{st.session_state.q_idx}",
-                              disabled=st.session_state.get("show_analysis", False)):
-                    st.session_state[ans_key_v].append(' ')
-                    st.rerun()
-
-            if not st.session_state.get("show_analysis"):
-                used_indices = set(st.session_state.get(f"vocab_used_{st.session_state.q_idx}", []))
-                # 固定 8 欄，字母位置不移動，已選走的顯示灰色佔位
-                NUM_COLS = 8
-                cols_v = st.columns(NUM_COLS)
-                for i, ltr in enumerate(letter_pool):
-                    col = cols_v[i % NUM_COLS]
-                    if i in used_indices:
-                        col.button("·", key=f"vl_{st.session_state.q_idx}_{i}",
-                                   use_container_width=True, disabled=True)
+        if not _replay_mode:
+            # 模式切換
+            if task_mode in ("自選", "學生自選"):
+                _vm_default = st.session_state.get("vocab_mode_global", "🔤 拆字母")
+                if _vm_default not in ["🔤 拆字母", "⌨️ 鍵盤"]:
+                    _vm_default = "🔤 拆字母"
+                vocab_mode = st.radio(
+                    "輸入模式",
+                    ["🔤 拆字母", "⌨️ 鍵盤"],
+                    horizontal=True,
+                    key="vocab_mode_global",
+                    disabled=st.session_state.get("show_analysis", False),
+                    index=["🔤 拆字母", "⌨️ 鍵盤"].index(_vm_default)
+                )
+                # 模式切換時清除另一模式的輸入記錄
+                _prev_mode = st.session_state.get("_vocab_prev_mode")
+                if _prev_mode and _prev_mode != vocab_mode:
+                    _q = st.session_state.q_idx
+                    if vocab_mode == "⌨️ 鍵盤":
+                        # 切換到鍵盤：清除字母池答案
+                        st.session_state[f"vocab_ans_{_q}"] = []
+                        st.session_state[f"vocab_used_{_q}"] = []
                     else:
-                        if col.button(ltr.lower(), key=f"vl_{st.session_state.q_idx}_{i}",
-                                      use_container_width=True):
-                            st.session_state[ans_key_v].append(ltr)
+                        # 切換到字母池：清除鍵盤答案
+                        st.session_state[f"vocab_kb_{_q}"] = ""
+                st.session_state["_vocab_prev_mode"] = vocab_mode
+            else:
+                vocab_mode = "🔤 拆字母" if task_mode == "拆字母" else "⌨️ 鍵盤"
+            if not vocab_mode:
+                vocab_mode = "🔤 拆字母"
+
+            # 初始化字母池（pool_key 含干擾字數，設定改變時自動重建）
+            pool_key = f"vocab_pool_{st.session_state.q_idx}_{extra_letters}"
+            if pool_key not in st.session_state:
+                # 清除同題目舊的 pool（不同干擾字數的）
+                for _k in [k for k in st.session_state if k.startswith(f"vocab_pool_{st.session_state.q_idx}_")]:
+                    if _k != pool_key:
+                        del st.session_state[_k]
+                _clean_word = _clean_vocab(word)
+                # 多單字提示：顯示每個字的字母數
+                _word_parts = word.strip().split()
+                if len(_word_parts) > 1:
+                    _hint = " + ".join([f"{len(_clean_vocab(p))}字母" for p in _word_parts])
+                    st.caption(f"💡 提示：共 {len(_word_parts)} 個字（{_hint}），字母池已去除空格")
+                letters = list(_clean_word)
+                _random.shuffle(letters)
+                candidates = [c for c in _string.ascii_uppercase if c not in _clean_word]
+                extra = _random.sample(candidates, min(extra_letters, len(candidates)))
+                all_letters = letters + extra
+                _random.shuffle(all_letters)
+                st.session_state[pool_key] = all_letters
+            letter_pool = st.session_state[pool_key]
+
+            ans_key_v = f"vocab_ans_{st.session_state.q_idx}"
+            if ans_key_v not in st.session_state:
+                st.session_state[ans_key_v] = []
+
+            # ── 拆字母模式 ────────────────────────────────────────────────────
+            if "拆字母" in vocab_mode:
+                current_ans = st.session_state[ans_key_v]
+                # 答案顯示區
+                if current_ans:
+                    letters_html = "".join([
+                        f"<span style='display:inline-block;padding:4px 10px;margin:2px;background:#4a90d9;color:white;border-radius:6px;font-size:1.3rem;font-weight:700;'>{c.lower()}</span>"
+                        for c in current_ans
+                    ])
+                    ans_display = letters_html
+                else:
+                    ans_display = "<span style='color:#aaa;font-size:1rem;'>點選下方字母</span>"
+                st.markdown(f"<div style='padding:10px;min-height:50px;background:#f0f4ff;border-radius:8px;'>{ans_display}</div>", unsafe_allow_html=True)
+
+                bc1, bc2, bc3 = st.columns(3)
+                if bc1.button("⬅️ 退回一步", use_container_width=True, key=f"vb_back_{st.session_state.q_idx}",
+                              disabled=st.session_state.get("show_analysis", False)):
+                    if current_ans:
+                        _removed = st.session_state[ans_key_v].pop()
+                        # 只有非空格才從 vocab_used 移除
+                        if _removed != ' ':
                             used_st = st.session_state.get(f"vocab_used_{st.session_state.q_idx}", [])
-                            used_st.append(i)
+                            if used_st:
+                                used_st.pop()
                             st.session_state[f"vocab_used_{st.session_state.q_idx}"] = used_st
-                            st.rerun()
-
-                # 選完正確字母數後自動對答（不計空格）
-                if word and len([c for c in current_ans if c != ' ']) >= len(_clean_vocab(word)) and not st.session_state.get("show_analysis"):
-                    is_ok = _clean_vocab("".join(current_ans)) == _clean_vocab(word)
-                    st.session_state.update({"current_res": "✅ 正確！" if is_ok else f"❌ 錯誤！正確答案：{word}", "show_analysis": True})
-                    st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
-                    append_to_sheet("logs", pd.DataFrame([{"時間": get_now().strftime("%Y-%m-%d %H:%M:%S"), "姓名": st.session_state.user_name, "分組": st.session_state.group_id, "題目ID": q.get("題目ID","N/A"), "結果": "練習" if st.session_state.get("practice_mode") else ("✅" if is_ok else "❌"), "學生答案": "".join(current_ans), "任務名稱": st.session_state.get("current_task_name",""), "作答秒數": st.session_state.get(f"_q_start_time_{st.session_state.q_idx}") and round(__import__("time").time() - st.session_state.get(f"_q_start_time_{st.session_state.q_idx}", __import__("time").time()))}]))
-                    _load_logs_cached.clear()
+                        st.rerun()
+                if bc2.button("🗑️ 全部清除", use_container_width=True, key=f"vb_clear_{st.session_state.q_idx}",
+                              disabled=st.session_state.get("show_analysis", False)):
+                    st.session_state[ans_key_v] = []
+                    st.session_state[f"vocab_used_{st.session_state.q_idx}"] = []
                     st.rerun()
-
-        # ── 鍵盤模式 ──────────────────────────────────────────────────────
-        else:
-            kb_ans = st.session_state.get(f"vocab_kb_{st.session_state.q_idx}", "")
-            if not st.session_state.get("show_analysis"):
-                # 實體鍵盤輸入框（自動 focus）
-                _phys_key = f"vocab_phys_{st.session_state.q_idx}"
-                _phys_val = st.text_input(
-                    "輸入答案後按 Enter",
-                    key=_phys_key,
-                    placeholder="在這裡輸入英文，按 Enter 直接送出...",
-                )
-                # 自動 focus：用 components.v1.html 注入 JS
-                import streamlit.components.v1 as _components
-                _components.html(
-                    """<script>
-                    window.parent.document.querySelectorAll('input[type="text"]').forEach(function(el, i, arr){
-                        if(i === arr.length - 1) { el.focus(); el.select(); }
-                    });
-                    </script>""",
-                    height=0
-                )
-                if _phys_val:
-                    # 第一次 Enter：直接轉大寫並送出（不需要第二次）
-                    _phys_upper = _clean_vocab(_phys_val)
-                    is_ok = _phys_upper == _clean_vocab(word)
-                    st.session_state[f"vocab_kb_{st.session_state.q_idx}"] = _phys_val.upper()
-                    st.session_state.update({
-                        "current_res": "✅ 正確！" if is_ok else f"❌ 錯誤！正確答案：{word}",
-                        "show_analysis": True
-                    })
-                    _log_result = "練習" if st.session_state.get("practice_mode") else ("✅" if is_ok else "❌")
-                    append_to_sheet("logs", pd.DataFrame([{
-                        "時間": get_now().strftime("%Y-%m-%d %H:%M:%S"),
-                        "姓名": st.session_state.user_name,
-                        "分組": st.session_state.group_id,
-                        "題目ID": q.get("題目ID","N/A"),
-                        "結果": _log_result,
-                        "學生答案": _phys_val.upper(),
-                        "任務名稱": st.session_state.get("current_task_name",""), "作答秒數": round(__import__("time").time() - st.session_state.get(f"_q_start_time_{st.session_state.q_idx}", __import__("time").time()))
-                    }]))
-                    st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
-                    _load_logs_cached.clear()
-                    st.rerun()
-
-                # 顯示已輸入的答案（螢幕鍵盤累積）
-                if kb_ans:
-                    st.markdown(f"<div style='font-size:1.4rem;letter-spacing:0.1em;padding:10px;background:#f0f4ff;border-radius:8px;'>{kb_ans}</div>", unsafe_allow_html=True)
-
-                _kb_row0, _kb_row1 = st.columns([3, 1])
-                if _kb_row1.button("🗑️ 清除", key=f"kb_clear_{st.session_state.q_idx}", use_container_width=True):
-                    st.session_state[f"vocab_kb_{st.session_state.q_idx}"] = ""
-                    st.rerun()
-                keyboard_rows = [list("qwertyuiop"), list("asdfghjkl"), list("zxcvbnm")]
-                for row in keyboard_rows:
-                    kb_cols = st.columns(len(row))
-                    for i, k in enumerate(row):
-                        if kb_cols[i].button(k, key=f"kb_{st.session_state.q_idx}_{k}{i}", use_container_width=True):
-                            st.session_state[f"vocab_kb_{st.session_state.q_idx}"] = st.session_state.get(f"vocab_kb_{st.session_state.q_idx}", "") + k.upper()
-                            st.rerun()
                 # 多字單字才顯示空格鍵
                 if len(_word_parts) > 1:
-                    if st.button("␣  空格", use_container_width=True, key=f"kb_space_{st.session_state.q_idx}"):
-                        st.session_state[f"vocab_kb_{st.session_state.q_idx}"] = st.session_state.get(f"vocab_kb_{st.session_state.q_idx}", "") + " "
+                    if bc3.button("␣ 空格", use_container_width=True, key=f"vb_space_{st.session_state.q_idx}",
+                                  disabled=st.session_state.get("show_analysis", False)):
+                        st.session_state[ans_key_v].append(' ')
                         st.rerun()
-                kb_current = st.session_state.get(f"vocab_kb_{st.session_state.q_idx}", "")
-                if word and len(kb_current) >= len(_clean_vocab(word)) and len(kb_current) > 0:
-                    if st.button("✅ 檢查答案", type="primary", use_container_width=True, key=f"kb_check_{st.session_state.q_idx}"):
-                        is_ok = _clean_vocab(kb_current) == _clean_vocab(word)
+
+                if not st.session_state.get("show_analysis"):
+                    used_indices = set(st.session_state.get(f"vocab_used_{st.session_state.q_idx}", []))
+                    # 固定 8 欄，字母位置不移動，已選走的顯示灰色佔位
+                    NUM_COLS = 8
+                    cols_v = st.columns(NUM_COLS)
+                    for i, ltr in enumerate(letter_pool):
+                        col = cols_v[i % NUM_COLS]
+                        if i in used_indices:
+                            col.button("·", key=f"vl_{st.session_state.q_idx}_{i}",
+                                       use_container_width=True, disabled=True)
+                        else:
+                            if col.button(ltr.lower(), key=f"vl_{st.session_state.q_idx}_{i}",
+                                          use_container_width=True):
+                                st.session_state[ans_key_v].append(ltr)
+                                used_st = st.session_state.get(f"vocab_used_{st.session_state.q_idx}", [])
+                                used_st.append(i)
+                                st.session_state[f"vocab_used_{st.session_state.q_idx}"] = used_st
+                                st.rerun()
+
+                    # 選完正確字母數後自動對答（不計空格）
+                    if word and len([c for c in current_ans if c != ' ']) >= len(_clean_vocab(word)) and not st.session_state.get("show_analysis"):
+                        is_ok = _clean_vocab("".join(current_ans)) == _clean_vocab(word)
                         st.session_state.update({"current_res": "✅ 正確！" if is_ok else f"❌ 錯誤！正確答案：{word}", "show_analysis": True})
-                        _log_result = "練習" if st.session_state.get("practice_mode") else ("✅" if is_ok else "❌")
                         st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
-                        append_to_sheet("logs", pd.DataFrame([{"時間": get_now().strftime("%Y-%m-%d %H:%M:%S"), "姓名": st.session_state.user_name, "分組": st.session_state.group_id, "題目ID": q.get("題目ID","N/A"), "結果": _log_result, "學生答案": kb_current, "任務名稱": st.session_state.get("current_task_name",""), "作答秒數": st.session_state.get(f"_q_start_time_{st.session_state.q_idx}") and round(__import__("time").time() - st.session_state.get(f"_q_start_time_{st.session_state.q_idx}", __import__("time").time()))}]))
+                        append_to_sheet("logs", pd.DataFrame([{"時間": get_now().strftime("%Y-%m-%d %H:%M:%S"), "姓名": st.session_state.user_name, "分組": st.session_state.group_id, "題目ID": q.get("題目ID","N/A"), "結果": "練習" if st.session_state.get("practice_mode") else ("✅" if is_ok else "❌"), "學生答案": "".join(current_ans), "任務名稱": st.session_state.get("current_task_name",""), "作答秒數": st.session_state.get(f"_q_start_time_{st.session_state.q_idx}") and round(__import__("time").time() - st.session_state.get(f"_q_start_time_{st.session_state.q_idx}", __import__("time").time()))}]))
                         _load_logs_cached.clear()
                         st.rerun()
 
-        # ── 多次打字練習模式 ───────────────────────────────────────────────
-        if _typing_mode and is_vocab:
-            _tc_key   = f"_typing_correct_{st.session_state.q_idx}"
-            _tc_count = int(st.session_state.get(_tc_key, 0))
-            _tc_input_key = f"_typing_input_{st.session_state.q_idx}_{_tc_count}"
-
-            st.markdown(f"⌨️ **多次打字練習** ｜ 已答對：**{_tc_count} / {_typing_target}** 次")
-            st.progress(_tc_count / _typing_target)
-
-            if _tc_count < _typing_target:
-                _tc_val = st.text_input(
-                    "輸入答案後按 Enter",
-                    key=_tc_input_key,
-                    placeholder="在這裡輸入英文，按 Enter 送出...",
-                )
-                import streamlit.components.v1 as _components
-                _components.html(
-                    """<script>
-                    window.parent.document.querySelectorAll('input[type="text"]').forEach(function(el, i, arr){
-                        if(i === arr.length - 1) { el.focus(); el.select(); }
-                    });
-                    </script>""", height=0
-                )
-                if _tc_val:
-                    _is_ok_tc = _clean_vocab(_tc_val) == _clean_vocab(word)
-                    if _is_ok_tc:
-                        _tc_count += 1
-                        st.session_state[_tc_key] = _tc_count
-                        append_to_sheet("logs", pd.DataFrame([{
-                            "時間": get_now().strftime("%Y-%m-%d %H:%M:%S"),
-                            "姓名": st.session_state.user_name, "分組": st.session_state.group_id,
-                            "題目ID": q.get("題目ID","N/A"), "結果": "✅",
-                            "學生答案": _tc_val.upper(), "任務名稱": st.session_state.get("current_task_name",""),
-                            "作答秒數": round(__import__("time").time() - st.session_state.get(f"_q_start_time_{st.session_state.q_idx}", __import__("time").time()))
-                        }]))
-                        _load_logs_cached.clear()
-                        if _tc_count >= _typing_target:
-                            st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
-                            st.success(f"✅ 達到 {_typing_target} 次正確！進入下一題")
-                            st.rerun()
-                        else:
-                            st.success(f"✅ 正確！再答 {_typing_target - _tc_count} 次")
-                            st.rerun()
-                    else:
-                        append_to_sheet("logs", pd.DataFrame([{
-                            "時間": get_now().strftime("%Y-%m-%d %H:%M:%S"),
-                            "姓名": st.session_state.user_name, "分組": st.session_state.group_id,
-                            "題目ID": q.get("題目ID","N/A"), "結果": "❌",
-                            "學生答案": _tc_val.upper(), "任務名稱": st.session_state.get("current_task_name",""),
-                            "作答秒數": round(__import__("time").time() - st.session_state.get(f"_q_start_time_{st.session_state.q_idx}", __import__("time").time()))
-                        }]))
-                        _load_logs_cached.clear()
-                        st.warning(f"❌ 錯誤！正確答案：**{word}**，繼續練習")
-                        st.rerun()
+            # ── 鍵盤模式 ──────────────────────────────────────────────────────
             else:
-                # 已達目標，等待自動跳題（answered_count 已累加）
-                st.success(f"✅ 已達 {_typing_target} 次正確！")
+                kb_ans = st.session_state.get(f"vocab_kb_{st.session_state.q_idx}", "")
+                if not st.session_state.get("show_analysis"):
+                    # 實體鍵盤輸入框（自動 focus）
+                    _phys_key = f"vocab_phys_{st.session_state.q_idx}"
+                    _phys_val = st.text_input(
+                        "輸入答案後按 Enter",
+                        key=_phys_key,
+                        placeholder="在這裡輸入英文，按 Enter 直接送出...",
+                    )
+                    # 自動 focus：用 components.v1.html 注入 JS
+                    import streamlit.components.v1 as _components
+                    _components.html(
+                        """<script>
+                        window.parent.document.querySelectorAll('input[type="text"]').forEach(function(el, i, arr){
+                            if(i === arr.length - 1) { el.focus(); el.select(); }
+                        });
+                        </script>""",
+                        height=0
+                    )
+                    if _phys_val:
+                        # 第一次 Enter：直接轉大寫並送出（不需要第二次）
+                        _phys_upper = _clean_vocab(_phys_val)
+                        is_ok = _phys_upper == _clean_vocab(word)
+                        st.session_state[f"vocab_kb_{st.session_state.q_idx}"] = _phys_val.upper()
+                        st.session_state.update({
+                            "current_res": "✅ 正確！" if is_ok else f"❌ 錯誤！正確答案：{word}",
+                            "show_analysis": True
+                        })
+                        _log_result = "練習" if st.session_state.get("practice_mode") else ("✅" if is_ok else "❌")
+                        append_to_sheet("logs", pd.DataFrame([{
+                            "時間": get_now().strftime("%Y-%m-%d %H:%M:%S"),
+                            "姓名": st.session_state.user_name,
+                            "分組": st.session_state.group_id,
+                            "題目ID": q.get("題目ID","N/A"),
+                            "結果": _log_result,
+                            "學生答案": _phys_val.upper(),
+                            "任務名稱": st.session_state.get("current_task_name",""), "作答秒數": round(__import__("time").time() - st.session_state.get(f"_q_start_time_{st.session_state.q_idx}", __import__("time").time()))
+                        }]))
+                        st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
+                        _load_logs_cached.clear()
+                        st.rerun()
 
-        # ── 多次撥放模式 ────────────────────────────────────────────────────
-        if _replay_mode and is_vocab:
-            import base64 as _b64, time as _rp_time
-            _rp_key      = f"_replay_count_{st.session_state.q_idx}"
-            _rp_tts_key  = f"_replay_tts_{st.session_state.q_idx}"
-            _rp_count    = int(st.session_state.get(_rp_key, 0))
-            _rp_loop_done= int(st.session_state.get("replay_loop_done", 0))
+                    # 顯示已輸入的答案（螢幕鍵盤累積）
+                    if kb_ans:
+                        st.markdown(f"<div style='font-size:1.4rem;letter-spacing:0.1em;padding:10px;background:#f0f4ff;border-radius:8px;'>{kb_ans}</div>", unsafe_allow_html=True)
 
-            # 載入 TTS 男聲（只載入一次）
-            if not st.session_state.get(_rp_tts_key):
-                try:
-                    import openai as _oai
-                    _client = _oai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
-                    tts_m = _client.audio.speech.create(model="tts-1", voice="onyx", input=word).content
-                    st.session_state[_rp_tts_key] = _b64.b64encode(tts_m).decode()
-                    st.rerun()
-                except Exception as _e:
-                    st.error(f"TTS 載入失敗：{_e}")
-
-            _rp_audio = st.session_state.get(_rp_tts_key, "")
-            st.markdown(f"🔊 **多次撥放** ｜ 本題播放：**{_rp_count + 1} / {_replay_per_q}** 次　｜　循環：**{_rp_loop_done + 1} / {_replay_loops}** 次")
-            st.markdown(f"### 🔊 {word}")
-            st.caption(f"📖 {meaning}")
-
-            if _rp_audio:
-                # autoplay 音檔
-                st.markdown(
-                    f'<audio autoplay style="width:100%">'
-                    f'<source src="data:audio/mpeg;base64,{_rp_audio}" type="audio/mpeg"></audio>',
-                    unsafe_allow_html=True
-                )
-                # 估算單字音檔長度（每個字母約 0.15 秒，最少 1 秒），加 0.8 秒間隔
-                _word_dur = max(1.0, len(word) * 0.15) + 0.8
-                _rp_time.sleep(_word_dur)
-
-                # 計數 +1
-                _rp_count += 1
-                st.session_state[_rp_key] = _rp_count
-
-                if _rp_count >= _replay_per_q:
-                    # 本題播完，跳下一題
-                    st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
-                    _quiz = st.session_state.get("quiz_list", [])
-                    _next_idx = st.session_state.q_idx + 1
-                    if _next_idx >= len(_quiz):
-                        # 本輪結束
-                        _rp_loop_done += 1
-                        st.session_state["replay_loop_done"] = _rp_loop_done
-                        if _rp_loop_done >= _replay_loops:
-                            st.session_state.update({"quiz_loaded": False, "range_confirmed": False, "replay_mode": False})
+                    _kb_row0, _kb_row1 = st.columns([3, 1])
+                    if _kb_row1.button("🗑️ 清除", key=f"kb_clear_{st.session_state.q_idx}", use_container_width=True):
+                        st.session_state[f"vocab_kb_{st.session_state.q_idx}"] = ""
+                        st.rerun()
+                    keyboard_rows = [list("qwertyuiop"), list("asdfghjkl"), list("zxcvbnm")]
+                    for row in keyboard_rows:
+                        kb_cols = st.columns(len(row))
+                        for i, k in enumerate(row):
+                            if kb_cols[i].button(k, key=f"kb_{st.session_state.q_idx}_{k}{i}", use_container_width=True):
+                                st.session_state[f"vocab_kb_{st.session_state.q_idx}"] = st.session_state.get(f"vocab_kb_{st.session_state.q_idx}", "") + k.upper()
+                                st.rerun()
+                    # 多字單字才顯示空格鍵
+                    if len(_word_parts) > 1:
+                        if st.button("␣  空格", use_container_width=True, key=f"kb_space_{st.session_state.q_idx}"):
+                            st.session_state[f"vocab_kb_{st.session_state.q_idx}"] = st.session_state.get(f"vocab_kb_{st.session_state.q_idx}", "") + " "
                             st.rerun()
+                    kb_current = st.session_state.get(f"vocab_kb_{st.session_state.q_idx}", "")
+                    if word and len(kb_current) >= len(_clean_vocab(word)) and len(kb_current) > 0:
+                        if st.button("✅ 檢查答案", type="primary", use_container_width=True, key=f"kb_check_{st.session_state.q_idx}"):
+                            is_ok = _clean_vocab(kb_current) == _clean_vocab(word)
+                            st.session_state.update({"current_res": "✅ 正確！" if is_ok else f"❌ 錯誤！正確答案：{word}", "show_analysis": True})
+                            _log_result = "練習" if st.session_state.get("practice_mode") else ("✅" if is_ok else "❌")
+                            st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
+                            append_to_sheet("logs", pd.DataFrame([{"時間": get_now().strftime("%Y-%m-%d %H:%M:%S"), "姓名": st.session_state.user_name, "分組": st.session_state.group_id, "題目ID": q.get("題目ID","N/A"), "結果": _log_result, "學生答案": kb_current, "任務名稱": st.session_state.get("current_task_name",""), "作答秒數": st.session_state.get(f"_q_start_time_{st.session_state.q_idx}") and round(__import__("time").time() - st.session_state.get(f"_q_start_time_{st.session_state.q_idx}", __import__("time").time()))}]))
+                            _load_logs_cached.clear()
+                            st.rerun()
+
+            # ── 多次打字練習模式 ───────────────────────────────────────────────
+            if _typing_mode and is_vocab:
+                _tc_key   = f"_typing_correct_{st.session_state.q_idx}"
+                _tc_count = int(st.session_state.get(_tc_key, 0))
+                _tc_input_key = f"_typing_input_{st.session_state.q_idx}_{_tc_count}"
+
+                st.markdown(f"⌨️ **多次打字練習** ｜ 已答對：**{_tc_count} / {_typing_target}** 次")
+                st.progress(_tc_count / _typing_target)
+
+                if _tc_count < _typing_target:
+                    _tc_val = st.text_input(
+                        "輸入答案後按 Enter",
+                        key=_tc_input_key,
+                        placeholder="在這裡輸入英文，按 Enter 送出...",
+                    )
+                    import streamlit.components.v1 as _components
+                    _components.html(
+                        """<script>
+                        window.parent.document.querySelectorAll('input[type="text"]').forEach(function(el, i, arr){
+                            if(i === arr.length - 1) { el.focus(); el.select(); }
+                        });
+                        </script>""", height=0
+                    )
+                    if _tc_val:
+                        _is_ok_tc = _clean_vocab(_tc_val) == _clean_vocab(word)
+                        if _is_ok_tc:
+                            _tc_count += 1
+                            st.session_state[_tc_key] = _tc_count
+                            append_to_sheet("logs", pd.DataFrame([{
+                                "時間": get_now().strftime("%Y-%m-%d %H:%M:%S"),
+                                "姓名": st.session_state.user_name, "分組": st.session_state.group_id,
+                                "題目ID": q.get("題目ID","N/A"), "結果": "✅",
+                                "學生答案": _tc_val.upper(), "任務名稱": st.session_state.get("current_task_name",""),
+                                "作答秒數": round(__import__("time").time() - st.session_state.get(f"_q_start_time_{st.session_state.q_idx}", __import__("time").time()))
+                            }]))
+                            _load_logs_cached.clear()
+                            if _tc_count >= _typing_target:
+                                st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
+                                st.success(f"✅ 達到 {_typing_target} 次正確！進入下一題")
+                                st.rerun()
+                            else:
+                                st.success(f"✅ 正確！再答 {_typing_target - _tc_count} 次")
+                                st.rerun()
                         else:
-                            st.session_state.q_idx = 0
-                            for _k in [k for k in list(st.session_state.keys()) if k.startswith("_replay_count_")]:
-                                del st.session_state[_k]
-                    else:
-                        st.session_state.q_idx = _next_idx
-                        st.session_state.pop(_rp_key, None)
-                st.rerun()
+                            append_to_sheet("logs", pd.DataFrame([{
+                                "時間": get_now().strftime("%Y-%m-%d %H:%M:%S"),
+                                "姓名": st.session_state.user_name, "分組": st.session_state.group_id,
+                                "題目ID": q.get("題目ID","N/A"), "結果": "❌",
+                                "學生答案": _tc_val.upper(), "任務名稱": st.session_state.get("current_task_name",""),
+                                "作答秒數": round(__import__("time").time() - st.session_state.get(f"_q_start_time_{st.session_state.q_idx}", __import__("time").time()))
+                            }]))
+                            _load_logs_cached.clear()
+                            st.warning(f"❌ 錯誤！正確答案：**{word}**，繼續練習")
+                            st.rerun()
+                else:
+                    # 已達目標，等待自動跳題（answered_count 已累加）
+                    st.success(f"✅ 已達 {_typing_target} 次正確！")
+
+            # ── 多次撥放模式 ────────────────────────────────────────────────────
+            if _replay_mode and is_vocab:
+                import base64 as _b64, time as _rp_time
+                _rp_key      = f"_replay_count_{st.session_state.q_idx}"
+                _rp_tts_key  = f"_replay_tts_{st.session_state.q_idx}"
+                _rp_count    = int(st.session_state.get(_rp_key, 0))
+                _rp_loop_done= int(st.session_state.get("replay_loop_done", 0))
+
+                # 載入 TTS 男聲（只載入一次）
+                if not st.session_state.get(_rp_tts_key):
+                    try:
+                        import openai as _oai
+                        _client = _oai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+                        tts_m = _client.audio.speech.create(model="tts-1", voice="onyx", input=word).content
+                        st.session_state[_rp_tts_key] = _b64.b64encode(tts_m).decode()
+                        st.rerun()
+                    except Exception as _e:
+                        st.error(f"TTS 載入失敗：{_e}")
+
+                _rp_audio = st.session_state.get(_rp_tts_key, "")
+                st.markdown(f"🔊 **多次撥放** ｜ 本題播放：**{_rp_count + 1} / {_replay_per_q}** 次　｜　循環：**{_rp_loop_done + 1} / {_replay_loops}** 次")
+                st.markdown(f"### 🔊 {word}")
+                st.caption(f"📖 {meaning}")
+
+                if _rp_audio:
+                    # 用 JS Audio() 播放（不受瀏覽器 autoplay 封鎖）
+                    import streamlit.components.v1 as _rp_comp
+                    _rp_comp.html(
+                        f"<script>(function(){{"
+                        f"var a=new Audio('data:audio/mpeg;base64,{_rp_audio}');"
+                        f"a.play().catch(function(e){{console.log(e);}});"
+                        f"}})();</script>",
+                        height=0
+                    )
+                    # 估算單字音檔長度（每個字母約 0.15 秒，最少 1.5 秒），加 1 秒間隔
+                    _word_dur = max(1.5, len(word) * 0.15) + 1.0
+                    _rp_time.sleep(_word_dur)
+
+                    # 計數 +1
+                    _rp_count += 1
+                    st.session_state[_rp_key] = _rp_count
+
+                    if _rp_count >= _replay_per_q:
+                        # 本題播完，跳下一題
+                        st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
+                        _quiz = st.session_state.get("quiz_list", [])
+                        _next_idx = st.session_state.q_idx + 1
+                        if _next_idx >= len(_quiz):
+                            # 本輪結束
+                            _rp_loop_done += 1
+                            st.session_state["replay_loop_done"] = _rp_loop_done
+                            if _rp_loop_done >= _replay_loops:
+                                st.session_state.update({"quiz_loaded": False, "range_confirmed": False, "replay_mode": False})
+                                st.rerun()
+                            else:
+                                st.session_state.q_idx = 0
+                                for _k in [k for k in list(st.session_state.keys()) if k.startswith("_replay_count_")]:
+                                    del st.session_state[_k]
+                        else:
+                            st.session_state.q_idx = _next_idx
+                            st.session_state.pop(_rp_key, None)
+                    st.rerun()
 
         # 答對後播放 TTS（自然聲音 + 男聲）
         if st.session_state.get("show_analysis") and is_vocab:
