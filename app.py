@@ -1,7 +1,7 @@
 # ==============================================================================
 # 🧩 英文全能練習系統 (V2.9.482 - 跟著唸AI評分logs版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.522
+# 📌 版本編號 (VERSION): 2.9.523
 # 📅 更新日期: 2026-06-22
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -45,7 +45,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.522"
+VERSION = "2.9.523"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -4366,8 +4366,8 @@ if st.session_state.quiz_loaded:
     _q_elapsed  = int(_time_sys.time() - st.session_state[_q_timer_key])
     _idle_limit = 90
 
-    # 90 秒閒置：寫入超時記錄並跳回任務列表
-    if _q_elapsed >= _idle_limit and not st.session_state.get("show_analysis"):
+    # 90 秒閒置：寫入超時記錄並跳回任務列表（多次打字練習模式跳過）
+    if _q_elapsed >= _idle_limit and not st.session_state.get("show_analysis") and not _typing_mode:
         import pandas as _pd_timeout
         _timeout_row = {
             "時間": get_now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -4381,7 +4381,6 @@ if st.session_state.quiz_loaded:
             "作答秒數": _q_elapsed,
         }
         append_to_sheet("logs", _pd_timeout.DataFrame([_timeout_row]))
-        # 清除 autorefresh 避免空轉
         _ar_key = f"timer_refresh_{st.session_state.q_idx}"
         st.session_state.pop(_ar_key, None)
         st.session_state.update({
@@ -4393,7 +4392,7 @@ if st.session_state.quiz_loaded:
     # 快速答題：答完自動跳下一題
     if _quick_mode and st.session_state.get('show_analysis') and st.session_state.get('_quick_auto_next'):
         st.session_state.pop('_quick_auto_next', None)
-        _clear_q()  # 清除當前題狀態
+        _clear_q()
         if st.session_state.q_idx + 1 < len(st.session_state.quiz_list):
             st.session_state.q_idx += 1
         else:
@@ -4407,14 +4406,20 @@ if st.session_state.quiz_loaded:
             st.session_state['_first_q_cleared'] = True
     elif st.session_state.get('q_idx', 0) > 0:
         st.session_state.pop('_first_q_cleared', None)
-    # 計時顯示
-    _remain = max(0, _idle_limit - _q_elapsed)
-    _timer_color = "🔴" if _remain <= 15 else ("🟡" if _remain <= 30 else "🟢")
+    # 計時顯示（多次打字練習模式不顯示倒數）
     _answered_now = st.session_state.get('answered_count', 0)
-    if not st.session_state.get("show_analysis"):
-        st.markdown(f"### 🔴 練習中 (第 {st.session_state.q_idx + 1} / {total_q} 題　｜　已作答 {_answered_now} 題　｜　{_timer_color} {_remain}秒) {_mode_label}")
+    if _typing_mode:
+        if not st.session_state.get("show_analysis"):
+            st.markdown(f"### 🔴 練習中 (第 {st.session_state.q_idx + 1} / {total_q} 題　｜　已作答 {_answered_now} 題) {_mode_label}")
+        else:
+            st.markdown(f"### 🔴 練習中 (第 {st.session_state.q_idx + 1} / {total_q} 題　｜　已作答 {_answered_now} 題) {_mode_label}")
     else:
-        st.markdown(f"### 🔴 練習中 (第 {st.session_state.q_idx + 1} / {total_q} 題　｜　已作答 {_answered_now} 題) {_mode_label}")
+        _remain = max(0, _idle_limit - _q_elapsed)
+        _timer_color = "🔴" if _remain <= 15 else ("🟡" if _remain <= 30 else "🟢")
+        if not st.session_state.get("show_analysis"):
+            st.markdown(f"### 🔴 練習中 (第 {st.session_state.q_idx + 1} / {total_q} 題　｜　已作答 {_answered_now} 題　｜　{_timer_color} {_remain}秒) {_mode_label}")
+        else:
+            st.markdown(f"### 🔴 練習中 (第 {st.session_state.q_idx + 1} / {total_q} 題　｜　已作答 {_answered_now} 題) {_mode_label}")
     q = st.session_state.quiz_list[st.session_state.q_idx]
 
     # ── 跟著唸模式 ────────────────────────────────────────────────────────
