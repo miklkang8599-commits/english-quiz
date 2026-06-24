@@ -1,7 +1,7 @@
 # ==============================================================================
 # 🧩 英文全能練習系統 (V2.9.482 - 跟著唸AI評分logs版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.504
+# 📌 版本編號 (VERSION): 2.9.505
 # 📅 更新日期: 2026-06-22
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -45,7 +45,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.504"
+VERSION = "2.9.505"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -5051,8 +5051,8 @@ if st.session_state.quiz_loaded:
             st.session_state["vocab_q_idx"]      = None
             st.rerun()
 
-        # 限時倒數
-        if use_timer > 0:
+        # 限時倒數（多次打字練習模式下不限時）
+        if use_timer > 0 and not _typing_mode:
             if st.session_state.get("vocab_q_idx") != st.session_state.q_idx or not st.session_state.get("vocab_start_time"):
                 st.session_state["vocab_start_time"] = get_now().timestamp()
                 st.session_state["vocab_q_idx"] = st.session_state.q_idx
@@ -5093,6 +5093,9 @@ if st.session_state.quiz_loaded:
                         st.session_state[f"vocab_used_{_q}"] = []
                     else:
                         st.session_state[f"vocab_kb_{_q}"] = ""
+                    # 清除 show_analysis，避免換模式後殘留造成錯誤
+                    st.session_state["show_analysis"] = False
+                    st.session_state["current_res"] = ""
                 st.session_state["_vocab_prev_mode"] = vocab_mode
             else:
                 vocab_mode = "🔤 拆字母" if task_mode == "拆字母" else "⌨️ 鍵盤"
