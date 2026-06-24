@@ -1,7 +1,7 @@
 # ==============================================================================
 # 🧩 英文全能練習系統 (V2.9.482 - 跟著唸AI評分logs版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.513
+# 📌 版本編號 (VERSION): 2.9.514
 # 📅 更新日期: 2026-06-22
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -45,7 +45,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.513"
+VERSION = "2.9.514"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -5321,58 +5321,60 @@ if st.session_state.quiz_loaded:
 
             # ── 多次撥放模式 ────────────────────────────────────────────────────
             if _replay_mode and is_vocab:
-                import base64 as _b64, time as _rp_time
+                import base64 as _b64, time as _rp_time, io as _rp_io
                 _rp_key      = f"_replay_count_{st.session_state.q_idx}"
                 _rp_tts_key  = f"_replay_tts_{st.session_state.q_idx}"
                 _rp_count    = int(st.session_state.get(_rp_key, 0))
                 _rp_loop_done= int(st.session_state.get("replay_loop_done", 0))
 
-                # 載入 TTS 男聲（只載入一次）
+                # 顯示進度
+                st.markdown(f"🔊 **多次撥放** ｜ 本題播放：**{_rp_count + 1} / {_replay_per_q}** 次　｜　循環：**{_rp_loop_done + 1} / {_replay_loops}** 次")
+                st.markdown(f"### {word}")
+                st.markdown(f"📖 {meaning}")
+
+                # 載入 TTS 男聲（只載入一次，之後從 session_state 取）
                 if not st.session_state.get(_rp_tts_key):
                     try:
                         import openai as _oai
                         _client = _oai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
                         tts_m = _client.audio.speech.create(model="tts-1", voice="onyx", input=word).content
                         st.session_state[_rp_tts_key] = _b64.b64encode(tts_m).decode()
-                        st.rerun()
                     except Exception as _e:
                         st.error(f"TTS 載入失敗：{_e}")
+                    st.rerun()
 
-                _rp_audio = st.session_state.get(_rp_tts_key, "")
-                st.markdown(f"🔊 **多次撥放** ｜ 本題播放：**{_rp_count + 1} / {_replay_per_q}** 次　｜　循環：**{_rp_loop_done + 1} / {_replay_loops}** 次")
-                st.markdown(f"### {word}")
-                st.markdown(f"**📖 {meaning}**")
+                _rp_audio_b64 = st.session_state.get(_rp_tts_key, "")
+                if _rp_audio_b64:
+                    # 播放音檔
+                    _rp_audio_bytes = _b64.b64decode(_rp_audio_b64)
+                    st.audio(_rp_io.BytesIO(_rp_audio_bytes), format="audio/mpeg", autoplay=True)
 
-                if _rp_audio:
-                    import base64 as _b64_rp, io as _io_rp
-                    _audio_bytes_rp = _b64_rp.b64decode(_rp_audio)
-                    st.audio(_io_rp.BytesIO(_audio_bytes_rp), format="audio/mpeg")
-                    st.markdown("👆 播放音檔後，按下方按鈕繼續")
+                    # 等待音檔播完（依單字長度估算）再跳
+                    _word_dur = max(1.5, len(word) * 0.12) + 0.5
+                    _rp_time.sleep(_word_dur)
 
-                    if st.button(f"▶️ 已聽完，下一次（{_rp_count + 1}/{_replay_per_q}）",
-                                 key=f"rp_next_{st.session_state.q_idx}_{_rp_count}",
-                                 type="primary", use_container_width=True):
-                        _rp_count += 1
-                        st.session_state[_rp_key] = _rp_count
-                        if _rp_count >= _replay_per_q:
-                            # 本題播完，跳下一題
-                            st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
-                            _quiz = st.session_state.get("quiz_list", [])
-                            _next_idx = st.session_state.q_idx + 1
-                            if _next_idx >= len(_quiz):
-                                # 本輪結束
-                                _rp_loop_done += 1
-                                st.session_state["replay_loop_done"] = _rp_loop_done
-                                if _rp_loop_done >= _replay_loops:
-                                    st.session_state.update({"quiz_loaded": False, "range_confirmed": False, "replay_mode": False})
-                                else:
-                                    st.session_state.q_idx = 0
-                                    for _k in [k for k in list(st.session_state.keys()) if k.startswith("_replay_count_")]:
-                                        del st.session_state[_k]
+                    # 計數 +1
+                    _rp_count += 1
+                    st.session_state[_rp_key] = _rp_count
+
+                    if _rp_count >= _replay_per_q:
+                        # 本題播完，跳下一題
+                        st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
+                        _quiz = st.session_state.get("quiz_list", [])
+                        _next_idx = st.session_state.q_idx + 1
+                        if _next_idx >= len(_quiz):
+                            _rp_loop_done += 1
+                            st.session_state["replay_loop_done"] = _rp_loop_done
+                            if _rp_loop_done >= _replay_loops:
+                                st.session_state.update({"quiz_loaded": False, "range_confirmed": False, "replay_mode": False})
                             else:
-                                st.session_state.q_idx = _next_idx
-                                st.session_state.pop(_rp_key, None)
-                        st.rerun()
+                                st.session_state.q_idx = 0
+                                for _k in [k for k in list(st.session_state.keys()) if k.startswith("_replay_count_")]:
+                                    del st.session_state[_k]
+                        else:
+                            st.session_state.q_idx = _next_idx
+                            st.session_state.pop(_rp_key, None)
+                    st.rerun()
 
         # 答對後播放 TTS（自然聲音 + 男聲）
         if st.session_state.get("show_analysis") and is_vocab:
