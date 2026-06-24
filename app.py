@@ -1,7 +1,7 @@
 # ==============================================================================
 # 🧩 英文全能練習系統 (V2.9.482 - 跟著唸AI評分logs版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.507
+# 📌 版本編號 (VERSION): 2.9.509
 # 📅 更新日期: 2026-06-22
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -45,7 +45,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.507"
+VERSION = "2.9.509"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -5211,7 +5211,9 @@ if st.session_state.quiz_loaded:
                 kb_ans = st.session_state.get(f"vocab_kb_{st.session_state.q_idx}", "")
                 if not st.session_state.get("show_analysis"):
                     # 實體鍵盤輸入框（自動 focus）
-                    _phys_key = f"vocab_phys_{st.session_state.q_idx}"
+                    # 多次打字練習：加入送出次數讓每次答完後產生新的空白輸入框
+                    _phys_submit_count = int(st.session_state.get(f"_typing_submit_{st.session_state.q_idx}", 0)) if _typing_mode else 0
+                    _phys_key = f"vocab_phys_{st.session_state.q_idx}_{_phys_submit_count}"
                     _phys_val = st.text_input(
                         "輸入答案後按 Enter",
                         key=_phys_key,
@@ -5238,8 +5240,10 @@ if st.session_state.quiz_loaded:
                             if is_ok:
                                 _tc_now += 1
                                 st.session_state[_tc_key2] = _tc_now
+                            # 送出次數 +1（不論對錯），讓下次 render 產生新空白輸入框
+                            _submit_key = f"_typing_submit_{st.session_state.q_idx}"
+                            st.session_state[_submit_key] = int(st.session_state.get(_submit_key, 0)) + 1
                             st.session_state[f"vocab_kb_{st.session_state.q_idx}"] = ""
-                            st.session_state.pop(_phys_key, None)  # 清除 text_input 避免無限重送
                             append_to_sheet("logs", pd.DataFrame([{
                                 "時間": get_now().strftime("%Y-%m-%d %H:%M:%S"),
                                 "姓名": st.session_state.user_name,
@@ -5643,7 +5647,7 @@ if st.session_state.quiz_loaded:
                 f"vocab_ans_{q_idx}", f"vocab_used_{q_idx}",
                 f"vocab_kb_{q_idx}", f"vocab_tts_{q_idx}",
                 f"ls_ans_{q_idx}", f"ls_used_{q_idx}", f"ls_shuf_{q_idx}",
-                f"_typing_correct_{q_idx}", f"_replay_count_{q_idx}", f"_replay_tts_{q_idx}"
+                f"_typing_correct_{q_idx}", f"_typing_submit_{q_idx}", f"_replay_count_{q_idx}", f"_replay_tts_{q_idx}"
             ]:
                 st.session_state.pop(k, None)
 
