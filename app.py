@@ -1,7 +1,7 @@
 # ==============================================================================
 # 🧩 英文全能練習系統 (V2.9.482 - 跟著唸AI評分logs版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.500
+# 📌 版本編號 (VERSION): 2.9.501
 # 📅 更新日期: 2026-06-22
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -45,7 +45,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.500"
+VERSION = "2.9.501"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -5074,8 +5074,8 @@ if st.session_state.quiz_loaded:
                 _vm_default = st.session_state.get("vocab_mode_global", "🔤 拆字母")
                 if _vm_default not in ["🔤 拆字母", "⌨️ 鍵盤"]:
                     _vm_default = "🔤 拆字母"
-                if _typing_mode:
-                    # 多次打字練習：沿用上次選擇，不顯示 radio
+                if _typing_mode and st.session_state.get("_typing_mode_locked"):
+                    # 多次打字練習已鎖定模式：沿用，不顯示 radio
                     vocab_mode = _vm_default
                     st.caption(f"輸入模式：{vocab_mode}")
                 else:
@@ -5087,6 +5087,9 @@ if st.session_state.quiz_loaded:
                         disabled=st.session_state.get("show_analysis", False),
                         index=["🔤 拆字母", "⌨️ 鍵盤"].index(_vm_default)
                     )
+                    if _typing_mode:
+                        # 學生選完後鎖定
+                        st.session_state["_typing_mode_locked"] = True
                 # 模式切換時清除另一模式的輸入記錄
                 _prev_mode = st.session_state.get("_vocab_prev_mode")
                 if _prev_mode and _prev_mode != vocab_mode:
@@ -5678,7 +5681,7 @@ if st.session_state.quiz_loaded:
                 st.session_state.q_idx += 1
                 st.session_state.update({"show_analysis": False, "current_res": "", "vocab_start_time": None, "vocab_q_idx": None})
             else:
-                st.session_state.update({"quiz_loaded": False, "range_confirmed": False, "typing_mode": False})
+                st.session_state.update({"quiz_loaded": False, "range_confirmed": False, "typing_mode": False, "_typing_mode_locked": False})
                 st.success("🎉 多次打字練習完成！")
             st.rerun()
 
