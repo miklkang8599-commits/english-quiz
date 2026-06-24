@@ -1,7 +1,7 @@
 # ==============================================================================
 # 🧩 英文全能練習系統 (V2.9.482 - 跟著唸AI評分logs版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.520
+# 📌 版本編號 (VERSION): 2.9.521
 # 📅 更新日期: 2026-06-22
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -45,7 +45,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.520"
+VERSION = "2.9.521"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3515,7 +3515,7 @@ if not st.session_state.quiz_loaded:
                                       for rec in records:
                                           rec['_type']        = 'vocab'
                                           rec['_vocab_mode']  = v_mode_t
-                                          rec['_vocab_timer'] = v_timer_t
+                                          rec['_vocab_timer'] = 0 if _is_typing else v_timer_t
                                           rec['_vocab_extra'] = v_extra_t
                                       # 清除所有舊的字母池，避免題目字母錯誤
                                       for _k in [k for k in list(st.session_state.keys()) if k.startswith("vocab_pool_") or k.startswith("vocab_ans_") or k.startswith("vocab_used_") or k.startswith("mcq_order_") or k.startswith("rm_order_") or k.startswith("mcq_written_")]:
@@ -3684,7 +3684,7 @@ if not st.session_state.quiz_loaded:
                                           v_mode_mixed = '自選'
                                       pending_v['_type']        = 'vocab'
                                       pending_v['_vocab_mode']  = v_mode_mixed
-                                      pending_v['_vocab_timer'] = int(vcfg[1]) if len(vcfg) > 1 else 60
+                                      pending_v['_vocab_timer'] = 0 if _is_typing else (int(vcfg[1]) if len(vcfg) > 1 else 60)
                                       pending_v['_vocab_extra'] = int(vcfg[2]) if len(vcfg) > 2 else 0
                                   # 聽力音標（混合任務）
                                   pending_lp_m = pd.DataFrame()
