@@ -1,7 +1,7 @@
 # ==============================================================================
 # 🧩 英文全能練習系統 (V2.9.482 - 跟著唸AI評分logs版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.501
+# 📌 版本編號 (VERSION): 2.9.503
 # 📅 更新日期: 2026-06-22
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -45,7 +45,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.501"
+VERSION = "2.9.503"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -5071,35 +5071,27 @@ if st.session_state.quiz_loaded:
         if not _replay_mode:
             # 模式切換
             if task_mode in ("自選", "學生自選"):
-                _vm_default = st.session_state.get("vocab_mode_global", "🔤 拆字母")
-                if _vm_default not in ["🔤 拆字母", "⌨️ 鍵盤"]:
-                    _vm_default = "🔤 拆字母"
-                if _typing_mode and st.session_state.get("_typing_mode_locked"):
-                    # 多次打字練習已鎖定模式：沿用，不顯示 radio
-                    vocab_mode = _vm_default
-                    st.caption(f"輸入模式：{vocab_mode}")
-                else:
-                    vocab_mode = st.radio(
-                        "輸入模式",
-                        ["🔤 拆字母", "⌨️ 鍵盤"],
-                        horizontal=True,
-                        key="vocab_mode_global",
-                        disabled=st.session_state.get("show_analysis", False),
-                        index=["🔤 拆字母", "⌨️ 鍵盤"].index(_vm_default)
-                    )
-                    if _typing_mode:
-                        # 學生選完後鎖定
-                        st.session_state["_typing_mode_locked"] = True
+                _vm_saved = st.session_state.get("_vocab_mode_saved", "🔤 拆字母")
+                if _vm_saved not in ["🔤 拆字母", "⌨️ 鍵盤"]:
+                    _vm_saved = "🔤 拆字母"
+                vocab_mode = st.radio(
+                    "輸入模式",
+                    ["🔤 拆字母", "⌨️ 鍵盤"],
+                    horizontal=True,
+                    key="vocab_mode_global",
+                    disabled=st.session_state.get("show_analysis", False),
+                    index=["🔤 拆字母", "⌨️ 鍵盤"].index(_vm_saved)
+                )
+                # 儲存最新選擇到獨立 key，rerun 後不會被 widget 重置
+                st.session_state["_vocab_mode_saved"] = vocab_mode
                 # 模式切換時清除另一模式的輸入記錄
                 _prev_mode = st.session_state.get("_vocab_prev_mode")
                 if _prev_mode and _prev_mode != vocab_mode:
                     _q = st.session_state.q_idx
                     if vocab_mode == "⌨️ 鍵盤":
-                        # 切換到鍵盤：清除字母池答案
                         st.session_state[f"vocab_ans_{_q}"] = []
                         st.session_state[f"vocab_used_{_q}"] = []
                     else:
-                        # 切換到字母池：清除鍵盤答案
                         st.session_state[f"vocab_kb_{_q}"] = ""
                 st.session_state["_vocab_prev_mode"] = vocab_mode
             else:
