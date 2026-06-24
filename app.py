@@ -1,7 +1,7 @@
 # ==============================================================================
 # 🧩 英文全能練習系統 (V2.9.482 - 跟著唸AI評分logs版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.515
+# 📌 版本編號 (VERSION): 2.9.516
 # 📅 更新日期: 2026-06-22
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -45,7 +45,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.515"
+VERSION = "2.9.516"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -5319,87 +5319,88 @@ if st.session_state.quiz_loaded:
                 st.markdown(f"⌨️ **多次打字練習** ｜ 已答對：**{_tc_count} / {_typing_target}** 次")
                 st.progress(min(_tc_count / _typing_target, 1.0))
 
-            # ── 多次撥放模式 ────────────────────────────────────────────────────
-            if _replay_mode and is_vocab:
-                import base64 as _b64, hashlib as _hl_rp
-                _rp_hash     = _hl_rp.md5(word.encode()).hexdigest()[:8]
-                _rp_tts_key  = f"_replay_tts_{st.session_state.q_idx}_{_rp_hash}"
-                _rp_done_key = f"_replay_done_{st.session_state.q_idx}_{_rp_hash}"
-                _rp_loop_done= int(st.session_state.get("replay_loop_done", 0))
 
-                # 顯示英文和中文
-                st.markdown(f"## 🔊 {word}")
-                st.markdown(f"📖 {meaning}")
-                st.markdown(f"🔁 每題播放：**{_replay_per_q}** 次　｜　循環：**{_rp_loop_done + 1} / {_replay_loops}**")
-                st.divider()
+        # ── 多次撥放模式 ────────────────────────────────────────────────────
+        if _replay_mode and is_vocab:
+            import base64 as _b64, hashlib as _hl_rp
+            _rp_hash     = _hl_rp.md5(word.encode()).hexdigest()[:8]
+            _rp_tts_key  = f"_replay_tts_{st.session_state.q_idx}_{_rp_hash}"
+            _rp_done_key = f"_replay_done_{st.session_state.q_idx}_{_rp_hash}"
+            _rp_loop_done= int(st.session_state.get("replay_loop_done", 0))
 
-                # 載入 TTS 男聲（只載入一次）
-                if not st.session_state.get(_rp_tts_key):
-                    with st.spinner("載入語音..."):
-                        try:
-                            import openai as _oai_rp
-                            _cli_rp = _oai_rp.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
-                            _tm_rp = _cli_rp.audio.speech.create(model="tts-1", voice="onyx", input=word).content
-                            st.session_state[_rp_tts_key] = _b64.b64encode(_tm_rp).decode()
-                            st.rerun()
-                        except Exception as _e_rp:
-                            st.error(f"TTS 載入失敗：{_e_rp}")
+            # 顯示英文和中文
+            st.markdown(f"## 🔊 {word}")
+            st.markdown(f"📖 {meaning}")
+            st.markdown(f"🔁 每題播放：**{_replay_per_q}** 次　｜　循環：**{_rp_loop_done + 1} / {_replay_loops}**")
+            st.divider()
 
-                if st.session_state.get(_rp_tts_key) and not st.session_state.get(_rp_done_key):
-                    _m_b64_rp = st.session_state[_rp_tts_key]
-                    import streamlit.components.v1 as _cv1_rp
-                    _cv1_rp.html(f"""
-                    <audio id="rp_audio_{st.session_state.q_idx}" src="data:audio/mpeg;base64,{_m_b64_rp}"
-                           style="width:100%;display:block" controls></audio>
-                    <div id="rp_counter" style="font-size:1.1rem;margin-top:8px;">播放第 1 / {_replay_per_q} 次</div>
-                    <script>
-                    var a = document.getElementById('rp_audio_{st.session_state.q_idx}');
-                    var count = 0;
-                    var total = {_replay_per_q};
-                    a.playbackRate = 1.0;
-                    a.play();
-                    a.onended = function() {{
-                        count++;
-                        if (count < total) {{
-                            document.getElementById('rp_counter').innerText = '播放第 ' + (count+1) + ' / ' + total + ' 次';
-                            a.currentTime = 0;
-                            a.play();
-                        }} else {{
-                            document.getElementById('rp_counter').innerText = '✅ 播放完成，跳下一題...';
-                            // 找到上層頁面的「下一題」按鈕並 click
-                            var btns = window.parent.document.querySelectorAll('button');
-                            for (var i = 0; i < btns.length; i++) {{
-                                if (btns[i].innerText.indexOf('下一題') >= 0) {{
-                                    btns[i].click();
-                                    break;
-                                }}
+            # 載入 TTS 男聲（只載入一次）
+            if not st.session_state.get(_rp_tts_key):
+                with st.spinner("載入語音..."):
+                    try:
+                        import openai as _oai_rp
+                        _cli_rp = _oai_rp.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+                        _tm_rp = _cli_rp.audio.speech.create(model="tts-1", voice="onyx", input=word).content
+                        st.session_state[_rp_tts_key] = _b64.b64encode(_tm_rp).decode()
+                        st.rerun()
+                    except Exception as _e_rp:
+                        st.error(f"TTS 載入失敗：{_e_rp}")
+
+            if st.session_state.get(_rp_tts_key) and not st.session_state.get(_rp_done_key):
+                _m_b64_rp = st.session_state[_rp_tts_key]
+                import streamlit.components.v1 as _cv1_rp
+                _cv1_rp.html(f"""
+                <audio id="rp_audio_{st.session_state.q_idx}" src="data:audio/mpeg;base64,{_m_b64_rp}"
+                       style="width:100%;display:block" controls></audio>
+                <div id="rp_counter" style="font-size:1.1rem;margin-top:8px;">播放第 1 / {_replay_per_q} 次</div>
+                <script>
+                var a = document.getElementById('rp_audio_{st.session_state.q_idx}');
+                var count = 0;
+                var total = {_replay_per_q};
+                a.playbackRate = 1.0;
+                a.play();
+                a.onended = function() {{
+                    count++;
+                    if (count < total) {{
+                        document.getElementById('rp_counter').innerText = '播放第 ' + (count+1) + ' / ' + total + ' 次';
+                        a.currentTime = 0;
+                        a.play();
+                    }} else {{
+                        document.getElementById('rp_counter').innerText = '✅ 播放完成，跳下一題...';
+                        // 找到上層頁面的「下一題」按鈕並 click
+                        var btns = window.parent.document.querySelectorAll('button');
+                        for (var i = 0; i < btns.length; i++) {{
+                            if (btns[i].innerText.indexOf('下一題') >= 0) {{
+                                btns[i].click();
+                                break;
                             }}
                         }}
-                    }};
-                    </script>
-                    """, height=90)
+                    }}
+                }};
+                </script>
+                """, height=90)
 
-                def _rp_advance():
-                    st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
-                    _quiz = st.session_state.get("quiz_list", [])
-                    _next_idx = st.session_state.q_idx + 1
-                    if _next_idx >= len(_quiz):
-                        _rp_ld = int(st.session_state.get("replay_loop_done", 0)) + 1
-                        st.session_state["replay_loop_done"] = _rp_ld
-                        if _rp_ld >= _replay_loops:
-                            st.session_state.update({"quiz_loaded": False, "range_confirmed": False, "replay_mode": False})
-                        else:
-                            st.session_state.q_idx = 0
-                            for _k in [k for k in list(st.session_state.keys()) if k.startswith("_replay_tts_") or k.startswith("_replay_done_")]:
-                                del st.session_state[_k]
+            def _rp_advance():
+                st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
+                _quiz = st.session_state.get("quiz_list", [])
+                _next_idx = st.session_state.q_idx + 1
+                if _next_idx >= len(_quiz):
+                    _rp_ld = int(st.session_state.get("replay_loop_done", 0)) + 1
+                    st.session_state["replay_loop_done"] = _rp_ld
+                    if _rp_ld >= _replay_loops:
+                        st.session_state.update({"quiz_loaded": False, "range_confirmed": False, "replay_mode": False})
                     else:
-                        st.session_state.q_idx = _next_idx
+                        st.session_state.q_idx = 0
+                        for _k in [k for k in list(st.session_state.keys()) if k.startswith("_replay_tts_") or k.startswith("_replay_done_")]:
+                            del st.session_state[_k]
+                else:
+                    st.session_state.q_idx = _next_idx
 
-                # 隱藏按鈕：JS 播完後自動 click
-                _rp_btn_key = f"rp_auto_{st.session_state.q_idx}_{_rp_hash}"
-                if st.button("⏭️ 下一題（自動/手動）", key=_rp_btn_key, use_container_width=False):
-                    _rp_advance()
-                    st.rerun()
+            # 隱藏按鈕：JS 播完後自動 click
+            _rp_btn_key = f"rp_auto_{st.session_state.q_idx}_{_rp_hash}"
+            if st.button("⏭️ 下一題（自動/手動）", key=_rp_btn_key, use_container_width=False):
+                _rp_advance()
+                st.rerun()
 
         # 答對後播放 TTS（自然聲音 + 男聲）
         if st.session_state.get("show_analysis") and is_vocab:
