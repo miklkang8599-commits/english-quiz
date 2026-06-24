@@ -1,7 +1,7 @@
 # ==============================================================================
 # 🧩 英文全能練習系統 (V2.9.482 - 跟著唸AI評分logs版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.510
+# 📌 版本編號 (VERSION): 2.9.511
 # 📅 更新日期: 2026-06-22
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -45,7 +45,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.510"
+VERSION = "2.9.511"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -5219,13 +5219,20 @@ if st.session_state.quiz_loaded:
                         key=_phys_key,
                         placeholder="在這裡輸入英文，按 Enter 直接送出...",
                     )
-                    # 自動 focus：用 components.v1.html 注入 JS
+                    # 自動 focus：用 components.v1.html 注入 JS（延遲確保 DOM 完成）
                     import streamlit.components.v1 as _components
                     _components.html(
                         """<script>
-                        window.parent.document.querySelectorAll('input[type="text"]').forEach(function(el, i, arr){
-                            if(i === arr.length - 1) { el.focus(); el.select(); }
-                        });
+                        function focusLastInput() {
+                            var inputs = window.parent.document.querySelectorAll('input[type="text"]');
+                            if (inputs.length > 0) {
+                                var el = inputs[inputs.length - 1];
+                                el.focus();
+                                el.select();
+                            }
+                        }
+                        setTimeout(focusLastInput, 100);
+                        setTimeout(focusLastInput, 300);
                         </script>""",
                         height=0
                     )
