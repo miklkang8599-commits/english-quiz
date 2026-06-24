@@ -1,7 +1,7 @@
 # ==============================================================================
 # 🧩 英文全能練習系統 (V2.9.482 - 跟著唸AI評分logs版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.518
+# 📌 版本編號 (VERSION): 2.9.519
 # 📅 更新日期: 2026-06-22
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -45,7 +45,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.518"
+VERSION = "2.9.519"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3193,32 +3193,53 @@ if not st.session_state.quiz_loaded:
 
                         if st.session_state.get(_retry_key):
                             st.markdown("**選擇答題方式：**")
+                            if is_vocab_task:
+                                _retry_opts = ["⚡ 快速答題", "⌨️ 多次打字練習", "🔊 多次撥放", "🏋️ 練習模式", "🎤 跟著唸和錄音"]
+                            else:
+                                _retry_opts = ["⚡ 快速答題", "🏋️ 練習模式", "🎤 跟著唸和錄音"]
                             _retry_mode = st.radio(
                                 "答題方式",
-                                ["⚡ 快速答題", "🏋️ 練習模式", "🎤 跟著唸"],
+                                _retry_opts,
                                 horizontal=False,
                                 key=f"retry_mode_{_task_idx}"
                             )
-                            _rc3 = st.columns([3, 1])[1]
-                            retry_start = _rc3.number_input(
+                            _rr_cols = st.columns(2)
+                            retry_start = _rr_cols[0].number_input(
                                 "從第幾題", min_value=1, max_value=task_q_count, value=1,
                                 key=f"retry_start_{_task_idx}"
                             )
+                            retry_end = _rr_cols[1].number_input(
+                                "到第幾題（0=到最後）", min_value=0, max_value=task_q_count, value=0,
+                                key=f"retry_end_{_task_idx}"
+                            )
+                            if _retry_mode == "⌨️ 多次打字練習":
+                                _retry_typing_target = st.number_input("答對幾次才跳下題", min_value=1, max_value=10, value=3, key=f"retry_typing_target_{_task_idx}")
+                            elif _retry_mode == "🔊 多次撥放":
+                                _rp_cols2 = st.columns(2)
+                                _retry_replay_per_q = _rp_cols2[0].number_input("每題撥放次數", min_value=1, max_value=20, value=5, key=f"retry_replay_per_q_{_task_idx}")
+                                _retry_replay_loops = _rp_cols2[1].number_input("全部循環次數", min_value=1, max_value=10, value=2, key=f"retry_replay_loops_{_task_idx}")
 
                             _is_practice = (_retry_mode == "🏋️ 練習模式")
                             _is_quick    = (_retry_mode == "⚡ 快速答題")
-                            _is_shadow   = (_retry_mode == "🎤 跟著唸")
+                            _is_shadow   = (_retry_mode == "🎤 跟著唸和錄音")
+                            _is_typing   = (_retry_mode == "⌨️ 多次打字練習")
+                            _is_replay   = (_retry_mode == "🔊 多次撥放")
                             _do_retry    = False
                             if st.button(f"🚀 開始{_retry_mode}", key=f"retry_go_{_task_idx}", type="primary", use_container_width=True):
                                 _do_retry = True
                                 st.session_state.pop(_retry_key, None)
-                                # 清除完成記錄，避免重新顯示完成畫面
                                 st.session_state[f"_retry_started_{task_id_key}"] = True
                         else:
-                            _do_retry, _is_practice, _is_quick, retry_start = False, False, False, 1
+                            _do_retry, _is_practice, _is_quick, _is_shadow, _is_typing, _is_replay = False, False, False, False, False, False
+                            retry_start, retry_end = 1, 0
 
                         if _do_retry:
                             _start_idx = max(0, int(retry_start) - 1)
+                            _retry_end_val = st.session_state.get(f"retry_end_{_task_idx}", 0)
+                            _retry_end_idx = (int(_retry_end_val) - 1) if _retry_end_val > 0 else None
+                            _retry_typing_target_val = int(st.session_state.get(f"retry_typing_target_{_task_idx}", 3))
+                            _retry_replay_per_q_val  = int(st.session_state.get(f"retry_replay_per_q_{_task_idx}", 5))
+                            _retry_replay_loops_val  = int(st.session_state.get(f"retry_replay_loops_{_task_idx}", 2))
                             if is_reading_task:
                                 df_r2 = df_r.copy()
                                 if '題目ID' not in df_r2.columns:
@@ -3228,10 +3249,9 @@ if not st.session_state.quiz_loaded:
                                 retry_r = df_r2[df_r2['題目ID'].isin(q_ids_set)].copy()
                                 if not retry_r.empty:
                                     records = retry_r.to_dict('records')
-                                    # 裁切結束題號
-                                    _end_idx_local = locals().get('_end_idx_fwd', None)
-                                    if _end_idx_local is not None and _end_idx_local >= 0:
-                                        records = records[:_end_idx_local + 1]
+                                    # 裁切結束題號（再次測驗）
+                                    if _retry_end_idx is not None and _retry_end_idx >= 0:
+                                        records = records[:_retry_end_idx + 1]
                                     for rec in records:
                                         rec['_type'] = 'reading'
                                     for _k in [k for k in list(st.session_state.keys()) if k.startswith("vocab_pool_") or k.startswith("vocab_ans_") or k.startswith("vocab_used_") or k.startswith("mcq_order_") or k.startswith("rm_order_") or k.startswith("mcq_written_")]:
@@ -3240,7 +3260,9 @@ if not st.session_state.quiz_loaded:
                                         "quiz_list": records,
                                         "q_idx": min(_start_idx, len(records)-1),
                                         "quiz_loaded": True, "answered_count": 0, "_timers_cleared": False, "current_task_name": task_id_key, "practice_mode": _is_practice, "quick_mode": locals().get("_is_quick", False), "shadow_mode": locals().get("_is_shadow", False), "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
-                                        "ans": [], "used_history": [], "shuf": [], "show_analysis": False, "current_res": "", "vocab_start_time": None, "vocab_q_idx": None
+                                        "ans": [], "used_history": [], "shuf": [], "show_analysis": False, "current_res": "", "vocab_start_time": None, "vocab_q_idx": None,
+                                        "typing_mode": _is_typing, "typing_target": _retry_typing_target_val,
+                                        "replay_mode": _is_replay, "replay_per_q": _retry_replay_per_q_val, "replay_loops": _retry_replay_loops_val, "replay_loop_done": 0,
                                     })
                                     st.rerun()
                             else:
@@ -3338,17 +3360,18 @@ if not st.session_state.quiz_loaded:
                                 if _all_dfs:
                                     retry_all = pd.concat(_all_dfs, ignore_index=True)
                                     records   = retry_all.to_dict('records')
-                                    # 裁切結束題號
-                                    _end_idx_local = locals().get('_end_idx_fwd', None)
-                                    if _end_idx_local is not None and _end_idx_local >= 0:
-                                        records = records[:_end_idx_local + 1]
+                                    # 裁切結束題號（再次測驗）
+                                    if _retry_end_idx is not None and _retry_end_idx >= 0:
+                                        records = records[:_retry_end_idx + 1]
                                     for _k in [k for k in list(st.session_state.keys()) if k.startswith("vocab_pool_") or k.startswith("vocab_ans_") or k.startswith("vocab_used_") or k.startswith("mcq_order_") or k.startswith("rm_order_") or k.startswith("mcq_written_")]:
                                         del st.session_state[_k]
                                     st.session_state.update({
                                         "quiz_list": records,
                                         "q_idx": min(_start_idx, len(records)-1),
                                         "quiz_loaded": True, "answered_count": 0, "_timers_cleared": False, "current_task_name": task_id_key, "practice_mode": _is_practice, "quick_mode": locals().get("_is_quick", False), "shadow_mode": locals().get("_is_shadow", False), "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
-                                        "ans": [], "used_history": [], "shuf": [], "show_analysis": False, "current_res": "", "vocab_start_time": None, "vocab_q_idx": None
+                                        "ans": [], "used_history": [], "shuf": [], "show_analysis": False, "current_res": "", "vocab_start_time": None, "vocab_q_idx": None,
+                                        "typing_mode": _is_typing, "typing_target": _retry_typing_target_val,
+                                        "replay_mode": _is_replay, "replay_per_q": _retry_replay_per_q_val, "replay_loops": _retry_replay_loops_val, "replay_loop_done": 0,
                                     })
                                     st.rerun()
                                 else:
