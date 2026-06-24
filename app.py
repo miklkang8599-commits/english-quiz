@@ -1,7 +1,7 @@
 # ==============================================================================
 # 🧩 英文全能練習系統 (V2.9.482 - 跟著唸AI評分logs版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.519
+# 📌 版本編號 (VERSION): 2.9.520
 # 📅 更新日期: 2026-06-22
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -45,7 +45,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.519"
+VERSION = "2.9.520"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3285,7 +3285,7 @@ if not st.session_state.quiz_loaded:
                                         vcfg2 = vocab_cfg_str2.split('|') if vocab_cfg_str2 else []
                                         rv['_type'] = 'vocab'
                                         rv['_vocab_mode']  = (vcfg2[0] if len(vcfg2)>0 else '自選').replace('學生自選','自選')
-                                        rv['_vocab_timer'] = int(vcfg2[1]) if len(vcfg2)>1 else 60
+                                        rv['_vocab_timer'] = 0 if _is_typing else (int(vcfg2[1]) if len(vcfg2)>1 else 60)
                                         rv['_vocab_extra'] = int(vcfg2[2]) if len(vcfg2)>2 else 0
                                         _all_dfs.append(rv)
                                 if not df_rm.empty:
@@ -3334,7 +3334,7 @@ if not st.session_state.quiz_loaded:
                                         vcfg3 = vocab_cfg_str3.split('|') if vocab_cfg_str3 else []
                                         rv_r['_type']        = 'vocab'
                                         rv_r['_vocab_mode']  = (vcfg3[0] if len(vcfg3)>0 else '自選').replace('學生自選','自選')
-                                        rv_r['_vocab_timer'] = int(vcfg3[1]) if len(vcfg3)>1 else 60
+                                        rv_r['_vocab_timer'] = 0 if _is_typing else (int(vcfg3[1]) if len(vcfg3)>1 else 60)
                                         rv_r['_vocab_extra'] = int(vcfg3[2]) if len(vcfg3)>2 else 0
                                         _all_dfs.append(rv_r)
                                 # 純聽力音標任務
