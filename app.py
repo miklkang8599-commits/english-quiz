@@ -1,7 +1,7 @@
 # ==============================================================================
 # 🧩 英文全能練習系統 (V2.9.482 - 跟著唸AI評分logs版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.512
+# 📌 版本編號 (VERSION): 2.9.513
 # 📅 更新日期: 2026-06-22
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -45,7 +45,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.512"
+VERSION = "2.9.513"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -5210,36 +5210,28 @@ if st.session_state.quiz_loaded:
             else:
                 kb_ans = st.session_state.get(f"vocab_kb_{st.session_state.q_idx}", "")
                 if not st.session_state.get("show_analysis"):
-                    # 實體鍵盤輸入框（自動 focus）
-                    # 多次打字練習：加入送出次數讓每次答完後產生新的空白輸入框
-                    _phys_submit_count = int(st.session_state.get(f"_typing_submit_{st.session_state.q_idx}", 0)) if _typing_mode else 0
-                    _phys_key = f"vocab_phys_{st.session_state.q_idx}_{_phys_submit_count}"
-                    _phys_val = st.text_input(
-                        "輸入答案後按 Enter",
-                        key=_phys_key,
-                        placeholder="在這裡輸入英文，按 Enter 直接送出...",
-                    )
-                    # 自動 focus：直接注入主頁面 JS（非 iframe，更可靠）
-                    st.markdown(
-                        """<script>
-                        (function() {
-                            function focusInput() {
-                                var inputs = document.querySelectorAll('input[type="text"]');
-                                if (inputs.length > 0) {
-                                    var el = inputs[inputs.length - 1];
-                                    el.focus();
-                                    el.select();
-                                } else {
-                                    setTimeout(focusInput, 100);
-                                }
+                    if _typing_mode:
+                        # 多次打字練習用 chat_input（原生自動 focus，不需要點選）
+                        _phys_val = st.chat_input("輸入答案後按 Enter...")
+                    else:
+                        # 一般鍵盤模式
+                        _phys_key = f"vocab_phys_{st.session_state.q_idx}"
+                        _phys_val = st.text_input(
+                            "輸入答案後按 Enter",
+                            key=_phys_key,
+                            placeholder="在這裡輸入英文，按 Enter 直接送出...",
+                        )
+                        import streamlit.components.v1 as _components
+                        _components.html(
+                            """<script>
+                            function focusLastInput() {
+                                var inputs = window.parent.document.querySelectorAll('input[type="text"]');
+                                if (inputs.length > 0) { var el = inputs[inputs.length-1]; el.focus(); el.select(); }
                             }
-                            setTimeout(focusInput, 50);
-                            setTimeout(focusInput, 200);
-                            setTimeout(focusInput, 500);
-                        })();
-                        </script>""",
-                        unsafe_allow_html=True
-                    )
+                            setTimeout(focusLastInput, 100);
+                            setTimeout(focusLastInput, 300);
+                            </script>""", height=0
+                        )
                     if _phys_val:
                         # 第一次 Enter：直接轉大寫並送出（不需要第二次）
                         _phys_upper = _clean_vocab(_phys_val)
