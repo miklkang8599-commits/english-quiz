@@ -1,7 +1,7 @@
 # ==============================================================================
 # 🧩 英文全能練習系統 (V2.9.482 - 跟著唸AI評分logs版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.523
+# 📌 版本編號 (VERSION): 2.9.524
 # 📅 更新日期: 2026-06-22
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -45,7 +45,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.523"
+VERSION = "2.9.524"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3484,7 +3484,9 @@ if not st.session_state.quiz_loaded:
                                       st.session_state.update({
                                           "quiz_list": records,
                                           "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "_timers_cleared": False, "current_task_name": task_id_key, "practice_mode": _is_practice, "quick_mode": locals().get("_is_quick", False), "shadow_mode": locals().get("_is_shadow", False), "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
-                                          "ans": [], "used_history": [], "shuf": [], "show_analysis": False, "current_res": "", "vocab_start_time": None, "vocab_q_idx": None
+                                          "ans": [], "used_history": [], "shuf": [], "show_analysis": False, "current_res": "", "vocab_start_time": None, "vocab_q_idx": None,
+                                              "typing_mode": locals().get("_is_typing", False), "typing_target": locals().get("_typing_target_val", 3),
+                                              "replay_mode": locals().get("_is_replay", False), "replay_per_q": locals().get("_replay_per_q_val", 5), "replay_loops": locals().get("_replay_loops_val", 2), "replay_loop_done": 0,
                                       })
                                       st.rerun()
   
@@ -3550,7 +3552,9 @@ if not st.session_state.quiz_loaded:
                                       st.session_state.update({
                                           "quiz_list": records,
                                           "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "_timers_cleared": False, "current_task_name": task_id_key, "practice_mode": _is_practice, "quick_mode": locals().get("_is_quick", False), "shadow_mode": locals().get("_is_shadow", False), "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
-                                          "ans": [], "used_history": [], "shuf": [], "show_analysis": False, "current_res": "", "vocab_start_time": None, "vocab_q_idx": None
+                                          "ans": [], "used_history": [], "shuf": [], "show_analysis": False, "current_res": "", "vocab_start_time": None, "vocab_q_idx": None,
+                                              "typing_mode": locals().get("_is_typing", False), "typing_target": locals().get("_typing_target_val", 3),
+                                              "replay_mode": locals().get("_is_replay", False), "replay_per_q": locals().get("_replay_per_q_val", 5), "replay_loops": locals().get("_replay_loops_val", 2), "replay_loop_done": 0,
                                       })
                                       st.rerun()
   
@@ -3603,7 +3607,9 @@ if not st.session_state.quiz_loaded:
                                           st.session_state.update({
                                               "quiz_list": records,
                                               "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "_timers_cleared": False, "current_task_name": task_id_key, "practice_mode": _is_practice, "quick_mode": locals().get("_is_quick", False), "shadow_mode": locals().get("_is_shadow", False), "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
-                                              "ans": [], "used_history": [], "shuf": [], "show_analysis": False, "current_res": "", "vocab_start_time": None, "vocab_q_idx": None
+                                              "ans": [], "used_history": [], "shuf": [], "show_analysis": False, "current_res": "", "vocab_start_time": None, "vocab_q_idx": None,
+                                                  "typing_mode": locals().get("_is_typing", False), "typing_target": locals().get("_typing_target_val", 3),
+                                                  "replay_mode": locals().get("_is_replay", False), "replay_per_q": locals().get("_replay_per_q_val", 5), "replay_loops": locals().get("_replay_loops_val", 2), "replay_loop_done": 0,
                                           })
                                           st.rerun()
                                       else:
@@ -3627,7 +3633,9 @@ if not st.session_state.quiz_loaded:
                                           st.session_state.update({
                                               "quiz_list": records,
                                               "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "_timers_cleared": False, "current_task_name": task_id_key, "practice_mode": _is_practice, "quick_mode": locals().get("_is_quick", False), "shadow_mode": locals().get("_is_shadow", False), "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
-                                              "ans": [], "used_history": [], "shuf": [], "show_analysis": False, "current_res": "", "vocab_start_time": None, "vocab_q_idx": None
+                                              "ans": [], "used_history": [], "shuf": [], "show_analysis": False, "current_res": "", "vocab_start_time": None, "vocab_q_idx": None,
+                                                  "typing_mode": locals().get("_is_typing", False), "typing_target": locals().get("_typing_target_val", 3),
+                                                  "replay_mode": locals().get("_is_replay", False), "replay_per_q": locals().get("_replay_per_q_val", 5), "replay_loops": locals().get("_replay_loops_val", 2), "replay_loop_done": 0,
                                           })
                                           st.rerun()
   
@@ -3725,7 +3733,9 @@ if not st.session_state.quiz_loaded:
                                       st.session_state.update({
                                           "quiz_list": pending.to_dict('records'),
                                           "q_idx": min(_start_idx_fwd, len(pending)-1), "quiz_loaded": True, "answered_count": 0, "_timers_cleared": False, "current_task_name": task_id_key, "practice_mode": _is_practice, "quick_mode": locals().get("_is_quick", False), "shadow_mode": locals().get("_is_shadow", False), "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
-                                          "ans": [], "used_history": [], "shuf": [], "show_analysis": False, "current_res": "", "vocab_start_time": None, "vocab_q_idx": None
+                                          "ans": [], "used_history": [], "shuf": [], "show_analysis": False, "current_res": "", "vocab_start_time": None, "vocab_q_idx": None,
+                                              "typing_mode": locals().get("_is_typing", False), "typing_target": locals().get("_typing_target_val", 3),
+                                              "replay_mode": locals().get("_is_replay", False), "replay_per_q": locals().get("_replay_per_q_val", 5), "replay_loops": locals().get("_replay_loops_val", 2), "replay_loop_done": 0,
                                       })
                                       st.rerun()
   
@@ -3762,7 +3772,9 @@ if not st.session_state.quiz_loaded:
                                     st.session_state.update({
                                         "quiz_list": records,
                                         "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "_timers_cleared": False, "current_task_name": task_id_key, "practice_mode": _is_practice, "quick_mode": locals().get("_is_quick", False), "shadow_mode": locals().get("_is_shadow", False), "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
-                                        "ans": [], "used_history": [], "shuf": [], "show_analysis": False, "current_res": "", "vocab_start_time": None, "vocab_q_idx": None
+                                        "ans": [], "used_history": [], "shuf": [], "show_analysis": False, "current_res": "", "vocab_start_time": None, "vocab_q_idx": None,
+                                        "typing_mode": locals().get("_is_typing", False), "typing_target": locals().get("_typing_target_val", 3),
+                                        "replay_mode": locals().get("_is_replay", False), "replay_per_q": locals().get("_replay_per_q_val", 5), "replay_loops": locals().get("_replay_loops_val", 2), "replay_loop_done": 0,
                                     })
                                     st.rerun()
                                 else:
@@ -5749,7 +5761,7 @@ if st.session_state.quiz_loaded:
         # 重組題：顯示 TTS（男聲 + 自然聲音，0.8倍速）
         if not is_mcq and not is_vocab:
             _reorder_ans = str(q.get('重組英文答案') or q.get('英文答案') or '').strip()
-            if _reorder_ans and not _quick_mode:
+            if _reorder_ans and not _quick_mode and not _typing_mode:
                 _tts_f_key = f"reorder_tts_f_{st.session_state.q_idx}"
                 _tts_m_key = f"reorder_tts_m_{st.session_state.q_idx}"
                 if not st.session_state.get(_tts_f_key) or not st.session_state.get(_tts_m_key):
