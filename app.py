@@ -3193,7 +3193,7 @@ if not st.session_state.quiz_loaded:
 
                         if st.session_state.get(_retry_key):
                             st.markdown("**選擇答題方式：**")
-                            if is_vocab_task:
+                            if is_vocab_task or task_type in ("一般", "混合", ""):
                                 _retry_opts = ["⚡ 快速答題", "⌨️ 多次打字練習", "🔊 多次撥放", "🏋️ 練習模式", "🎤 跟著唸和錄音"]
                             else:
                                 _retry_opts = ["⚡ 快速答題", "🏋️ 練習模式", "🎤 跟著唸和錄音"]
@@ -3388,7 +3388,7 @@ if not st.session_state.quiz_loaded:
                         _start_from = 1
                         if not is_race_task:
                             _shadow_ok = is_vocab_task or task_type in ("一般", "混合", "")
-                            if is_vocab_task:
+                            if is_vocab_task or task_type in ("一般", "混合", ""):
                                 _mode_opts = ["⚡ 快速答題", "⌨️ 多次打字練習", "🔊 多次撥放", "🏋️ 練習模式", "🎤 跟著唸和錄音"]
                             else:
                                 _mode_opts = ["⚡ 快速答題", "🏋️ 練習模式"]
@@ -5596,62 +5596,153 @@ if st.session_state.quiz_loaded:
         )
         ans_key = str(q.get("重組英文答案") or q.get("英文答案") or "").strip()
 
-        # 重組題介面
-        st.info(" ".join(st.session_state.ans) if st.session_state.ans else "請依序點選單字按鈕...")
+        # ── 多次打字練習進度條 ──────────────────────────────────────────────
+        if _typing_mode:
+            _tc_key_r2 = f"_typing_correct_{st.session_state.q_idx}"
+            _tc_count_r2 = int(st.session_state.get(_tc_key_r2, 0))
+            st.markdown(f"⌨️ **多次打字練習** ｜ 已答對：**{_tc_count_r2} / {_typing_target}** 次")
+            st.progress(min(_tc_count_r2 / _typing_target, 1.0))
 
-        _reorder_done = st.session_state.get("show_analysis", False)
-        c_ctrl = st.columns(2)
-        if c_ctrl[0].button("⬅️ 🟠 退回一步", use_container_width=True, disabled=_reorder_done):
-            if st.session_state.ans:
-                st.session_state.ans.pop()
-                st.session_state.used_history.pop()
+        # ── 多次撥放模式 ────────────────────────────────────────────────────
+        if _replay_mode:
+            import base64 as _b64_rr, hashlib as _hl_rr
+            _rr_hash     = _hl_rr.md5(ans_key.encode()).hexdigest()[:8]
+            _rr_tts_key  = f"_replay_tts_{st.session_state.q_idx}_{_rr_hash}"
+            _rr_loop_done= int(st.session_state.get("replay_loop_done", 0))
+            st.markdown(f"🔊 **多次撥放** ｜ 每題 **{_replay_per_q}** 次　｜　循環：**{_rr_loop_done + 1} / {_replay_loops}**")
+            st.markdown(f"### {ans_key}")
+            if not st.session_state.get(_rr_tts_key):
+                with st.spinner("載入語音..."):
+                    try:
+                        import openai as _oai_rr
+                        _cli_rr = _oai_rr.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+                        _tm_rr = _cli_rr.audio.speech.create(model="tts-1", voice="onyx", input=ans_key).content
+                        st.session_state[_rr_tts_key] = _b64_rr.b64encode(_tm_rr).decode()
+                        st.rerun()
+                    except Exception as _e_rr:
+                        st.error(f"TTS 載入失敗：{_e_rr}")
+            if st.session_state.get(_rr_tts_key):
+                _m_b64_rr = st.session_state[_rr_tts_key]
+                import streamlit.components.v1 as _cv1_rr
+                _cv1_rr.html(f"""
+                <audio id="rr_audio_{st.session_state.q_idx}" src="data:audio/mpeg;base64,{_m_b64_rr}"
+                       style="width:100%;display:block" controls></audio>
+                <div id="rr_counter" style="font-size:1.1rem;margin-top:8px;">播放第 1 / {_replay_per_q} 次</div>
+                <script>
+                var a = document.getElementById('rr_audio_{st.session_state.q_idx}');
+                var count = 0; var total = {_replay_per_q};
+                a.playbackRate = 0.6;
+                a.addEventListener('play', function() {{ a.playbackRate = 0.6; }});
+                a.play();
+                a.onended = function() {{
+                    count++;
+                    if (count < total) {{
+                        document.getElementById('rr_counter').innerText = '播放第 ' + (count+1) + ' / ' + total + ' 次';
+                        a.currentTime = 0; a.playbackRate = 0.6; a.play();
+                    }} else {{
+                        document.getElementById('rr_counter').innerText = '✅ 播放完成，跳下一題...';
+                        var btns = window.parent.document.querySelectorAll('button');
+                        for (var i = 0; i < btns.length; i++) {{
+                            if (btns[i].innerText.indexOf('下一題') >= 0) {{ btns[i].click(); break; }}
+                        }}
+                    }}
+                }};
+                </script>""", height=90)
+            def _rr_advance():
+                st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
+                _quiz_r = st.session_state.get("quiz_list", [])
+                _next_r = st.session_state.q_idx + 1
+                if _next_r >= len(_quiz_r):
+                    _rr_ld = int(st.session_state.get("replay_loop_done", 0)) + 1
+                    st.session_state["replay_loop_done"] = _rr_ld
+                    if _rr_ld >= _replay_loops:
+                        st.session_state.update({"quiz_loaded": False, "range_confirmed": False, "replay_mode": False})
+                    else:
+                        st.session_state.q_idx = 0
+                        for _k in [k for k in list(st.session_state.keys()) if k.startswith("_replay_tts_")]:
+                            del st.session_state[_k]
+                else:
+                    st.session_state.q_idx = _next_r
+            if st.button("⏭️ 下一題（自動/手動）", key=f"rr_next_{st.session_state.q_idx}", use_container_width=False):
+                _rr_advance()
                 st.rerun()
-        if c_ctrl[1].button("🗑️ 🟠 全部清除", use_container_width=True, disabled=_reorder_done):
-            st.session_state.update({"ans": [], "used_history": []})
-            st.rerun()
 
-        # 單字切分：數字+字母+縮寫視為一字，標點不列入
-        # he's / I'm / it's / What's → 一個按鍵；90 → 一個按鍵；逗號句號 → 不顯示
-        tk = re.findall(r"[A-Za-z0-9]+(?:['\u2018\u2019][A-Za-z0-9]+)*", ans_key)
-        # 只在 shuf 不存在時初始化（不在答題途中強制重算）
-        if not st.session_state.get('shuf'):
-            st.session_state.shuf = tk.copy()
-            random.shuffle(st.session_state.shuf)
-        # shuf 和 tk 不一致時（題目不同），才重算
-        elif set(st.session_state.shuf) != set(tk):
-            st.session_state.shuf = tk.copy()
-            st.session_state.ans  = []
-            st.session_state.used_history = []
-            random.shuffle(st.session_state.shuf)
+        # 重組題介面（多次撥放模式隱藏）
+        if not _replay_mode:
+            st.info(" ".join(st.session_state.ans) if st.session_state.ans else "請依序點選單字按鈕...")
 
-        bs = st.columns(3)
-        for i, t in enumerate(st.session_state.shuf):
-            if i not in st.session_state.get('used_history', []):
-                if bs[i % 3].button(t, key=f"qb_{i}", use_container_width=True, disabled=_reorder_done):
-                    st.session_state.ans.append(t)
-                    st.session_state.used_history.append(i)
+            _reorder_done = st.session_state.get("show_analysis", False)
+            c_ctrl = st.columns(2)
+            if c_ctrl[0].button("⬅️ 🟠 退回一步", use_container_width=True, disabled=_reorder_done):
+                if st.session_state.ans:
+                    st.session_state.ans.pop()
+                    st.session_state.used_history.pop()
                     st.rerun()
+            if c_ctrl[1].button("🗑️ 🟠 全部清除", use_container_width=True, disabled=_reorder_done):
+                st.session_state.update({"ans": [], "used_history": []})
+                st.rerun()
 
-        if len(st.session_state.ans) == len(tk) and not st.session_state.show_analysis:
-            # 全部選完自動對答
-            is_ok = clean_string_for_compare("".join(st.session_state.ans)) == clean_string_for_compare(ans_key)
-            st.session_state.update({
-                "current_res": "✅ 正確！" if is_ok else f"❌ 錯誤！正確答案：{ans_key}",
-                "show_analysis": True
-            })
-            log_data = pd.DataFrame([{
-                "時間": get_now().strftime("%Y-%m-%d %H:%M:%S"),
-                "姓名": st.session_state.user_name,
-                "分組": st.session_state.group_id,
-                "題目ID": q.get('題目ID', 'N/A'),
-                "結果": "練習" if st.session_state.get("practice_mode") else ("✅" if is_ok else "❌"),
-                "學生答案": " ".join(st.session_state.get("ans", [])),
-                "任務名稱": st.session_state.get("current_task_name", ""), "作答秒數": round(__import__("time").time() - st.session_state.get(f"_q_start_time_{st.session_state.q_idx}", __import__("time").time()))
-            }])
-            st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
-            append_to_sheet("logs", log_data)
-            _load_logs_cached.clear()
-            st.rerun()
+            # 單字切分：數字+字母+縮寫視為一字，標點不列入
+            # he's / I'm / it's / What's → 一個按鍵；90 → 一個按鍵；逗號句號 → 不顯示
+            tk = re.findall(r"[A-Za-z0-9]+(?:['\u2018\u2019][A-Za-z0-9]+)*", ans_key)
+            # 只在 shuf 不存在時初始化（不在答題途中強制重算）
+            if not st.session_state.get('shuf'):
+                st.session_state.shuf = tk.copy()
+                random.shuffle(st.session_state.shuf)
+            # shuf 和 tk 不一致時（題目不同），才重算
+            elif set(st.session_state.shuf) != set(tk):
+                st.session_state.shuf = tk.copy()
+                st.session_state.ans  = []
+                st.session_state.used_history = []
+                random.shuffle(st.session_state.shuf)
+
+            bs = st.columns(3)
+            for i, t in enumerate(st.session_state.shuf):
+                if i not in st.session_state.get('used_history', []):
+                    if bs[i % 3].button(t, key=f"qb_{i}", use_container_width=True, disabled=_reorder_done):
+                        st.session_state.ans.append(t)
+                        st.session_state.used_history.append(i)
+                        st.rerun()
+
+            if len(st.session_state.ans) == len(tk) and not st.session_state.show_analysis:
+                # 全部選完自動對答
+                is_ok = clean_string_for_compare("".join(st.session_state.ans)) == clean_string_for_compare(ans_key)
+                if _typing_mode:
+                    _tc_key_r = f"_typing_correct_{st.session_state.q_idx}"
+                    _tc_now_r = int(st.session_state.get(_tc_key_r, 0))
+                    if is_ok:
+                        _tc_now_r += 1
+                        st.session_state[_tc_key_r] = _tc_now_r
+                        st.toast(f"✅ 正確！{_tc_now_r}/{_typing_target} 次")
+                    else:
+                        st.toast(f"❌ 錯誤，繼續練習")
+                    st.session_state.update({"ans": [], "used_history": []})
+                    append_to_sheet("logs", pd.DataFrame([{
+                        "時間": get_now().strftime("%Y-%m-%d %H:%M:%S"), "姓名": st.session_state.user_name,
+                        "分組": st.session_state.group_id, "題目ID": q.get('題目ID', 'N/A'),
+                        "結果": "✅" if is_ok else "❌", "學生答案": " ".join(st.session_state.get("ans", [])),
+                        "任務名稱": st.session_state.get("current_task_name", ""), "作答秒數": round(__import__("time").time() - st.session_state.get(f"_q_start_time_{st.session_state.q_idx}", __import__("time").time()))
+                    }]))
+                    _load_logs_cached.clear()
+                    st.rerun()
+                else:
+                    st.session_state.update({
+                        "current_res": "✅ 正確！" if is_ok else f"❌ 錯誤！正確答案：{ans_key}",
+                        "show_analysis": True
+                    })
+                    log_data = pd.DataFrame([{
+                        "時間": get_now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "姓名": st.session_state.user_name,
+                        "分組": st.session_state.group_id,
+                        "題目ID": q.get('題目ID', 'N/A'),
+                        "結果": "練習" if st.session_state.get("practice_mode") else ("✅" if is_ok else "❌"),
+                        "學生答案": " ".join(st.session_state.get("ans", [])),
+                        "任務名稱": st.session_state.get("current_task_name", ""), "作答秒數": round(__import__("time").time() - st.session_state.get(f"_q_start_time_{st.session_state.q_idx}", __import__("time").time()))
+                    }])
+                    st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
+                    append_to_sheet("logs", log_data)
+                    _load_logs_cached.clear()
+                    st.rerun()
 
     if st.session_state.get('show_analysis') and not is_reading and not is_reading_mcq and not is_listen_phon and not is_listen_sent:
         st.warning(st.session_state.current_res)
