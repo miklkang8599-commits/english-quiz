@@ -1,7 +1,7 @@
 # ==============================================================================
 # 🧩 英文全能練習系統 (V2.9.482 - 跟著唸AI評分logs版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.529
+# 📌 版本編號 (VERSION): 2.9.530
 # 📅 更新日期: 2026-06-22
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -51,7 +51,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.529"
+VERSION = "2.9.530"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -5553,8 +5553,8 @@ if st.session_state.quiz_loaded:
             tts_key_m = f"vocab_tts_m_{st.session_state.q_idx}"
             if "✅" in res:
                 st.success(res)
-                # 快速答題模式：不載入 TTS，直接顯示對錯結果
-                if not _quick_mode:
+                # 快速答題/英選中模式：不載入 TTS，直接顯示對錯結果
+                if not _quick_mode and not _ec_mode:
                     if not st.session_state.get(tts_key_f) or not st.session_state.get(tts_key_m):
                         try:
                             import openai as _oai, base64 as _b64
@@ -5916,7 +5916,8 @@ if st.session_state.quiz_loaded:
                 f"vocab_ans_{q_idx}", f"vocab_used_{q_idx}",
                 f"vocab_kb_{q_idx}", f"vocab_tts_{q_idx}",
                 f"ls_ans_{q_idx}", f"ls_used_{q_idx}", f"ls_shuf_{q_idx}",
-                f"_typing_correct_{q_idx}", f"_typing_submit_{q_idx}", f"_replay_count_{q_idx}", f"_replay_tts_{q_idx}"
+                f"_typing_correct_{q_idx}", f"_typing_submit_{q_idx}", f"_replay_count_{q_idx}", f"_replay_tts_{q_idx}",
+                f"vocab_ec_opts_{q_idx}"
             ]:
                 st.session_state.pop(k, None)
 
@@ -5937,6 +5938,22 @@ if st.session_state.quiz_loaded:
             # 剛答完：標記，用 time.sleep(1) 讓畫面顯示結果後再跳
             st.session_state['_quick_shown'] = True
             import time as _tq; _tq.sleep(1)
+            st.rerun()
+
+    # 英選中模式：顯示對錯 1 秒後自動跳下一題
+    if _ec_mode and is_vocab and st.session_state.get('show_analysis'):
+        if st.session_state.get('_ec_shown'):
+            st.session_state.pop('_ec_shown', None)
+            _clear_q()
+            if st.session_state.q_idx + 1 < len(st.session_state.quiz_list):
+                st.session_state.q_idx += 1
+                st.session_state.update({"show_analysis": False, "current_res": "", "vocab_start_time": None, "vocab_q_idx": None})
+            else:
+                st.session_state.update({"quiz_loaded": False, "range_confirmed": False, "ec_mode": False})
+            st.rerun()
+        else:
+            st.session_state['_ec_shown'] = True
+            import time as _teq; _teq.sleep(1)
             st.rerun()
 
     # 多次打字練習達標：自動跳下一題
