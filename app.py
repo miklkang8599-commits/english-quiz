@@ -1,7 +1,7 @@
 # ==============================================================================
 # 🧩 英文全能練習系統 (V2.9.482 - 跟著唸AI評分logs版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.526
+# 📌 版本編號 (VERSION): 2.9.527
 # 📅 更新日期: 2026-06-22
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -48,7 +48,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.526"
+VERSION = "2.9.527"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -5086,7 +5086,7 @@ if st.session_state.quiz_loaded:
         if not _typing_mode:
             _kb_key = f"vocab_kb_{st.session_state.q_idx}"
             _ans_key_check = f"vocab_ans_{st.session_state.q_idx}"
-            _has_ans = bool(st.session_state.get(_kb_key, "")) or bool(st.session_state.get(_ans_key_check, []))
+            _has_ans = bool(st.session_state.get(_kb_key, "")) or bool(st.session_state.get(_ans_key_check, [])) or bool(st.session_state.get("current_res", ""))
             if st.session_state.get("show_analysis") and not _has_ans:
                 st.session_state["show_analysis"]    = False
                 st.session_state["current_res"]      = ""
