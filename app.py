@@ -1,7 +1,7 @@
 # ==============================================================================
 # 🧩 英文全能練習系統 (V2.9.482 - 跟著唸AI評分logs版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.528
+# 📌 版本編號 (VERSION): 2.9.529
 # 📅 更新日期: 2026-06-22
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -24,6 +24,9 @@
 #   16. [功能] 拼單字新增「🇨🇳 英選中」答題模式：顯示英文單字，
 #              產生4個中文選項（含正解+3個混淆選項）。混淆選項
 #              優先抽同單元，不足擴大到同版本，再不足擴大全部題庫。
+#   17. [重構] 「英選中」從拆字母/鍵盤的輸入模式 radio 中獨立出來，
+#              改為與⚡快速答題、🏋️練習模式同層級的獨立答題模式選項，
+#              只在拼單字任務的模式選單中出現。
 #   13. [UI] 指派任務篩選條件（版本/單元/年度/冊編號/課編號）改為
 #              multiselect 複選，空白 = 全部適用，可同時選多個值。
 #              適用題型：重組、單選、朗讀、拼單字。
@@ -48,7 +51,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.528"
+VERSION = "2.9.529"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -3195,7 +3198,9 @@ if not st.session_state.quiz_loaded:
 
                         if st.session_state.get(_retry_key):
                             st.markdown("**選擇答題方式：**")
-                            if is_vocab_task or task_type in ("一般", "混合", ""):
+                            if is_vocab_task:
+                                _retry_opts = ["⚡ 快速答題", "⌨️ 多次打字練習", "🔊 多次撥放", "🏋️ 練習模式", "🎤 跟著唸和錄音", "🇨🇳 英選中"]
+                            elif task_type in ("一般", "混合", ""):
                                 _retry_opts = ["⚡ 快速答題", "⌨️ 多次打字練習", "🔊 多次撥放", "🏋️ 練習模式", "🎤 跟著唸和錄音"]
                             else:
                                 _retry_opts = ["⚡ 快速答題", "🏋️ 練習模式", "🎤 跟著唸和錄音"]
@@ -3226,13 +3231,14 @@ if not st.session_state.quiz_loaded:
                             _is_shadow   = (_retry_mode == "🎤 跟著唸和錄音")
                             _is_typing   = (_retry_mode == "⌨️ 多次打字練習")
                             _is_replay   = (_retry_mode == "🔊 多次撥放")
+                            _is_ec       = (_retry_mode == "🇨🇳 英選中")
                             _do_retry    = False
                             if st.button(f"🚀 開始{_retry_mode}", key=f"retry_go_{_task_idx}", type="primary", use_container_width=True):
                                 _do_retry = True
                                 st.session_state.pop(_retry_key, None)
                                 st.session_state[f"_retry_started_{task_id_key}"] = True
                         else:
-                            _do_retry, _is_practice, _is_quick, _is_shadow, _is_typing, _is_replay = False, False, False, False, False, False
+                            _do_retry, _is_practice, _is_quick, _is_shadow, _is_typing, _is_replay, _is_ec = False, False, False, False, False, False, False
                             retry_start, retry_end = 1, 0
 
                         if _do_retry:
@@ -3264,7 +3270,7 @@ if not st.session_state.quiz_loaded:
                                         "quiz_loaded": True, "answered_count": 0, "_timers_cleared": False, "current_task_name": task_id_key, "practice_mode": _is_practice, "quick_mode": locals().get("_is_quick", False), "shadow_mode": locals().get("_is_shadow", False), "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
                                         "ans": [], "used_history": [], "shuf": [], "show_analysis": False, "current_res": "", "vocab_start_time": None, "vocab_q_idx": None,
                                         "typing_mode": _is_typing, "typing_target": _retry_typing_target_val,
-                                        "replay_mode": _is_replay, "replay_per_q": _retry_replay_per_q_val, "replay_loops": _retry_replay_loops_val, "replay_loop_done": 0,
+                                        "replay_mode": _is_replay, "replay_per_q": _retry_replay_per_q_val, "replay_loops": _retry_replay_loops_val, "replay_loop_done": 0, "ec_mode": locals().get("_is_ec", False),
                                     })
                                     st.rerun()
                             else:
@@ -3371,7 +3377,7 @@ if not st.session_state.quiz_loaded:
                                         "quiz_loaded": True, "answered_count": 0, "_timers_cleared": False, "current_task_name": task_id_key, "practice_mode": _is_practice, "quick_mode": locals().get("_is_quick", False), "shadow_mode": locals().get("_is_shadow", False), "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
                                         "ans": [], "used_history": [], "shuf": [], "show_analysis": False, "current_res": "", "vocab_start_time": None, "vocab_q_idx": None,
                                         "typing_mode": _is_typing, "typing_target": _retry_typing_target_val,
-                                        "replay_mode": _is_replay, "replay_per_q": _retry_replay_per_q_val, "replay_loops": _retry_replay_loops_val, "replay_loop_done": 0,
+                                        "replay_mode": _is_replay, "replay_per_q": _retry_replay_per_q_val, "replay_loops": _retry_replay_loops_val, "replay_loop_done": 0, "ec_mode": locals().get("_is_ec", False),
                                     })
                                     st.rerun()
                                 else:
@@ -3388,7 +3394,9 @@ if not st.session_state.quiz_loaded:
                         _start_from = 1
                         if not is_race_task:
                             _shadow_ok = is_vocab_task or task_type in ("一般", "混合", "")
-                            if is_vocab_task or task_type in ("一般", "混合", ""):
+                            if is_vocab_task:
+                                _mode_opts = ["⚡ 快速答題", "⌨️ 多次打字練習", "🔊 多次撥放", "🏋️ 練習模式", "🎤 跟著唸和錄音", "🇨🇳 英選中"]
+                            elif task_type in ("一般", "混合", ""):
                                 _mode_opts = ["⚡ 快速答題", "⌨️ 多次打字練習", "🔊 多次撥放", "🏋️ 練習模式", "🎤 跟著唸和錄音"]
                             else:
                                 _mode_opts = ["⚡ 快速答題", "🏋️ 練習模式"]
@@ -3400,7 +3408,7 @@ if not st.session_state.quiz_loaded:
                                 horizontal=True,
                                 key=f"start_mode_{_task_idx}"
                             )
-                            if _mode in ("🏋️ 練習模式", "⚡ 快速答題", "🎤 跟著唸和錄音", "⌨️ 多次打字練習", "🔊 多次撥放"):
+                            if _mode in ("🏋️ 練習模式", "⚡ 快速答題", "🎤 跟著唸和錄音", "⌨️ 多次打字練習", "🔊 多次撥放", "🇨🇳 英選中"):
                                 _range_cols = st.columns(2)
                                 _start_from = _range_cols[0].number_input(
                                     "從第幾題",
@@ -3418,6 +3426,8 @@ if not st.session_state.quiz_loaded:
                                     st.caption("⚡ 快速答題：答完立即顯示對錯，自動跳下一題")
                                 elif _mode == "🎤 跟著唸和錄音":
                                     st.caption("🎤 跟著唸和錄音：播放英文 TTS，可自行錄音練習，無需作答")
+                                elif _mode == "🇨🇳 英選中":
+                                    st.caption("🇨🇳 英選中：顯示英文單字，選出正確的中文意思")
                                 elif _mode == "⌨️ 多次打字練習":
                                     _typing_target = st.number_input("答對幾次才跳下題", min_value=1, max_value=10, value=3, key=f"typing_target_{_task_idx}")
                                     st.caption(f"⌨️ 多次打字練習：需連續答對 {_typing_target} 次才進下一題，答錯繼續練習")
@@ -3442,6 +3452,7 @@ if not st.session_state.quiz_loaded:
                             _is_shadow    = (_mode == "🎤 跟著唸和錄音")
                             _is_typing    = (_mode == "⌨️ 多次打字練習")
                             _is_replay    = (_mode == "🔊 多次撥放")
+                            _is_ec        = (_mode == "🇨🇳 英選中")
                             _typing_target_val = st.session_state.get(f"typing_target_{_task_idx}", 3) if _is_typing else 3
                             _replay_per_q_val  = st.session_state.get(f"replay_per_q_{_task_idx}", 5) if _is_replay else 5
                             _replay_loops_val  = st.session_state.get(f"replay_loops_{_task_idx}", 2) if _is_replay else 2
@@ -3453,7 +3464,8 @@ if not st.session_state.quiz_loaded:
                                       (f"🎤 跟著唸和錄音{_range_suffix}" if _is_shadow else \
                                       (f"⌨️ 多次打字練習{_range_suffix}" if _is_typing else \
                                       (f"🔊 多次撥放{_range_suffix}" if _is_replay else \
-                                       f"⚡ 快速答題{_range_suffix}")))))
+                                      (f"🇨🇳 英選中{_range_suffix}" if _is_ec else \
+                                       f"⚡ 快速答題{_range_suffix}"))))))
                             if st.button(f"🚀 {label}", key=btn_key, type="primary", use_container_width=True):
                                 _start_idx_fwd = max(0, int(_start_from) - 1)
                                 _end_idx_fwd   = (int(_end_from_val) - 1) if _end_from_val > 0 else None
@@ -3486,7 +3498,7 @@ if not st.session_state.quiz_loaded:
                                           "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "_timers_cleared": False, "current_task_name": task_id_key, "practice_mode": _is_practice, "quick_mode": locals().get("_is_quick", False), "shadow_mode": locals().get("_is_shadow", False), "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
                                           "ans": [], "used_history": [], "shuf": [], "show_analysis": False, "current_res": "", "vocab_start_time": None, "vocab_q_idx": None,
                                               "typing_mode": locals().get("_is_typing", False), "typing_target": locals().get("_typing_target_val", 3),
-                                              "replay_mode": locals().get("_is_replay", False), "replay_per_q": locals().get("_replay_per_q_val", 5), "replay_loops": locals().get("_replay_loops_val", 2), "replay_loop_done": 0,
+                                              "replay_mode": locals().get("_is_replay", False), "replay_per_q": locals().get("_replay_per_q_val", 5), "replay_loops": locals().get("_replay_loops_val", 2), "replay_loop_done": 0, "ec_mode": locals().get("_is_ec", False),
                                       })
                                       st.rerun()
   
@@ -3527,7 +3539,7 @@ if not st.session_state.quiz_loaded:
                                           "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "_timers_cleared": False, "current_task_name": task_id_key, "practice_mode": _is_practice, "quick_mode": locals().get("_is_quick", False), "shadow_mode": locals().get("_is_shadow", False), "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
                                           "ans": [], "used_history": [], "shuf": [], "show_analysis": False, "current_res": "", "vocab_start_time": None, "vocab_q_idx": None,
                                           "typing_mode": locals().get("_is_typing", False), "typing_target": locals().get("_typing_target_val", 3),
-                                          "replay_mode": locals().get("_is_replay", False), "replay_per_q": locals().get("_replay_per_q_val", 5), "replay_loops": locals().get("_replay_loops_val", 2), "replay_loop_done": 0,
+                                          "replay_mode": locals().get("_is_replay", False), "replay_per_q": locals().get("_replay_per_q_val", 5), "replay_loops": locals().get("_replay_loops_val", 2), "replay_loop_done": 0, "ec_mode": locals().get("_is_ec", False),
                                       })
                                       st.rerun()
   
@@ -3554,7 +3566,7 @@ if not st.session_state.quiz_loaded:
                                           "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "_timers_cleared": False, "current_task_name": task_id_key, "practice_mode": _is_practice, "quick_mode": locals().get("_is_quick", False), "shadow_mode": locals().get("_is_shadow", False), "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
                                           "ans": [], "used_history": [], "shuf": [], "show_analysis": False, "current_res": "", "vocab_start_time": None, "vocab_q_idx": None,
                                               "typing_mode": locals().get("_is_typing", False), "typing_target": locals().get("_typing_target_val", 3),
-                                              "replay_mode": locals().get("_is_replay", False), "replay_per_q": locals().get("_replay_per_q_val", 5), "replay_loops": locals().get("_replay_loops_val", 2), "replay_loop_done": 0,
+                                              "replay_mode": locals().get("_is_replay", False), "replay_per_q": locals().get("_replay_per_q_val", 5), "replay_loops": locals().get("_replay_loops_val", 2), "replay_loop_done": 0, "ec_mode": locals().get("_is_ec", False),
                                       })
                                       st.rerun()
   
@@ -3609,7 +3621,7 @@ if not st.session_state.quiz_loaded:
                                               "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "_timers_cleared": False, "current_task_name": task_id_key, "practice_mode": _is_practice, "quick_mode": locals().get("_is_quick", False), "shadow_mode": locals().get("_is_shadow", False), "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
                                               "ans": [], "used_history": [], "shuf": [], "show_analysis": False, "current_res": "", "vocab_start_time": None, "vocab_q_idx": None,
                                                   "typing_mode": locals().get("_is_typing", False), "typing_target": locals().get("_typing_target_val", 3),
-                                                  "replay_mode": locals().get("_is_replay", False), "replay_per_q": locals().get("_replay_per_q_val", 5), "replay_loops": locals().get("_replay_loops_val", 2), "replay_loop_done": 0,
+                                                  "replay_mode": locals().get("_is_replay", False), "replay_per_q": locals().get("_replay_per_q_val", 5), "replay_loops": locals().get("_replay_loops_val", 2), "replay_loop_done": 0, "ec_mode": locals().get("_is_ec", False),
                                           })
                                           st.rerun()
                                       else:
@@ -3635,7 +3647,7 @@ if not st.session_state.quiz_loaded:
                                               "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "_timers_cleared": False, "current_task_name": task_id_key, "practice_mode": _is_practice, "quick_mode": locals().get("_is_quick", False), "shadow_mode": locals().get("_is_shadow", False), "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
                                               "ans": [], "used_history": [], "shuf": [], "show_analysis": False, "current_res": "", "vocab_start_time": None, "vocab_q_idx": None,
                                                   "typing_mode": locals().get("_is_typing", False), "typing_target": locals().get("_typing_target_val", 3),
-                                                  "replay_mode": locals().get("_is_replay", False), "replay_per_q": locals().get("_replay_per_q_val", 5), "replay_loops": locals().get("_replay_loops_val", 2), "replay_loop_done": 0,
+                                                  "replay_mode": locals().get("_is_replay", False), "replay_per_q": locals().get("_replay_per_q_val", 5), "replay_loops": locals().get("_replay_loops_val", 2), "replay_loop_done": 0, "ec_mode": locals().get("_is_ec", False),
                                           })
                                           st.rerun()
   
@@ -3735,7 +3747,7 @@ if not st.session_state.quiz_loaded:
                                           "q_idx": min(_start_idx_fwd, len(pending)-1), "quiz_loaded": True, "answered_count": 0, "_timers_cleared": False, "current_task_name": task_id_key, "practice_mode": _is_practice, "quick_mode": locals().get("_is_quick", False), "shadow_mode": locals().get("_is_shadow", False), "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
                                           "ans": [], "used_history": [], "shuf": [], "show_analysis": False, "current_res": "", "vocab_start_time": None, "vocab_q_idx": None,
                                               "typing_mode": locals().get("_is_typing", False), "typing_target": locals().get("_typing_target_val", 3),
-                                              "replay_mode": locals().get("_is_replay", False), "replay_per_q": locals().get("_replay_per_q_val", 5), "replay_loops": locals().get("_replay_loops_val", 2), "replay_loop_done": 0,
+                                              "replay_mode": locals().get("_is_replay", False), "replay_per_q": locals().get("_replay_per_q_val", 5), "replay_loops": locals().get("_replay_loops_val", 2), "replay_loop_done": 0, "ec_mode": locals().get("_is_ec", False),
                                       })
                                       st.rerun()
   
@@ -3772,7 +3784,7 @@ if not st.session_state.quiz_loaded:
                                         "q_idx": min(_start_idx_fwd, len(records)-1), "quiz_loaded": True, "answered_count": 0, "_timers_cleared": False, "current_task_name": task_id_key, "practice_mode": _is_practice, "quick_mode": locals().get("_is_quick", False), "shadow_mode": locals().get("_is_shadow", False), "race_mode": is_race_task if "is_race_task" in dir() else False, "race_start_time": __import__("time").time() if (is_race_task if "is_race_task" in dir() else False) else None,
                                         "ans": [], "used_history": [], "shuf": [], "show_analysis": False, "current_res": "", "vocab_start_time": None, "vocab_q_idx": None,
                                         "typing_mode": locals().get("_is_typing", False), "typing_target": locals().get("_typing_target_val", 3),
-                                        "replay_mode": locals().get("_is_replay", False), "replay_per_q": locals().get("_replay_per_q_val", 5), "replay_loops": locals().get("_replay_loops_val", 2), "replay_loop_done": 0,
+                                        "replay_mode": locals().get("_is_replay", False), "replay_per_q": locals().get("_replay_per_q_val", 5), "replay_loops": locals().get("_replay_loops_val", 2), "replay_loop_done": 0, "ec_mode": locals().get("_is_ec", False),
                                     })
                                     st.rerun()
                                 else:
@@ -4360,7 +4372,8 @@ if st.session_state.quiz_loaded:
     _replay_mode   = st.session_state.get('replay_mode', False)
     _replay_per_q  = int(st.session_state.get('replay_per_q', 5))
     _replay_loops  = int(st.session_state.get('replay_loops', 2))
-    _mode_label    = "🏆 競賽模式" if _race_mode else ("🏋️ 練習模式" if _practice_mode else ("⚡ 快速答題" if _quick_mode else ("🎤 跟著唸和錄音" if _shadow_mode else ("⌨️ 多次打字練習" if _typing_mode else ("🔊 多次撥放" if _replay_mode else "")))))
+    _ec_mode       = st.session_state.get('ec_mode', False)
+    _mode_label    = "🏆 競賽模式" if _race_mode else ("🏋️ 練習模式" if _practice_mode else ("⚡ 快速答題" if _quick_mode else ("🎤 跟著唸和錄音" if _shadow_mode else ("⌨️ 多次打字練習" if _typing_mode else ("🔊 多次撥放" if _replay_mode else ("🇨🇳 英選中" if _ec_mode else ""))))))
 
     # ── 單題計時 ──────────────────────────────────────────────────────────
     import time as _time_sys
@@ -4377,7 +4390,7 @@ if st.session_state.quiz_loaded:
     _idle_limit = 90
 
     # 90 秒閒置：寫入超時記錄並跳回任務列表（多次打字練習模式跳過）
-    if _q_elapsed >= _idle_limit and not st.session_state.get("show_analysis") and not _typing_mode and not _replay_mode:
+    if _q_elapsed >= _idle_limit and not st.session_state.get("show_analysis") and not _typing_mode and not _replay_mode and not _ec_mode:
         import pandas as _pd_timeout
         _timeout_row = {
             "時間": get_now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -4418,7 +4431,7 @@ if st.session_state.quiz_loaded:
         st.session_state.pop('_first_q_cleared', None)
     # 計時顯示（多次打字練習模式不顯示倒數）
     _answered_now = st.session_state.get('answered_count', 0)
-    if _typing_mode or _replay_mode:
+    if _typing_mode or _replay_mode or _ec_mode:
         if not st.session_state.get("show_analysis"):
             st.markdown(f"### 🔴 練習中 (第 {st.session_state.q_idx + 1} / {total_q} 題　｜　已作答 {_answered_now} 題) {_mode_label}")
         else:
@@ -5073,11 +5086,11 @@ if st.session_state.quiz_loaded:
             st.error(f"⚠️ 拼單字題目無英文單字，題目欄位：{list(q.keys())[:10]}")
             st.stop()
         task_mode    = q.get("_vocab_mode", "自選")
-        use_timer    = 0 if _typing_mode else int(q.get("_vocab_timer", 0) or 0)
+        use_timer    = 0 if (_typing_mode or _ec_mode) else int(q.get("_vocab_timer", 0) or 0)
         extra_letters= int(q.get("_vocab_extra", 0)) if q.get("_vocab_extra") is not None else 0
 
 
-        if not _replay_mode and "英選中" not in str(st.session_state.get("_vocab_mode_saved", "")):
+        if not _replay_mode and not _ec_mode:
             st.markdown(f"<div style=\'font-size:1.3rem;font-weight:600;padding:12px;background:var(--color-background-secondary);border-radius:8px;\'>📖 {meaning}</div>", unsafe_allow_html=True)
 
         st.write("")
@@ -5115,15 +5128,15 @@ if st.session_state.quiz_loaded:
             # 模式切換
             if task_mode in ("自選", "學生自選"):
                 _vm_saved = st.session_state.get("_vocab_mode_saved", "🔤 拆字母")
-                if _vm_saved not in ["🔤 拆字母", "⌨️ 鍵盤", "🇨🇳 英選中"]:
+                if _vm_saved not in ["🔤 拆字母", "⌨️ 鍵盤"]:
                     _vm_saved = "🔤 拆字母"
                 vocab_mode = st.radio(
                     "輸入模式",
-                    ["🔤 拆字母", "⌨️ 鍵盤", "🇨🇳 英選中"],
+                    ["🔤 拆字母", "⌨️ 鍵盤"],
                     horizontal=True,
                     key="vocab_mode_global",
                     disabled=st.session_state.get("show_analysis", False),
-                    index=["🔤 拆字母", "⌨️ 鍵盤", "🇨🇳 英選中"].index(_vm_saved)
+                    index=["🔤 拆字母", "⌨️ 鍵盤"].index(_vm_saved)
                 )
                 # 儲存最新選擇到獨立 key，rerun 後不會被 widget 重置
                 st.session_state["_vocab_mode_saved"] = vocab_mode
@@ -5143,7 +5156,7 @@ if st.session_state.quiz_loaded:
                 vocab_mode = "🔤 拆字母"
 
         # ── 英選中模式：顯示英文單字 + 4 個中文選項 ──────────────────────────
-        if not _replay_mode and "英選中" in vocab_mode:
+        if not _replay_mode and _ec_mode:
             _ec_key = f"vocab_ec_opts_{st.session_state.q_idx}"
             if _ec_key not in st.session_state:
                 _correct_cn = meaning
@@ -5228,7 +5241,7 @@ if st.session_state.quiz_loaded:
                             st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
                             st.rerun()
 
-        if not _replay_mode and "英選中" not in vocab_mode:
+        if not _replay_mode and not _ec_mode:
             # 初始化字母池（pool_key 含干擾字數，設定改變時自動重建）
             pool_key = f"vocab_pool_{st.session_state.q_idx}_{extra_letters}"
             if pool_key not in st.session_state:
