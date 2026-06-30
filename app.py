@@ -21,6 +21,9 @@
 #   11. [邏輯] 移除所有答題模式中「答錯重複出題」機制，答錯不再
 #              把題目加到 quiz_list 末尾重考。
 #   12. [UI] 移除側欄「榮譽榜」與「更新排行榜」功能。
+#   16. [功能] 拼單字新增「🇨🇳 英選中」答題模式：顯示英文單字，
+#              產生4個中文選項（含正解+3個混淆選項）。混淆選項
+#              優先抽同單元，不足擴大到同版本，再不足擴大全部題庫。
 #   13. [UI] 指派任務篩選條件（版本/單元/年度/冊編號/課編號）改為
 #              multiselect 複選，空白 = 全部適用，可同時選多個值。
 #              適用題型：重組、單選、朗讀、拼單字。
@@ -5112,15 +5115,15 @@ if st.session_state.quiz_loaded:
             # 模式切換
             if task_mode in ("自選", "學生自選"):
                 _vm_saved = st.session_state.get("_vocab_mode_saved", "🔤 拆字母")
-                if _vm_saved not in ["🔤 拆字母", "⌨️ 鍵盤"]:
+                if _vm_saved not in ["🔤 拆字母", "⌨️ 鍵盤", "🇨🇳 英選中"]:
                     _vm_saved = "🔤 拆字母"
                 vocab_mode = st.radio(
                     "輸入模式",
-                    ["🔤 拆字母", "⌨️ 鍵盤"],
+                    ["🔤 拆字母", "⌨️ 鍵盤", "🇨🇳 英選中"],
                     horizontal=True,
                     key="vocab_mode_global",
                     disabled=st.session_state.get("show_analysis", False),
-                    index=["🔤 拆字母", "⌨️ 鍵盤"].index(_vm_saved)
+                    index=["🔤 拆字母", "⌨️ 鍵盤", "🇨🇳 英選中"].index(_vm_saved)
                 )
                 # 儲存最新選擇到獨立 key，rerun 後不會被 widget 重置
                 st.session_state["_vocab_mode_saved"] = vocab_mode
@@ -5131,7 +5134,7 @@ if st.session_state.quiz_loaded:
                     if vocab_mode == "⌨️ 鍵盤":
                         st.session_state[f"vocab_ans_{_q}"] = []
                         st.session_state[f"vocab_used_{_q}"] = []
-                    else:
+                    elif vocab_mode == "🔤 拆字母":
                         st.session_state[f"vocab_kb_{_q}"] = ""
                 st.session_state["_vocab_prev_mode"] = vocab_mode
             else:
@@ -5139,6 +5142,93 @@ if st.session_state.quiz_loaded:
             if not vocab_mode:
                 vocab_mode = "🔤 拆字母"
 
+        # ── 英選中模式：顯示英文單字 + 4 個中文選項 ──────────────────────────
+        if not _replay_mode and "英選中" in vocab_mode:
+            _ec_key = f"vocab_ec_opts_{st.session_state.q_idx}"
+            if _ec_key not in st.session_state:
+                _correct_cn = meaning
+                _cur_unit    = str(q.get("單元", "")).strip()
+                _cur_version = str(q.get("版本", "")).strip()
+                _pool_same_unit = []
+                _pool_same_version = []
+                _pool_all = []
+                try:
+                    if "單元" in df_v.columns:
+                        _pool_same_unit = df_v[
+                            (df_v["單元"].astype(str).str.strip() == _cur_unit) &
+                            (df_v["中文意思"].astype(str).str.strip() != _correct_cn)
+                        ]["中文意思"].astype(str).str.strip().unique().tolist()
+                    if "版本" in df_v.columns:
+                        _pool_same_version = df_v[
+                            (df_v["版本"].astype(str).str.strip() == _cur_version) &
+                            (df_v["中文意思"].astype(str).str.strip() != _correct_cn)
+                        ]["中文意思"].astype(str).str.strip().unique().tolist()
+                    _pool_all = df_v[
+                        df_v["中文意思"].astype(str).str.strip() != _correct_cn
+                    ]["中文意思"].astype(str).str.strip().unique().tolist()
+                except Exception:
+                    pass
+                _pool_same_unit = [c for c in _pool_same_unit if c]
+                _pool_same_version = [c for c in _pool_same_version if c]
+                _pool_all = [c for c in _pool_all if c]
+
+                _distractors = []
+                _random.shuffle(_pool_same_unit)
+                _distractors.extend(_pool_same_unit[:3])
+                if len(_distractors) < 3:
+                    _remaining = [c for c in _pool_same_version if c not in _distractors]
+                    _random.shuffle(_remaining)
+                    _distractors.extend(_remaining[:3 - len(_distractors)])
+                if len(_distractors) < 3:
+                    _remaining2 = [c for c in _pool_all if c not in _distractors]
+                    _random.shuffle(_remaining2)
+                    _distractors.extend(_remaining2[:3 - len(_distractors)])
+
+                _ec_options = [_correct_cn] + _distractors[:3]
+                _random.shuffle(_ec_options)
+                st.session_state[_ec_key] = _ec_options
+
+            _ec_options = st.session_state[_ec_key]
+            st.markdown(f"## {word}")
+            st.caption("請選出正確的中文意思")
+
+            if not st.session_state.get("show_analysis"):
+                for _opt_idx, _opt in enumerate(_ec_options):
+                    if st.button(_opt, key=f"ec_opt_{st.session_state.q_idx}_{_opt_idx}", use_container_width=True):
+                        is_ok = (_opt.strip() == meaning.strip())
+                        if _typing_mode:
+                            _tc_key_ec = f"_typing_correct_{st.session_state.q_idx}"
+                            _tc_now_ec = int(st.session_state.get(_tc_key_ec, 0))
+                            if is_ok:
+                                _tc_now_ec += 1
+                                st.session_state[_tc_key_ec] = _tc_now_ec
+                                st.toast(f"✅ 正確！{_tc_now_ec}/{_typing_target} 次")
+                            else:
+                                st.toast("❌ 錯誤，繼續練習")
+                            st.session_state.pop(_ec_key, None)
+                            append_to_sheet("logs", pd.DataFrame([{
+                                "時間": get_now().strftime("%Y-%m-%d %H:%M:%S"), "姓名": st.session_state.user_name,
+                                "分組": st.session_state.group_id, "題目ID": q.get('題目ID', 'N/A'),
+                                "結果": "✅" if is_ok else "❌", "學生答案": _opt,
+                                "任務名稱": st.session_state.get("current_task_name", ""), "作答秒數": round(__import__("time").time() - st.session_state.get(f"_q_start_time_{st.session_state.q_idx}", __import__("time").time()))
+                            }]))
+                            st.rerun()
+                        else:
+                            st.session_state.update({
+                                "current_res": "✅ 正確！" if is_ok else f"❌ 錯誤！正確答案：{meaning}",
+                                "show_analysis": True
+                            })
+                            append_to_sheet("logs", pd.DataFrame([{
+                                "時間": get_now().strftime("%Y-%m-%d %H:%M:%S"), "姓名": st.session_state.user_name,
+                                "分組": st.session_state.group_id, "題目ID": q.get('題目ID', 'N/A'),
+                                "結果": "練習" if st.session_state.get("practice_mode") else ("✅" if is_ok else "❌"),
+                                "學生答案": _opt,
+                                "任務名稱": st.session_state.get("current_task_name", ""), "作答秒數": round(__import__("time").time() - st.session_state.get(f"_q_start_time_{st.session_state.q_idx}", __import__("time").time()))
+                            }]))
+                            st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
+                            st.rerun()
+
+        if not _replay_mode and "英選中" not in vocab_mode:
             # 初始化字母池（pool_key 含干擾字數，設定改變時自動重建）
             pool_key = f"vocab_pool_{st.session_state.q_idx}_{extra_letters}"
             if pool_key not in st.session_state:
