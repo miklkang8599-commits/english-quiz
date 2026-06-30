@@ -1,7 +1,7 @@
 # ==============================================================================
 # 🧩 英文全能練習系統 (V2.9.482 - 跟著唸AI評分logs版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.527
+# 📌 版本編號 (VERSION): 2.9.528
 # 📅 更新日期: 2026-06-22
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -48,7 +48,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.527"
+VERSION = "2.9.528"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -5077,7 +5077,7 @@ if st.session_state.quiz_loaded:
         extra_letters= int(q.get("_vocab_extra", 0)) if q.get("_vocab_extra") is not None else 0
 
 
-        if not _replay_mode:
+        if not _replay_mode and "英選中" not in str(st.session_state.get("_vocab_mode_saved", "")):
             st.markdown(f"<div style=\'font-size:1.3rem;font-weight:600;padding:12px;background:var(--color-background-secondary);border-radius:8px;\'>📖 {meaning}</div>", unsafe_allow_html=True)
 
         st.write("")
