@@ -1,7 +1,7 @@
 # ==============================================================================
 # 🧩 英文全能練習系統 (V2.9.482 - 跟著唸AI評分logs版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.530
+# 📌 版本編號 (VERSION): 2.9.532
 # 📅 更新日期: 2026-06-22
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
@@ -51,7 +51,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.530"
+VERSION = "2.9.532"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -2207,6 +2207,15 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                         _row[en] = _val
                     if _row.get('name'):  # 跳過空白列
                         _rows.append(_row)
+
+                # 依姓名去重（保留最後一筆），避免同批 upsert 出現重複 name 衝突
+                _name_seen = {}
+                for _r in _rows:
+                    _name_seen[_r['name']] = _r  # 後面的覆蓋前面的
+                _dup_names = [n for n in set(r['name'] for r in _rows) if sum(1 for r in _rows if r['name'] == n) > 1]
+                _rows = list(_name_seen.values())
+                if _dup_names:
+                    st.warning(f"⚠️ Google Sheet 中發現重複姓名（已自動取最後一筆）：{', '.join(_dup_names)}")
 
                 if _rows:
                     with st.spinner(f"⏳ 同步 {len(_rows)} 筆學生資料..."):
@@ -5477,16 +5486,25 @@ if st.session_state.quiz_loaded:
             st.divider()
 
             # 載入 TTS 男聲（只載入一次）
-            if not st.session_state.get(_rp_tts_key):
+            # 清理 word：去除括號說明、全形空格等特殊字元
+            _tts_word = word.replace('\u3000', ' ').replace('\xa0', ' ').strip()
+            # 只取第一個括號前的內容（例如 "go (went)" → "go"）
+            import re as _re_rp
+            _tts_word = _re_rp.split(r'\s*[\(\（]', _tts_word)[0].strip() or _tts_word
+            if not _tts_word:
+                st.warning("⚠️ 此題單字欄位是空的，無法產生語音")
+            elif not st.session_state.get(_rp_tts_key):
                 with st.spinner("載入語音..."):
                     try:
                         import openai as _oai_rp
                         _cli_rp = _oai_rp.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
-                        _tm_rp = _cli_rp.audio.speech.create(model="tts-1", voice="onyx", input=word).content
+                        _tm_rp = _cli_rp.audio.speech.create(model="tts-1", voice="onyx", input=_tts_word).content
                         st.session_state[_rp_tts_key] = _b64.b64encode(_tm_rp).decode()
                         st.rerun()
                     except Exception as _e_rp:
-                        st.error(f"TTS 載入失敗：{_e_rp}")
+                        st.error(f"TTS 載入失敗（{_tts_word!r}）：{_e_rp}")
+                        if st.button("🔄 重試", key=f"rp_retry_{st.session_state.q_idx}"):
+                            st.rerun()
 
             if st.session_state.get(_rp_tts_key) and not st.session_state.get(_rp_done_key):
                 _m_b64_rp = st.session_state[_rp_tts_key]
