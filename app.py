@@ -1,8 +1,10 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.482 - 跟著唸AI評分logs版)
+# 🧩 英文全能練習系統 (V2.9.535 - 跟著唸AI評分logs版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.534
+# 📌 版本編號 (VERSION): 2.9.535
 # 📅 更新日期: 2026-10-26
+# 🆕 2.9.535：快速答題遇到閱讀單句題不自動跳題，停下來顯示對錯、解析、翻譯，
+#              按「下一題」才前進（其他題型照舊自動跳題）。
 # 🆕 2.9.534 閱讀題組：
 #   18. [功能] 閱讀單句支援考古題閱讀測驗題組：
 #              文章框固定高度可捲動；電腦/平板左文右題，手機上下排。
@@ -58,7 +60,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.534"
+VERSION = "2.9.535"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -6032,8 +6034,8 @@ if st.session_state.quiz_loaded:
                 st.session_state.pop(k, None)
 
 
-    # 快速答題模式：顯示對錯 1 秒後自動跳下一題
-    if _quick_mode and st.session_state.get('show_analysis'):
+    # 快速答題模式：顯示對錯 1 秒後自動跳下一題（閱讀單句題例外：停下來看解析）
+    if _quick_mode and not is_reading_mcq and st.session_state.get('show_analysis'):
         if st.session_state.get('_quick_shown'):
             # 已顯示結果，執行跳題
             st.session_state.pop('_quick_shown', None)
@@ -6118,8 +6120,8 @@ if st.session_state.quiz_loaded:
         nxt_col = c_nav[1]
 
     nxt_label = "下一題 ➡️" if st.session_state.q_idx + 1 < len(st.session_state.quiz_list) else ("🏆 查看成績" if _race_mode else "🏁 結束練習")
-    # Enter 鍵觸發下一題（非快速答題模式）
-    if st.session_state.get("show_analysis") and not _quick_mode:
+    # Enter 鍵觸發下一題（非快速答題模式；快速答題的閱讀單句題也適用）
+    if st.session_state.get("show_analysis") and (not _quick_mode or is_reading_mcq):
         import streamlit.components.v1 as _cv1_nxt
         _cv1_nxt.html("""<script>
         window.parent.document.addEventListener('keydown', function _nxt(e){
@@ -6133,8 +6135,8 @@ if st.session_state.quiz_loaded:
             }
         });
         </script>""", height=0)
-    # 快速答題模式：不顯示下一題按鈕（自動跳題）
-    if _quick_mode:
+    # 快速答題模式：不顯示下一題按鈕（自動跳題）；閱讀單句題答完後才顯示
+    if _quick_mode and not (is_reading_mcq and st.session_state.get("show_analysis")):
         nxt_col.empty()
     elif nxt_col.button(nxt_label, type="primary", use_container_width=True):
         if st.session_state.q_idx + 1 < len(st.session_state.quiz_list):
