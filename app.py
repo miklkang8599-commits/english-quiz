@@ -1,8 +1,10 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.536 - 跟著唸AI評分logs版)
+# 🧩 英文全能練習系統 (V2.9.537 - 跟著唸AI評分logs版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.536
+# 📌 版本編號 (VERSION): 2.9.537
 # 📅 更新日期: 2026-10-27
+# 🆕 2.9.537：登入頁直接選「📱 手機／💻 電腦平板」，登入後套用對應版面；
+#              手機版縮小邊距與標題、加大按鈕；選擇記在網址（?device=），下次預設同一個。
 # 🆕 2.9.536：指派任務的單選題、閱讀單句題範圍新增「學校」複選篩選（空白 = 全部），
 #              選了學校時任務名稱會在「課」後面列出學校（超過 3 校寫「等N校」）。
 # 🆕 2.9.535：快速答題遇到閱讀單句題不自動跳題，停下來顯示對錯、解析、翻譯，
@@ -62,7 +64,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.536"
+VERSION = "2.9.537"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -403,9 +405,13 @@ if not st.session_state.get('logged_in', False):
                 st.rerun()
             st.stop()
         st.markdown("### 🔵 系統登入")
+        # 作答裝置：預設沿用上次的選擇（記在網址 ?device=）
+        _dev_opts = ["📱 手機", "💻 電腦/平板"]
+        _dev_default = 1 if st.query_params.get("device") == "pc" else 0
         with st.form("login_form"):
             i_id = st.text_input("帳號 (學號/員工編號)", key="l_id")
             i_pw = st.text_input("密碼", type="password", key="l_pw")
+            i_dev = st.radio("作答裝置", _dev_opts, index=_dev_default, horizontal=True, key="l_device")
             _login_submitted = st.form_submit_button("🚀 登入系統", use_container_width=True, type="primary")
         # Enter 鍵觸發登入
         st.markdown("""<script>
@@ -431,7 +437,9 @@ if not st.session_state.get('logged_in', False):
                     "group_id": user.iloc[0]['分組'],
                     "view_mode": "管理後台" if is_admin(user.iloc[0]["分組"]) else "練習模式",
                     "static_loaded": _was_loaded,
+                    "device_layout": "手機（1欄）" if "手機" in i_dev else "電腦/平板（2欄）",
                 })
+                st.query_params["device"] = "phone" if "手機" in i_dev else "pc"
                 st.rerun()
             else:
                 st.error("❌ 帳號或密碼錯誤")
@@ -488,17 +496,25 @@ with st.sidebar:
         st.session_state.clear()
         st.rerun()
 
-    # 裝置類型（影響單選題選項排列）
+    # 裝置類型（登入時選定，這裡可以再改；影響選項排列與版面）
     _device = st.selectbox(
-        "📱 裝置類型",
+        "📱 作答裝置",
         ["電腦/平板（2欄）", "手機（1欄）"],
         key="device_layout",
-        label_visibility="collapsed",
-        help="選擇裝置類型，調整單選題選項排列方式"
+        help="登入時選的作答裝置，可在這裡更改"
     )
     st.session_state['mcq_cols'] = 1 if "手機" in _device else 2
 
     st.caption(f"Ver {VERSION}")
+
+# 手機版面：縮小邊距與標題、加大按鈕，讓題目與選項在窄螢幕一次看得到
+if st.session_state.get('mcq_cols', 2) == 1:
+    st.markdown("""<style>
+    .block-container { padding-left:.75rem !important; padding-right:.75rem !important; padding-top:3rem !important; }
+    .block-container h3 { font-size:1.15rem !important; line-height:1.4 !important; }
+    div[data-testid="stButton"] button { min-height:2.9rem; font-size:1.05rem; }
+    .block-container .rm-passage { max-height:40vh; font-size:1.02rem; }
+    </style>""", unsafe_allow_html=True)
 
 # 共用：產生含學生名字的班級標籤
 def _group_label(g):
