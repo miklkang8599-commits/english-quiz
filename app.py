@@ -1,8 +1,10 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.535 - 跟著唸AI評分logs版)
+# 🧩 英文全能練習系統 (V2.9.536 - 跟著唸AI評分logs版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.535
-# 📅 更新日期: 2026-10-26
+# 📌 版本編號 (VERSION): 2.9.536
+# 📅 更新日期: 2026-10-27
+# 🆕 2.9.536：指派任務的單選題、閱讀單句題範圍新增「學校」複選篩選（空白 = 全部），
+#              選了學校時任務名稱會在「課」後面列出學校（超過 3 校寫「等N校」）。
 # 🆕 2.9.535：快速答題遇到閱讀單句題不自動跳題，停下來顯示對錯、解析、翻譯，
 #              按「下一題」才前進（其他題型照舊自動跳題）。
 # 🆕 2.9.534 閱讀題組：
@@ -60,7 +62,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.535"
+VERSION = "2.9.536"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1167,6 +1169,14 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     _mv_filter & _mu_filter & _my_filter & _mb_filter &
                     (df_mcq["課編號"].isin(ml) if ml else pd.Series([True]*len(df_mcq), index=df_mcq.index))
                 ].copy()
+
+                # 學校（可複選，空白 = 全部）
+                if "學校" in df_mcq_scope.columns:
+                    mc_school_opts = sorted([v for v in df_mcq_scope["學校"].unique() if v and v != ""])
+                    if mc_school_opts:
+                        mc_school = st.multiselect("🏫 學校（可複選，空白 = 全部）", mc_school_opts, key="mc_school")
+                        if mc_school:
+                            df_mcq_scope = df_mcq_scope[df_mcq_scope["學校"].isin(mc_school)]
                 mc_total_before = len(df_mcq_scope)  # 文法/難度篩選前的總題數
 
                 mc_extra = st.columns(2)
@@ -1437,6 +1447,14 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
 
                 df_rm_scope = rml_src[rml_src['課編號'] == rml_].copy()
 
+                # 學校（可複選，空白 = 全部）
+                if '學校' in df_rm_scope.columns:
+                    rm_school_opts = sorted([v for v in df_rm_scope['學校'].unique() if v and v != ''])
+                    if rm_school_opts:
+                        rm_school = st.multiselect("🏫 學校（可複選，空白 = 全部）", rm_school_opts, key="rmt_school")
+                        if rm_school:
+                            df_rm_scope = df_rm_scope[df_rm_scope['學校'].isin(rm_school)]
+
                 # 文法／難度篩選
                 rm_extra = st.columns(2)
                 if '文法' in df_rm_scope.columns:
@@ -1561,11 +1579,16 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 groups_label = ",".join(target_groups)
 
                 # 取得主要題型的篩選資訊（只顯示一次題型）
-                def _make_task_name(ttype, v, u, y, b, l, start, count, groups, teacher, ptime, dstart, dend):
-                    # 格式：題型-單元-版本-年度-冊-課-起始題-題數-班級-出題老師-出題戳記-開始日~結束日
+                def _make_task_name(ttype, v, u, y, b, l, start, count, groups, teacher, ptime, dstart, dend, schools=None):
+                    # 格式：題型-單元-版本-年度-冊-課-學校-起始題-題數-班級-出題老師-出題戳記-開始日~結束日
                     u_part    = f"-{u}" if u and str(u).strip() else ""
                     start_str = f"-起始{start}" if start else ""
-                    return f"{ttype}{u_part}-{v}-{y}年-冊{b}-課{l}{start_str}-{count}題-{groups}-{teacher}-{ptime}-{dstart}~{dend}"
+                    # 學校用「、」相接（不可用 -，老師名是從 - 分段取出的）；超過 3 校只列前 3 校
+                    s_list = [str(s) for s in (schools or []) if str(s).strip()]
+                    s_part = ""
+                    if s_list:
+                        s_part = "-" + ("、".join(s_list) if len(s_list) <= 3 else "、".join(s_list[:3]) + f"等{len(s_list)}校")
+                    return f"{ttype}{u_part}-{v}-{y}年-冊{b}-課{l}{s_part}{start_str}-{count}題-{groups}-{teacher}-{ptime}-{dstart}~{dend}"
 
                 if mcq_ids:
                     mv_ = st.session_state.get('mc_v', '')
@@ -1574,7 +1597,8 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     mb_ = st.session_state.get('mc_b', '')
                     ml_ = st.session_state.get('mc_l', '')
                     ms_ = st.session_state.get('mc_start_sent', '')
-                    auto_desc = _make_task_name("單選", mv_, mu_, my_, mb_, ml_, ms_, len(mcq_ids), groups_label, teacher_name, publish_time, str(date_start), str(date_end))
+                    auto_desc = _make_task_name("單選", mv_, mu_, my_, mb_, ml_, ms_, len(mcq_ids), groups_label, teacher_name, publish_time, str(date_start), str(date_end),
+                                                schools=st.session_state.get('mc_school', []))
                 elif q_ids:
                     auto_desc = _make_task_name("重組", t1v, t1u, t1y, t1b, t1l, st.session_state.get('t1_start_sent',''), len(q_ids), groups_label, teacher_name, publish_time, str(date_start), str(date_end))
                 elif r_ids:
@@ -1600,7 +1624,8 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     rmb_ = st.session_state.get('rmt_b', '')
                     rml_ = st.session_state.get('rmt_l', '')
                     rms_ = st.session_state.get('rmt_start', '')
-                    auto_desc = _make_task_name("閱讀單句", rmv_, rmu_, rmy_, rmb_, rml_, rms_, len(rm_ids), groups_label, teacher_name, publish_time, str(date_start), str(date_end))
+                    auto_desc = _make_task_name("閱讀單句", rmv_, rmu_, rmy_, rmb_, rml_, rms_, len(rm_ids), groups_label, teacher_name, publish_time, str(date_start), str(date_end),
+                                                schools=st.session_state.get('rmt_school', []))
                 elif lp_ids:
                     lpv_ = st.session_state.get('lpt_v', '')
                     lpu_ = st.session_state.get('lpt_u', '')
@@ -1653,10 +1678,10 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     _clear_keys = [
                         't1_inc_q', 't1_inc_mcq', 't1_inc_reading', 't1_inc_vocab', 't1_inc_rm', 't1_inc_lp',
                         't1_v', 't1_u', 't1_y', 't1_b', 't1_l', 't1_start_sent', 't1_q_count', 't1_grammar', 't1_diff',
-                        'mc_v', 'mc_u', 'mc_y', 'mc_b', 'mc_l', 'mc_start_sent', 'mc_q_count', 'mc_grammar', 'mc_diff',
+                        'mc_v', 'mc_u', 'mc_y', 'mc_b', 'mc_l', 'mc_start_sent', 'mc_q_count', 'mc_grammar', 'mc_diff', 'mc_school',
                         'rt_v', 'rt_u', 'rt_y', 'rt_b', 'rt_l', 'rt_start_sent', 'rt_q_count',
                         'vt_v', 'vt_u', 'vt_y', 'vt_b', 'vt_l', 'vt_start_sent', 'vt_q_count', 'vt_mode', 'vt_timer', 'vt_extra',
-                        'rmt_v', 'rmt_u', 'rmt_y', 'rmt_b', 'rmt_l', 'rmt_start', 'rmt_count', 'rmt_grammar', 'rmt_diff',
+                        'rmt_v', 'rmt_u', 'rmt_y', 'rmt_b', 'rmt_l', 'rmt_start', 'rmt_count', 'rmt_grammar', 'rmt_diff', 'rmt_school',
                         'lpt_v', 'lpt_u', 'lpt_g', 'lpt_count',
                         'lst_v', 'lst_u', 'lst_y', 'lst_b', 'lst_l', 't1_inc_ls',
                         't1_group', 't1_mode', 't1_stu', 't1_start', 't1_end',
