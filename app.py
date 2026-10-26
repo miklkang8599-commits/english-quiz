@@ -1,8 +1,15 @@
 # ==============================================================================
 # 🧩 英文全能練習系統 (V2.9.482 - 跟著唸AI評分logs版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.533
-# 📅 更新日期: 2026-06-22
+# 📌 版本編號 (VERSION): 2.9.534
+# 📅 更新日期: 2026-10-26
+# 🆕 2.9.534 閱讀題組：
+#   18. [功能] 閱讀單句支援考古題閱讀測驗題組：
+#              文章框固定高度可捲動；電腦/平板左文右題，手機上下排。
+#              「答案」欄可放 HTML（表格、對話泡泡），純文字照樣換行。
+#              新增「圖片」欄（Drive 分享連結或檔案 ID），用 st.image 顯示，可全螢幕放大。
+#              新增「題組」欄，同題組顯示「本篇第 k/n 題」，且選項不打亂、照原卷順序。
+#              作答後在選項上標出正解與學生的選擇，並顯示「翻譯」欄。
 # 🛠️ 修復重點：
 #    1. [核心] set_page_config 移至最頂部，避免潛在初始化錯誤。
 #    2. [資料] conn.create() → append 邏輯，logs/assignments 不再被覆蓋。
@@ -51,7 +58,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.533"
+VERSION = "2.9.534"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -718,6 +725,48 @@ def load_audio_file_index():
 def get_audio_url(file_id):
     """回傳可直接播放的 Drive 音檔 URL"""
     return f"https://drive.google.com/uc?export=download&id={file_id}"
+
+def _drive_file_id(link):
+    """從 Drive 分享連結取出檔案 ID；本身就是 ID 則直接回傳"""
+    s = str(link or "").strip()
+    m = re.search(r"(?:/d/|[?&]id=)([A-Za-z0-9_-]{20,})", s)
+    if m:
+        return m.group(1)
+    return s if re.fullmatch(r"[A-Za-z0-9_-]{20,}", s) else ""
+
+@st.cache_data(ttl=3600)
+def _load_drive_image(file_id):
+    """下載閱讀題圖片（檔案需設為「知道連結的任何人都能檢視」），快取 1 小時"""
+    try:
+        _r = requests.get(get_audio_url(file_id), timeout=10)
+        if _r.status_code == 200 and _r.headers.get("Content-Type", "").startswith("image/"):
+            return _r.content
+    except:
+        pass
+    return None
+
+# 閱讀單句文章框樣式：固定高度可捲動、表格可左右滑、對話泡泡
+RM_PASSAGE_CSS = """<style>
+.rm-passage { font-size:1.08rem; line-height:1.6; padding:14px 16px; border-radius:8px;
+    background:var(--color-background-secondary, rgba(128,128,128,.08));
+    max-height:45vh; overflow:auto; margin-bottom:12px; }
+.rm-passage p { margin:0 0 .6em; }
+.rm-passage .rm-tbl { overflow-x:auto; }
+.rm-passage table { border-collapse:collapse; font-size:.85rem; width:100%; max-width:520px; }
+.rm-passage th, .rm-passage td { border:1px solid rgba(128,128,128,.45); padding:3px 5px; text-align:center; }
+.rm-passage .rm-chat { display:flex; flex-direction:column; gap:6px; }
+.rm-passage .rm-msg { max-width:82%; padding:5px 11px; border-radius:12px; border:1px solid rgba(128,128,128,.35); line-height:1.4; }
+.rm-passage .rm-msg.l { align-self:flex-start; }
+.rm-passage .rm-msg.r { align-self:flex-end; background:rgba(13,106,110,.12); }
+.rm-passage .rm-who { display:block; font-size:.7rem; opacity:.7; }
+</style>"""
+
+def _rm_passage_html(passage):
+    """「答案」欄有 HTML 區塊就照原樣顯示，否則把換行轉成 <br>"""
+    p = str(passage or "").strip()
+    if not re.search(r"<(table|div|p|ul|ol)\b", p, re.I):
+        p = p.replace("\n", "<br>")
+    return f"<div class='rm-passage'>{p}</div>"
 
 
 
@@ -2725,7 +2774,10 @@ CREATE TABLE IF NOT EXISTS students (
                     analysis = str(qrow.get('解析') or '').strip()
                     label    = f"句{qrow.get('句編號','')}｜{question[:30]}{'…' if len(question)>30 else ''}"
                     with st.expander(label, expanded=True):
-                        if passage: st.markdown(f"<div style='background:var(--color-background-secondary);padding:10px;border-radius:6px;margin-bottom:8px;'>{passage}</div>", unsafe_allow_html=True)
+                        if passage: st.markdown(RM_PASSAGE_CSS + _rm_passage_html(passage), unsafe_allow_html=True)
+                        _rev_img_id = _drive_file_id(qrow.get('圖片', ''))
+                        _rev_img = _load_drive_image(_rev_img_id) if _rev_img_id else None
+                        if _rev_img: st.image(_rev_img)
                         st.markdown(f"**{question}**")
                         opts_html = "　".join([f"({o}) {str(qrow.get(f'選項{o}') or '').strip()}" for o in ['A','B','C','D'] if qrow.get(f'選項{o}')])
                         if opts_html: st.caption(opts_html)
@@ -4885,65 +4937,100 @@ if st.session_state.quiz_loaded:
         rm_question = str(q.get("題目") or "").strip()
         rm_correct  = str(q.get("正確選項列出") or "").strip().upper()
         rm_analysis = str(q.get("解析") or "").strip()
+        rm_trans    = str(q.get("翻譯") or "").strip()
+        rm_group    = str(q.get("題組") or "").strip()
+        rm_image    = str(q.get("圖片") or "").strip()
 
-        # 顯示閱讀文章/句子
-        if rm_passage:
-            st.markdown(
-                f"<div style='font-size:1.1rem; padding:14px 16px; "
-                f"background:var(--color-background-secondary); border-radius:8px; "
-                f"margin-bottom:12px; white-space:pre-wrap;'>{rm_passage}</div>",
-                unsafe_allow_html=True
-            )
-        # 顯示題目
-        st.markdown(f"**{rm_question}**")
+        # 題組：算出本題是這篇文章的第幾小題（依 quiz_list 順序）
+        if rm_group:
+            _grp_idx = [i for i, _qq in enumerate(st.session_state.quiz_list)
+                        if str(_qq.get("題組") or "").strip() == rm_group]
+            _grp_pos = _grp_idx.index(st.session_state.q_idx) + 1 if st.session_state.q_idx in _grp_idx else 1
+            _grp_src = "・".join([v for v in [str(q.get("考卷年度") or "").strip(), str(q.get("學校") or "").strip()] if v])
+            st.caption(f"📖 閱讀題組{('（' + _grp_src + '）') if _grp_src else ''}　本篇第 {_grp_pos} / {len(_grp_idx)} 題")
 
-        # 選項按鈕 A-D（隨機排列）
-        _rm_answered = st.session_state.get('show_analysis', False)
-        _rm_order_key = f"rm_order_{st.session_state.q_idx}"
-        if _rm_order_key not in st.session_state:
-            import random as _rrm
-            _rm_ord = ["A","B","C","D"]
-            _rrm.shuffle(_rm_ord)
-            st.session_state[_rm_order_key] = _rm_ord
-        rm_order = st.session_state[_rm_order_key]
-        rm_cols = st.columns(2)
-        for _i, _opt in enumerate(rm_order):
-            _opt_text = str(q.get(f"選項{_opt}") or "").strip()
-            if _opt_text:
-                _btn_label = f"({_opt}) {_opt_text}"
-                if rm_cols[_i % 2].button(_btn_label, key=f"rm_{_opt}",
-                                           use_container_width=True,
-                                           disabled=_rm_answered):
-                    _is_ok = (_opt.upper() == rm_correct.upper()) if rm_correct else False
-                    st.session_state.update({
-                        "current_res": "✅ 正確！" if _is_ok else f"❌ 錯誤！正確答案：{rm_correct}",
-                        "show_analysis": True
-                    })
-                    try:
-                        import time as _time
-                        sb_w   = get_supabase()
-                        en_row = _to_en_logs({
-                            "時間":    get_now().strftime("%Y-%m-%d %H:%M:%S"),
-                            "姓名":    st.session_state.user_name,
-                            "分組":    st.session_state.group_id,
-                            "題目ID":  q.get('題目ID', 'N/A'),
-                            "結果":    "練習" if st.session_state.get("practice_mode") else ("✅" if _is_ok else "❌"),
-                            "學生答案": _opt,
-                            "分數":    "",
-                            "任務名稱": st.session_state.get("current_task_name", ""), "作答秒數": round(__import__("time").time() - st.session_state.get(f"_q_start_time_{st.session_state.q_idx}", __import__("time").time()))
+        st.markdown(RM_PASSAGE_CSS, unsafe_allow_html=True)
+
+        # 電腦/平板：左文右題；手機：上下排（側欄「裝置類型」）
+        if st.session_state.get('mcq_cols', 2) == 2 and (rm_passage or rm_image):
+            _rm_left, _rm_right = st.columns([1.1, 1])
+        else:
+            _rm_left = _rm_right = st.container()
+
+        with _rm_left:
+            if rm_passage:
+                st.markdown(_rm_passage_html(rm_passage), unsafe_allow_html=True)
+            if rm_image:
+                _img_id = _drive_file_id(rm_image)
+                _img = _load_drive_image(_img_id) if _img_id else None
+                if _img:
+                    st.image(_img, caption="點圖片右上角可放大")
+                elif rm_image.startswith("http"):
+                    st.image(rm_image, caption="點圖片右上角可放大")
+                else:
+                    st.warning("⚠️ 圖片讀取失敗，請確認 Drive 檔案已設為「知道連結的任何人都能檢視」。")
+
+        with _rm_right:
+            # 顯示題目（底線空格要跳脫，否則會被 Markdown 當成斜體；允許 <u> 標底線）
+            st.markdown(f"**{rm_question.replace('_', chr(92) + '_')}**", unsafe_allow_html=True)
+
+            # 選項按鈕 A-D：題組照原卷順序，其餘隨機排列
+            _rm_answered = st.session_state.get('show_analysis', False)
+            _rm_order_key = f"rm_order_{st.session_state.q_idx}"
+            _rm_choice_key = f"rm_choice_{st.session_state.q_idx}"
+            if _rm_order_key not in st.session_state:
+                import random as _rrm
+                _rm_ord = ["A","B","C","D"]
+                if not rm_group:
+                    _rrm.shuffle(_rm_ord)
+                st.session_state[_rm_order_key] = _rm_ord
+            rm_order = st.session_state[_rm_order_key]
+            rm_cols = st.columns(1 if st.session_state.get('mcq_cols', 2) == 1 or rm_group else 2)
+            for _i, _opt in enumerate(rm_order):
+                _opt_text = str(q.get(f"選項{_opt}") or "").strip()
+                if _opt_text:
+                    _btn_label = f"({_opt}) {_opt_text}"
+                    if _rm_answered:
+                        if _opt == rm_correct:
+                            _btn_label = "✅ " + _btn_label
+                        elif _opt == st.session_state.get(_rm_choice_key):
+                            _btn_label = "❌ " + _btn_label
+                    if rm_cols[_i % len(rm_cols)].button(_btn_label, key=f"rm_{_opt}",
+                                               use_container_width=True,
+                                               disabled=_rm_answered):
+                        _is_ok = (_opt.upper() == rm_correct.upper()) if rm_correct else False
+                        st.session_state.update({
+                            "current_res": "✅ 正確！" if _is_ok else f"❌ 錯誤！正確答案：{rm_correct}",
+                            "show_analysis": True,
+                            _rm_choice_key: _opt,
                         })
-                        sb_w.table("logs").insert(en_row).execute()
-                        _time.sleep(0.3)
-                        st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
-                        # logs快取由ttl=60自動過期
-                    except Exception as e:
-                        st.error(f"❌ 寫入失敗：{e}")
-                    st.rerun()
+                        try:
+                            import time as _time
+                            sb_w   = get_supabase()
+                            en_row = _to_en_logs({
+                                "時間":    get_now().strftime("%Y-%m-%d %H:%M:%S"),
+                                "姓名":    st.session_state.user_name,
+                                "分組":    st.session_state.group_id,
+                                "題目ID":  q.get('題目ID', 'N/A'),
+                                "結果":    "練習" if st.session_state.get("practice_mode") else ("✅" if _is_ok else "❌"),
+                                "學生答案": _opt,
+                                "分數":    "",
+                                "任務名稱": st.session_state.get("current_task_name", ""), "作答秒數": round(__import__("time").time() - st.session_state.get(f"_q_start_time_{st.session_state.q_idx}", __import__("time").time()))
+                            })
+                            sb_w.table("logs").insert(en_row).execute()
+                            _time.sleep(0.3)
+                            st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
+                            # logs快取由ttl=60自動過期
+                        except Exception as e:
+                            st.error(f"❌ 寫入失敗：{e}")
+                        st.rerun()
 
-        if _rm_answered:
-            st.warning(st.session_state.get('current_res', ''))
-            if rm_analysis:
-                st.info(f"📝 解析：{rm_analysis}")
+            if _rm_answered:
+                st.warning(st.session_state.get('current_res', ''))
+                if rm_analysis:
+                    st.info(f"📝 解析：{rm_analysis}")
+                if rm_trans:
+                    st.caption(f"🈶 翻譯：{rm_trans}")
 
     elif is_reading:
         st.markdown("#### 🎤 請朗讀以下英文句子：")
