@@ -1,8 +1,12 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.537 - 跟著唸AI評分logs版)
+# 🧩 英文全能練習系統 (V2.9.538 - 跟著唸AI評分logs版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.537
+# 📌 版本編號 (VERSION): 2.9.538
 # 📅 更新日期: 2026-10-27
+# 🆕 2.9.538：手機作答改善——文字全面放大；作答時並排按鈕不再疊成一欄
+#              （字母池一列 8 個、螢幕鍵盤照鍵盤排 3 列、重組單字一列 3 個、聽力重組一列 4 個），
+#              手機上鍵盤模式不自動點選輸入框（避免系統鍵盤跳出推走畫面）。
+#              電腦作答時限制內容寬度、稍微放大文字。登入頁預設改為「電腦/平板」。
 # 🆕 2.9.537：登入頁直接選「📱 手機／💻 電腦平板」，登入後套用對應版面；
 #              手機版縮小邊距與標題、加大按鈕；選擇記在網址（?device=），下次預設同一個。
 # 🆕 2.9.536：指派任務的單選題、閱讀單句題範圍新增「學校」複選篩選（空白 = 全部），
@@ -64,7 +68,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.537"
+VERSION = "2.9.538"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -405,9 +409,9 @@ if not st.session_state.get('logged_in', False):
                 st.rerun()
             st.stop()
         st.markdown("### 🔵 系統登入")
-        # 作答裝置：預設沿用上次的選擇（記在網址 ?device=）
+        # 作答裝置：預設電腦/平板，沿用上次的選擇（記在網址 ?device=）
         _dev_opts = ["📱 手機", "💻 電腦/平板"]
-        _dev_default = 1 if st.query_params.get("device") == "pc" else 0
+        _dev_default = 0 if st.query_params.get("device") == "phone" else 1
         with st.form("login_form"):
             i_id = st.text_input("帳號 (學號/員工編號)", key="l_id")
             i_pw = st.text_input("密碼", type="password", key="l_pw")
@@ -507,13 +511,36 @@ with st.sidebar:
 
     st.caption(f"Ver {VERSION}")
 
-# 手機版面：縮小邊距與標題、加大按鈕，讓題目與選項在窄螢幕一次看得到
-if st.session_state.get('mcq_cols', 2) == 1:
+# 作答版面：手機與電腦各一套
+_is_phone = st.session_state.get('mcq_cols', 2) == 1
+_in_quiz  = st.session_state.get('quiz_loaded', False)
+if _is_phone:
+    # 手機：縮小邊距與標題、放大文字與按鈕
     st.markdown("""<style>
-    .block-container { padding-left:.75rem !important; padding-right:.75rem !important; padding-top:3rem !important; }
+    .block-container { padding-left:.6rem !important; padding-right:.6rem !important; padding-top:2.6rem !important; }
     .block-container h3 { font-size:1.15rem !important; line-height:1.4 !important; }
-    div[data-testid="stButton"] button { min-height:2.9rem; font-size:1.05rem; }
-    .block-container .rm-passage { max-height:40vh; font-size:1.02rem; }
+    .block-container [data-testid="stMarkdownContainer"] p,
+    .block-container [data-testid="stMarkdownContainer"] li { font-size:1.15rem; line-height:1.55; }
+    .block-container [data-testid="stCaptionContainer"] { font-size:.95rem; }
+    div[data-testid="stButton"] button { min-height:2.9rem; }
+    div[data-testid="stButton"] button p { font-size:1.15rem !important; }
+    .block-container input[type="text"] { font-size:1.15rem !important; }
+    .block-container .rm-passage { max-height:40vh; font-size:1.12rem; }
+    </style>""", unsafe_allow_html=True)
+    if _in_quiz:
+        # 作答時並排的按鈕留在同一列（Streamlit 在窄螢幕預設會疊成一欄），減少上下捲動
+        st.markdown("""<style>
+        .block-container [data-testid="stHorizontalBlock"] { flex-wrap:nowrap !important; gap:.3rem !important; }
+        .block-container [data-testid="stHorizontalBlock"] > div { min-width:0 !important; width:auto !important; flex:1 1 0 !important; }
+        .block-container [data-testid="stHorizontalBlock"] div[data-testid="stButton"] button { padding-left:.1rem !important; padding-right:.1rem !important; }
+        .block-container [data-testid="stVerticalBlock"] { gap:.5rem !important; }
+        </style>""", unsafe_allow_html=True)
+elif _in_quiz:
+    # 電腦作答：限制內容寬度、稍微放大文字，按鈕不會被拉得太長
+    st.markdown("""<style>
+    .block-container { max-width:1100px !important; }
+    .block-container [data-testid="stMarkdownContainer"] p { font-size:1.08rem; }
+    div[data-testid="stButton"] button p { font-size:1.08rem !important; }
     </style>""", unsafe_allow_html=True)
 
 # 共用：產生含學生名字的班級標籤
@@ -4798,7 +4825,7 @@ if st.session_state.quiz_loaded:
                 st.rerun()
 
             # 單字按鈕（固定8欄）
-            NUM_COLS_LS = min(len(shuffled_words), 8)
+            NUM_COLS_LS = min(len(shuffled_words), 4 if st.session_state.get('mcq_cols', 2) == 1 else 8)
             if NUM_COLS_LS > 0:
                 cols_ls = st.columns(NUM_COLS_LS)
                 for wi, word in enumerate(shuffled_words):
@@ -5503,16 +5530,18 @@ if st.session_state.quiz_loaded:
                             placeholder="在這裡輸入英文，按 Enter 直接送出...",
                         )
                         import streamlit.components.v1 as _components
-                        _components.html(
-                            """<script>
-                            function focusLastInput() {
-                                var inputs = window.parent.document.querySelectorAll('input[type="text"]');
-                                if (inputs.length > 0) { var el = inputs[inputs.length-1]; el.focus(); el.select(); }
-                            }
-                            setTimeout(focusLastInput, 100);
-                            setTimeout(focusLastInput, 300);
-                            </script>""", height=0
-                        )
+                        # 手機不自動點選輸入框，免得系統鍵盤跳出把畫面推走（改用下方螢幕鍵盤）
+                        if st.session_state.get('mcq_cols', 2) != 1:
+                            _components.html(
+                                """<script>
+                                function focusLastInput() {
+                                    var inputs = window.parent.document.querySelectorAll('input[type="text"]');
+                                    if (inputs.length > 0) { var el = inputs[inputs.length-1]; el.focus(); el.select(); }
+                                }
+                                setTimeout(focusLastInput, 100);
+                                setTimeout(focusLastInput, 300);
+                                </script>""", height=0
+                            )
                     if _phys_val:
                         # 第一次 Enter：直接轉大寫並送出（不需要第二次）
                         _phys_upper = _clean_vocab(_phys_val)
