@@ -1,8 +1,10 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.538 - 跟著唸AI評分logs版)
+# 🧩 英文全能練習系統 (V2.9.539 - 跟著唸AI評分logs版)
 # ==============================================================================
-# 📌 版本編號 (VERSION): 2.9.538
+# 📌 版本編號 (VERSION): 2.9.539
 # 📅 更新日期: 2026-10-27
+# 🆕 2.9.539：閱讀單句「圖片」欄可直接填檔名，從 Drive「0000-閱讀圖片」資料夾讀圖
+#              （用服務帳號讀取，圖片不必公開）；仍相容 Drive 連結、檔案 ID、http 網址。
 # 🆕 2.9.538：手機作答改善——文字全面放大；作答時並排按鈕不再疊成一欄
 #              （字母池一列 8 個、螢幕鍵盤照鍵盤排 3 列、重組單字一列 3 個、聽力重組一列 4 個），
 #              手機上鍵盤模式不自動點選輸入框（避免系統鍵盤跳出推走畫面）。
@@ -68,7 +70,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.538"
+VERSION = "2.9.539"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -791,6 +793,52 @@ def _load_drive_image(file_id):
     except:
         pass
     return None
+
+# 閱讀題圖片資料夾（Drive「0000-閱讀圖片」，需分享給服務帳號）
+GDRIVE_READING_IMG_FOLDER_ID = "1m75ySBx_Q1li6Ke3MKg-qdL1_0a7J56g"
+
+@st.cache_data(ttl=600)
+def load_reading_image_index():
+    """讀取閱讀圖片資料夾，建立 {檔名小寫: file_id} 對照表，快取 10 分鐘"""
+    try:
+        svc   = get_gdrive_audio_service()
+        index = {}
+        token = None
+        while True:
+            res = svc.files().list(
+                q=f"'{GDRIVE_READING_IMG_FOLDER_ID}' in parents and trashed=false",
+                fields="nextPageToken, files(id, name)",
+                pageSize=1000, pageToken=token
+            ).execute()
+            for f in res.get("files", []):
+                index[f["name"].strip().lower()] = f["id"]
+            token = res.get("nextPageToken")
+            if not token:
+                break
+        return index
+    except Exception:
+        return {}
+
+@st.cache_data(ttl=3600)
+def _load_drive_image_by_id(file_id):
+    """用服務帳號下載 Drive 圖片（檔案不必公開），快取 1 小時"""
+    try:
+        return get_gdrive_audio_service().files().get_media(fileId=file_id).execute()
+    except Exception:
+        return None
+
+def _get_reading_image(value):
+    """「圖片」欄 → 圖片 bytes 或網址；可填檔名、Drive 連結/ID、http 網址。讀不到回傳 None"""
+    v = str(value or "").strip()
+    if not v:
+        return None
+    if re.search(r"\.(png|jpe?g|gif|webp)$", v, re.I) and not v.startswith("http"):
+        _fid = load_reading_image_index().get(v.lower())
+        return _load_drive_image_by_id(_fid) if _fid else None
+    _fid = _drive_file_id(v)
+    if _fid:
+        return _load_drive_image_by_id(_fid) or _load_drive_image(_fid)
+    return v if v.startswith("http") else None
 
 # 閱讀單句文章框樣式：固定高度可捲動、表格可左右滑、對話泡泡
 RM_PASSAGE_CSS = """<style>
@@ -2845,8 +2893,7 @@ CREATE TABLE IF NOT EXISTS students (
                     label    = f"句{qrow.get('句編號','')}｜{question[:30]}{'…' if len(question)>30 else ''}"
                     with st.expander(label, expanded=True):
                         if passage: st.markdown(RM_PASSAGE_CSS + _rm_passage_html(passage), unsafe_allow_html=True)
-                        _rev_img_id = _drive_file_id(qrow.get('圖片', ''))
-                        _rev_img = _load_drive_image(_rev_img_id) if _rev_img_id else None
+                        _rev_img = _get_reading_image(qrow.get('圖片', ''))
                         if _rev_img: st.image(_rev_img)
                         st.markdown(f"**{question}**")
                         opts_html = "　".join([f"({o}) {str(qrow.get(f'選項{o}') or '').strip()}" for o in ['A','B','C','D'] if qrow.get(f'選項{o}')])
@@ -5031,14 +5078,11 @@ if st.session_state.quiz_loaded:
             if rm_passage:
                 st.markdown(_rm_passage_html(rm_passage), unsafe_allow_html=True)
             if rm_image:
-                _img_id = _drive_file_id(rm_image)
-                _img = _load_drive_image(_img_id) if _img_id else None
+                _img = _get_reading_image(rm_image)
                 if _img:
                     st.image(_img, caption="點圖片右上角可放大")
-                elif rm_image.startswith("http"):
-                    st.image(rm_image, caption="點圖片右上角可放大")
                 else:
-                    st.warning("⚠️ 圖片讀取失敗，請確認 Drive 檔案已設為「知道連結的任何人都能檢視」。")
+                    st.warning(f"⚠️ 圖片讀取失敗：{rm_image}（請確認檔名正確，且已放在「0000-閱讀圖片」資料夾）")
 
         with _rm_right:
             # 顯示題目（底線空格要跳脫，否則會被 Markdown 當成斜體；允許 <u> 標底線）
