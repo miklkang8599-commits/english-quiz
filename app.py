@@ -1,5 +1,5 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.539 - 跟著唸AI評分logs版)
+# 🧩 英文全能練習系統 (V2.9.540 - 跟著唸AI評分logs版)
 # ==============================================================================
 # 📌 版本編號 (VERSION): 2.9.539
 # 📅 更新日期: 2026-10-27
@@ -70,7 +70,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.539"
+VERSION = "2.9.540"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -262,7 +262,7 @@ def _to_cn(df: pd.DataFrame, col_map: dict) -> pd.DataFrame:
 
 def _to_en_logs(row: dict) -> dict:
     """把中文欄位的 log 資料轉成英文欄位"""
-    return {
+    d = {
         "created_at":     str(row.get("時間", "")),
         "name":           str(row.get("姓名", "")),
         "group_id":       str(row.get("分組", "")),
@@ -273,6 +273,55 @@ def _to_en_logs(row: dict) -> dict:
         "task_name":      str(row.get("任務名稱", "") or ""),
         "elapsed_sec":    row.get("作答秒數", None),
     }
+    # V2.9.540：學生自己作答的紀錄附上「練習方式」與「本次作答開始時間」
+    try:
+        _ss = st.session_state
+        if _ss.get("quiz_loaded") and str(row.get("姓名", "")) == str(_ss.get("user_name", "")):
+            _ensure_practice_session()
+            if _ss.get("_ps_start"):
+                d["practice_mode"] = str(_ss.get("_ps_mode", ""))
+                d["session_start"] = str(_ss.get("_ps_start", ""))
+    except Exception:
+        pass
+    return d
+
+def _current_practice_mode() -> str:
+    """依目前 session 的模式旗標回傳練習方式名稱"""
+    _ss = st.session_state
+    if _ss.get("race_mode"):     return "🏆 競賽"
+    if _ss.get("practice_mode"): return "🏋️ 練習模式"
+    if _ss.get("shadow_mode"):   return "🎤 跟著唸和錄音"
+    if _ss.get("typing_mode"):   return "⌨️ 多次打字練習"
+    if _ss.get("replay_mode"):   return "🔊 多次撥放"
+    if _ss.get("ec_mode"):       return "🇨🇳 英選中"
+    return "⚡ 快速答題"
+
+def _ensure_practice_session():
+    """每次按下開始（quiz_list 換成新的一份）就記下開始時間與練習方式"""
+    _ss = st.session_state
+    _ql = _ss.get("quiz_list")
+    if not _ss.get("quiz_loaded") or _ql is None:
+        return
+    _sig = f"{id(_ql)}|{_ss.get('current_task_name', '')}"
+    if _ss.get("_ps_sig") != _sig:
+        _ss["_ps_sig"]   = _sig
+        _ss["_ps_start"] = get_now().strftime("%Y-%m-%d %H:%M:%S")
+        _ss["_ps_mode"]  = _current_practice_mode()
+
+_LOG_EXTRA_COLS = ("practice_mode", "session_start")
+
+def _insert_log(sb, en_row: dict):
+    """寫入 logs；若 Supabase 尚未新增 practice_mode / session_start 欄位，自動改用舊欄位寫入"""
+    if st.session_state.get("_log_extra_unsupported"):
+        en_row = {k: v for k, v in en_row.items() if k not in _LOG_EXTRA_COLS}
+    try:
+        return sb.table("logs").insert(en_row).execute()
+    except Exception as e:
+        if any(k in en_row for k in _LOG_EXTRA_COLS) and any(k in str(e) for k in _LOG_EXTRA_COLS):
+            st.session_state["_log_extra_unsupported"] = True
+            slim = {k: v for k, v in en_row.items() if k not in _LOG_EXTRA_COLS}
+            return sb.table("logs").insert(slim).execute()
+        raise
 
 def _to_en_assign(row: dict) -> dict:
     """把中文欄位的 assignment 資料轉成英文欄位"""
@@ -381,7 +430,7 @@ def append_to_sheet(worksheet_name: str, new_row: pd.DataFrame):
 
         if worksheet_name == "logs":
             en_row = _to_en_logs(row_dict)
-            result = sb.table("logs").insert(en_row).execute()
+            result = _insert_log(sb, en_row)
         elif worksheet_name == "assignments":
             en_row = _to_en_assign(row_dict)
             result = sb.table("assignments").insert(en_row).execute()
@@ -466,6 +515,12 @@ else:
 df_a = load_assignments()
 # df_l 延遲載入（不立即讀 logs）
 df_l = pd.DataFrame()
+
+# V2.9.540：按下開始後的第一次重跑就記下本次作答開始時間與練習方式
+try:
+    _ensure_practice_session()
+except Exception:
+    pass
 
 def _get_df_l():
     """懶載入 logs，只在需要時才查詢"""
@@ -1096,7 +1151,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 "student_answer": "",
                 "score": ""
             }
-            res = sb_t.table("logs").insert(test_row).execute()
+            res = _insert_log(sb_t, test_row)
             st.success(f"✅ Supabase 寫入成功！")
         except Exception as e:
             st.error(f"❌ 寫入失敗：{e}")
@@ -4903,7 +4958,7 @@ if st.session_state.quiz_loaded:
                         "分數":    "",
                         "任務名稱": st.session_state.get("current_task_name", ""), "作答秒數": round(__import__("time").time() - st.session_state.get(f"_q_start_time_{st.session_state.q_idx}", __import__("time").time()))
                     })
-                    sb_ls.table("logs").insert(en_ls).execute()
+                    _insert_log(sb_ls, en_ls)
                     _tls.sleep(0.3)
                     st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
                     # logs快取由ttl=60自動過期
@@ -4932,7 +4987,7 @@ if st.session_state.quiz_loaded:
                         "分數":    "",
                         "任務名稱": st.session_state.get("current_task_name", ""), "作答秒數": round(__import__("time").time() - st.session_state.get(f"_q_start_time_{st.session_state.q_idx}", __import__("time").time()))
                     })
-                    sb_ls2.table("logs").insert(en_ls2).execute()
+                    _insert_log(sb_ls2, en_ls2)
                     _tls2.sleep(0.3)
                     st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
                     # logs快取由ttl=60自動過期
@@ -5026,7 +5081,7 @@ if st.session_state.quiz_loaded:
                             "分數":    "",
                             "任務名稱": st.session_state.get("current_task_name", ""), "作答秒數": round(__import__("time").time() - st.session_state.get(f"_q_start_time_{st.session_state.q_idx}", __import__("time").time()))
                         })
-                        sb_lp.table("logs").insert(en_lp).execute()
+                        _insert_log(sb_lp, en_lp)
                         _tlp.sleep(0.3)
                         st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
                         # logs快取由ttl=60自動過期
@@ -5131,7 +5186,7 @@ if st.session_state.quiz_loaded:
                                 "分數":    "",
                                 "任務名稱": st.session_state.get("current_task_name", ""), "作答秒數": round(__import__("time").time() - st.session_state.get(f"_q_start_time_{st.session_state.q_idx}", __import__("time").time()))
                             })
-                            sb_w.table("logs").insert(en_row).execute()
+                            _insert_log(sb_w, en_row)
                             _time.sleep(0.3)
                             st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
                             # logs快取由ttl=60自動過期
@@ -5911,7 +5966,7 @@ if st.session_state.quiz_loaded:
                         "任務名稱": st.session_state.get("current_task_name", ""),
                         "作答秒數": round(__import__("time").time() - st.session_state.get(f"_q_start_time_{st.session_state.q_idx}", __import__("time").time())),
                     })
-                    sb_w.table("logs").insert(en_row).execute()
+                    _insert_log(sb_w, en_row)
                     _time.sleep(0.5)  # 等 Supabase 確認寫入
                     write_ok = True
                     st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
