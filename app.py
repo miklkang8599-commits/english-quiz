@@ -1,6 +1,8 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.541 - 登入不顯示舊帳密)
+# 🧩 英文全能練習系統 (V2.9.542 - 卷別篩選)
 # ==============================================================================
+# 🆕 2.9.542：單選、閱讀單句新增「卷別」欄（校用卷 A/B/C 卷，原本誤放在「難度」欄）；
+#              出題範圍可依卷別複選篩選，任務名稱在「課」後面標出卷別，閱讀題組標題顯示卷別。
 # 🆕 2.9.541：登入頁帳號／密碼欄關閉瀏覽器自動完成，不再帶出之前登入過的帳號密碼。
 # 📌 版本編號 (VERSION): 2.9.539
 # 📅 更新日期: 2026-10-27
@@ -71,7 +73,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.541"
+VERSION = "2.9.542"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1325,6 +1327,13 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                         mc_school = st.multiselect("🏫 學校（可複選，空白 = 全部）", mc_school_opts, key="mc_school")
                         if mc_school:
                             df_mcq_scope = df_mcq_scope[df_mcq_scope["學校"].isin(mc_school)]
+                # V2.9.542：卷別（校用卷 A/B/C 卷；可複選，空白 = 全部）
+                if "卷別" in df_mcq_scope.columns:
+                    mc_paper_opts = sorted([v for v in df_mcq_scope["卷別"].unique() if v and v != ""])
+                    if mc_paper_opts:
+                        mc_paper = st.multiselect("📄 卷別（可複選，空白 = 全部）", mc_paper_opts, key="mc_paper")
+                        if mc_paper:
+                            df_mcq_scope = df_mcq_scope[df_mcq_scope["卷別"].isin(mc_paper)]
                 mc_total_before = len(df_mcq_scope)  # 文法/難度篩選前的總題數
 
                 mc_extra = st.columns(2)
@@ -1602,6 +1611,13 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                         rm_school = st.multiselect("🏫 學校（可複選，空白 = 全部）", rm_school_opts, key="rmt_school")
                         if rm_school:
                             df_rm_scope = df_rm_scope[df_rm_scope['學校'].isin(rm_school)]
+                # V2.9.542：卷別（校用卷 A/B/C 卷；可複選，空白 = 全部）
+                if '卷別' in df_rm_scope.columns:
+                    rm_paper_opts = sorted([v for v in df_rm_scope['卷別'].unique() if v and v != ''])
+                    if rm_paper_opts:
+                        rm_paper = st.multiselect("📄 卷別（可複選，空白 = 全部）", rm_paper_opts, key="rmt_paper")
+                        if rm_paper:
+                            df_rm_scope = df_rm_scope[df_rm_scope['卷別'].isin(rm_paper)]
 
                 # 文法／難度篩選
                 rm_extra = st.columns(2)
@@ -1727,9 +1743,13 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 groups_label = ",".join(target_groups)
 
                 # 取得主要題型的篩選資訊（只顯示一次題型）
-                def _make_task_name(ttype, v, u, y, b, l, start, count, groups, teacher, ptime, dstart, dend, schools=None):
-                    # 格式：題型-單元-版本-年度-冊-課-學校-起始題-題數-班級-出題老師-出題戳記-開始日~結束日
+                def _make_task_name(ttype, v, u, y, b, l, start, count, groups, teacher, ptime, dstart, dend, schools=None, papers=None):
+                    # 格式：題型-單元-版本-年度-冊-課[卷別]-學校-起始題-題數-班級-出題老師-出題戳記-開始日~結束日
                     u_part    = f"-{u}" if u and str(u).strip() else ""
+                    # V2.9.542：卷別接在「課」後面（不新增 - 分段，避免影響名稱解析）
+                    p_list = [str(p) for p in (papers or []) if str(p).strip()]
+                    if p_list:
+                        l = f"{l}卷{'、'.join(p_list)}"
                     start_str = f"-起始{start}" if start else ""
                     # 學校用「、」相接（不可用 -，老師名是從 - 分段取出的）；超過 3 校只列前 3 校
                     s_list = [str(s) for s in (schools or []) if str(s).strip()]
@@ -1746,7 +1766,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     ml_ = st.session_state.get('mc_l', '')
                     ms_ = st.session_state.get('mc_start_sent', '')
                     auto_desc = _make_task_name("單選", mv_, mu_, my_, mb_, ml_, ms_, len(mcq_ids), groups_label, teacher_name, publish_time, str(date_start), str(date_end),
-                                                schools=st.session_state.get('mc_school', []))
+                                                schools=st.session_state.get('mc_school', []), papers=st.session_state.get('mc_paper', []))
                 elif q_ids:
                     auto_desc = _make_task_name("重組", t1v, t1u, t1y, t1b, t1l, st.session_state.get('t1_start_sent',''), len(q_ids), groups_label, teacher_name, publish_time, str(date_start), str(date_end))
                 elif r_ids:
@@ -1773,7 +1793,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     rml_ = st.session_state.get('rmt_l', '')
                     rms_ = st.session_state.get('rmt_start', '')
                     auto_desc = _make_task_name("閱讀單句", rmv_, rmu_, rmy_, rmb_, rml_, rms_, len(rm_ids), groups_label, teacher_name, publish_time, str(date_start), str(date_end),
-                                                schools=st.session_state.get('rmt_school', []))
+                                                schools=st.session_state.get('rmt_school', []), papers=st.session_state.get('rmt_paper', []))
                 elif lp_ids:
                     lpv_ = st.session_state.get('lpt_v', '')
                     lpu_ = st.session_state.get('lpt_u', '')
@@ -1826,10 +1846,10 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     _clear_keys = [
                         't1_inc_q', 't1_inc_mcq', 't1_inc_reading', 't1_inc_vocab', 't1_inc_rm', 't1_inc_lp',
                         't1_v', 't1_u', 't1_y', 't1_b', 't1_l', 't1_start_sent', 't1_q_count', 't1_grammar', 't1_diff',
-                        'mc_v', 'mc_u', 'mc_y', 'mc_b', 'mc_l', 'mc_start_sent', 'mc_q_count', 'mc_grammar', 'mc_diff', 'mc_school',
+                        'mc_v', 'mc_u', 'mc_y', 'mc_b', 'mc_l', 'mc_start_sent', 'mc_q_count', 'mc_grammar', 'mc_diff', 'mc_school', 'mc_paper',
                         'rt_v', 'rt_u', 'rt_y', 'rt_b', 'rt_l', 'rt_start_sent', 'rt_q_count',
                         'vt_v', 'vt_u', 'vt_y', 'vt_b', 'vt_l', 'vt_start_sent', 'vt_q_count', 'vt_mode', 'vt_timer', 'vt_extra',
-                        'rmt_v', 'rmt_u', 'rmt_y', 'rmt_b', 'rmt_l', 'rmt_start', 'rmt_count', 'rmt_grammar', 'rmt_diff', 'rmt_school',
+                        'rmt_v', 'rmt_u', 'rmt_y', 'rmt_b', 'rmt_l', 'rmt_start', 'rmt_count', 'rmt_grammar', 'rmt_diff', 'rmt_school', 'rmt_paper',
                         'lpt_v', 'lpt_u', 'lpt_g', 'lpt_count',
                         'lst_v', 'lst_u', 'lst_y', 'lst_b', 'lst_l', 't1_inc_ls',
                         't1_group', 't1_mode', 't1_stu', 't1_start', 't1_end',
@@ -5120,7 +5140,9 @@ if st.session_state.quiz_loaded:
             _grp_idx = [i for i, _qq in enumerate(st.session_state.quiz_list)
                         if str(_qq.get("題組") or "").strip() == rm_group]
             _grp_pos = _grp_idx.index(st.session_state.q_idx) + 1 if st.session_state.q_idx in _grp_idx else 1
-            _grp_src = "・".join([v for v in [str(q.get("考卷年度") or "").strip(), str(q.get("學校") or "").strip()] if v])
+            _grp_paper = str(q.get("卷別") or "").strip()
+            _grp_src = "・".join([v for v in [str(q.get("考卷年度") or "").strip(), str(q.get("學校") or "").strip(),
+                                             (_grp_paper + "卷") if _grp_paper else ""] if v])
             st.caption(f"📖 閱讀題組{('（' + _grp_src + '）') if _grp_src else ''}　本篇第 {_grp_pos} / {len(_grp_idx)} 題")
 
         st.markdown(RM_PASSAGE_CSS, unsafe_allow_html=True)
