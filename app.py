@@ -1,6 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.540 - 跟著唸AI評分logs版)
+# 🧩 英文全能練習系統 (V2.9.541 - 登入不顯示舊帳密)
 # ==============================================================================
+# 🆕 2.9.541：登入頁帳號／密碼欄關閉瀏覽器自動完成，不再帶出之前登入過的帳號密碼。
 # 📌 版本編號 (VERSION): 2.9.539
 # 📅 更新日期: 2026-10-27
 # 🆕 2.9.539：閱讀單句「圖片」欄可直接填檔名，從 Drive「0000-閱讀圖片」資料夾讀圖
@@ -70,7 +71,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.540"
+VERSION = "2.9.541"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -464,8 +465,9 @@ if not st.session_state.get('logged_in', False):
         _dev_opts = ["📱 手機", "💻 電腦/平板"]
         _dev_default = 0 if st.query_params.get("device") == "phone" else 1
         with st.form("login_form"):
-            i_id = st.text_input("帳號 (學號/員工編號)", key="l_id")
-            i_pw = st.text_input("密碼", type="password", key="l_pw")
+            # V2.9.541：關閉瀏覽器自動完成，不顯示之前登入過的帳號密碼
+            i_id = st.text_input("帳號 (學號/員工編號)", key="l_id", autocomplete="off")
+            i_pw = st.text_input("密碼", type="password", key="l_pw", autocomplete="new-password")
             i_dev = st.radio("作答裝置", _dev_opts, index=_dev_default, horizontal=True, key="l_device")
             _login_submitted = st.form_submit_button("🚀 登入系統", use_container_width=True, type="primary")
         # Enter 鍵觸發登入
