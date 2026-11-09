@@ -1,6 +1,10 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.542 - 卷別篩選)
+# 🧩 英文全能練習系統 (V2.9.543 - 單選閱讀限時)
 # ==============================================================================
+# 🆕 2.9.543：指派單選題可設定「每題作答時間」、閱讀單句可設定「每個題組作答時間」（0 = 不限）。
+#              設定附在任務「單字設定」欄後段（#mc=秒#rm=秒），不需更動 Supabase。
+#              作答時顯示倒數；時間到自動判為逾時（❌），閱讀題組時間到後同篇其餘小題也直接逾時。
+#              練習模式、競賽模式不限時。
 # 🆕 2.9.542：單選、閱讀單句新增「卷別」欄（校用卷 A/B/C 卷，原本誤放在「難度」欄）；
 #              出題範圍可依卷別複選篩選，任務名稱在「課」後面標出卷別，閱讀題組標題顯示卷別。
 # 🆕 2.9.541：登入頁帳號／密碼欄關閉瀏覽器自動完成，不再帶出之前登入過的帳號密碼。
@@ -73,7 +77,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.542"
+VERSION = "2.9.543"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -325,6 +329,89 @@ def _insert_log(sb, en_row: dict):
             slim = {k: v for k, v in en_row.items() if k not in _LOG_EXTRA_COLS}
             return sb.table("logs").insert(slim).execute()
         raise
+
+# V2.9.543：單選／閱讀作答時間（存在任務「單字設定」欄後段：拼單字設定#mc=秒#rm=秒）
+def _vcfg_base(s) -> str:
+    """取出「單字設定」前段（拼單字用），去掉 #mc= / #rm= 限時設定"""
+    return str(s or "").split("#")[0]
+
+def _task_time_limits(task_key) -> tuple:
+    """回傳 (單選每題秒數, 閱讀每題組秒數)；0 = 不限"""
+    mc = rm = 0
+    try:
+        key = str(task_key or "").strip()
+        if not key:
+            return (0, 0)
+        df = load_assignments()
+        if df is None or df.empty or "單字設定" not in df.columns:
+            return (0, 0)
+        hit = pd.DataFrame()
+        if "任務編號" in df.columns:
+            hit = df[df["任務編號"].astype(str).str.strip() == key]
+        if hit.empty and "任務名稱" in df.columns:
+            hit = df[df["任務名稱"].astype(str).str.contains(f"[{key}]", regex=False)]
+        if hit.empty:
+            return (0, 0)
+        for part in str(hit.iloc[0]["單字設定"] or "").split("#")[1:]:
+            k, _, v = part.partition("=")
+            try:
+                n = max(0, int(float(v)))
+            except Exception:
+                continue
+            if k.strip() == "mc":
+                mc = n
+            elif k.strip() == "rm":
+                rm = n
+    except Exception:
+        pass
+    return (mc, rm)
+
+def _qt_timer(scope: str, limit: int) -> bool:
+    """限時倒數：回傳 True 表示時間已到。scope 相同的題目共用同一個計時（閱讀題組）"""
+    import time as _t
+    _ss = st.session_state
+    if not limit or limit <= 0:
+        return False
+    dl = _ss.setdefault("_qt_deadlines", {})
+    k = f"{_ss.get('_ps_sig', '')}|{scope}"
+    if k not in dl:
+        dl[k] = _t.time() + int(limit)
+    deadline = dl[k]
+    if _ss.get("show_analysis"):
+        return False
+    if _t.time() >= deadline:
+        return True
+
+    @st.fragment(run_every=1)
+    def _qt_countdown():
+        remain = int(deadline - _t.time() + 0.999)
+        if remain <= 0:
+            st.rerun()
+        mm, sx = divmod(remain, 60)
+        txt = f"{mm} 分 {sx:02d} 秒" if mm else f"{sx} 秒"
+        col = "#d93025" if remain <= 10 else "inherit"
+        st.markdown(f"<div style='font-size:1.05rem;font-weight:600;color:{col}'>⏱️ 剩餘時間：{txt}</div>",
+                    unsafe_allow_html=True)
+    _qt_countdown()
+    return False
+
+def _log_timeout(q: dict, limit: int):
+    """時間到：寫一筆 ❌ 逾時紀錄"""
+    try:
+        _insert_log(get_supabase(), _to_en_logs({
+            "時間":    get_now().strftime("%Y-%m-%d %H:%M:%S"),
+            "姓名":    st.session_state.user_name,
+            "分組":    st.session_state.group_id,
+            "題目ID":  q.get('題目ID', 'N/A'),
+            "結果":    "❌",
+            "學生答案": "⏰ 逾時未作答",
+            "分數":    "",
+            "任務名稱": st.session_state.get("current_task_name", ""),
+            "作答秒數": round(__import__("time").time() - st.session_state.get(f"_q_start_time_{st.session_state.q_idx}", __import__("time").time())),
+        }))
+        st.session_state['answered_count'] = st.session_state.get('answered_count', 0) + 1
+    except Exception as e:
+        st.error(f"❌ 寫入失敗：{e}")
 
 def _to_en_assign(row: dict) -> dict:
     """把中文欄位的 assignment 資料轉成英文欄位"""
@@ -1182,7 +1269,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 't1_grammar', 't1_diff',
                 # 單選題篩選
                 'mc_v', 'mc_u', 'mc_y', 'mc_b', 'mc_l', 'mc_start_sent', 'mc_q_count',
-                'mc_grammar', 'mc_diff',
+                'mc_grammar', 'mc_diff', 'mc_timer',
                 # 朗讀題篩選
                 'rt_v', 'rt_u', 'rt_y', 'rt_b', 'rt_l', 'rt_start_sent', 'rt_q_count',
                 # 拼單字篩選
@@ -1190,7 +1277,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 'vt_mode', 'vt_timer', 'vt_extra',
                 # 閱讀單句篩選
                 'rmt_v', 'rmt_u', 'rmt_y', 'rmt_b', 'rmt_l', 'rmt_start', 'rmt_count',
-                'rmt_grammar', 'rmt_diff',
+                'rmt_grammar', 'rmt_diff', 'rmt_timer',
                 # 班級/學生/日期
                 't1_group', 't1_mode', 't1_stu', 't1_start', 't1_end',
                 # 參考學生
@@ -1356,6 +1443,8 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 mc_sent_opts = sorted(df_mcq_scope["句編號"].unique(), key=lambda x: int(x) if str(x).isdigit() else 0)
                 mc_start = mcs1.selectbox("🔢 起始句編號", mc_sent_opts, key="mc_start_sent") if mc_sent_opts else None
                 mc_count = mcs2.number_input("🔢 題目數量", 0, max(mc_total,1), mc_total, key="mc_q_count")
+                # V2.9.543：單選每題作答時間
+                st.number_input("⏱️ 每題作答時間（秒，0 = 不限）", 0, 600, 0, step=5, key="mc_timer")
 
                 if mc_start:
                     df_mcq_scope["_num"] = pd.to_numeric(df_mcq_scope["句編號"], errors="coerce").fillna(0)
@@ -1637,6 +1726,8 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 rm_sent_opts = sorted(df_rm_scope['句編號'].unique(), key=lambda x: int(x) if str(x).isdigit() else 0) if '句編號' in df_rm_scope.columns else []
                 rm_start = rms1.selectbox("🔢 起始句編號", rm_sent_opts, key="rmt_start") if rm_sent_opts else None
                 rm_count = rms2.number_input("🔢 題目數量", 0, max(rm_total,1), rm_total, key="rmt_count")
+                # V2.9.543：閱讀每個題組（整篇文章）的作答時間；沒有題組的題目每題各自計時
+                st.number_input("⏱️ 每個題組作答時間（秒，0 = 不限；整篇所有小題共用）", 0, 3600, 0, step=30, key="rmt_timer")
 
                 if rm_start and '句編號' in df_rm_scope.columns:
                     df_rm_scope['_num'] = pd.to_numeric(df_rm_scope['句編號'], errors='coerce').fillna(0)
@@ -1736,6 +1827,13 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     vt_timer_val = st.session_state.get('vt_timer', 60)
                     vt_extra_val = st.session_state.get('vt_extra', 0)
                     vocab_cfg = f"{vt_mode_val}|{vt_timer_val}|{vt_extra_val}"
+                # V2.9.543：單選／閱讀作答時間附在「單字設定」後段
+                _mc_tl = int(st.session_state.get('mc_timer', 0) or 0) if mcq_ids else 0
+                _rm_tl = int(st.session_state.get('rmt_timer', 0) or 0) if rm_ids else 0
+                if _mc_tl > 0:
+                    vocab_cfg += f"#mc={_mc_tl}"
+                if _rm_tl > 0:
+                    vocab_cfg += f"#rm={_rm_tl}"
 
                 # 自動產生任務名稱（新格式）
                 publish_time = get_now().strftime("%Y-%m-%d_%H:%M")
@@ -1846,10 +1944,10 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     _clear_keys = [
                         't1_inc_q', 't1_inc_mcq', 't1_inc_reading', 't1_inc_vocab', 't1_inc_rm', 't1_inc_lp',
                         't1_v', 't1_u', 't1_y', 't1_b', 't1_l', 't1_start_sent', 't1_q_count', 't1_grammar', 't1_diff',
-                        'mc_v', 'mc_u', 'mc_y', 'mc_b', 'mc_l', 'mc_start_sent', 'mc_q_count', 'mc_grammar', 'mc_diff', 'mc_school', 'mc_paper',
+                        'mc_v', 'mc_u', 'mc_y', 'mc_b', 'mc_l', 'mc_start_sent', 'mc_q_count', 'mc_grammar', 'mc_diff', 'mc_school', 'mc_paper', 'mc_timer',
                         'rt_v', 'rt_u', 'rt_y', 'rt_b', 'rt_l', 'rt_start_sent', 'rt_q_count',
                         'vt_v', 'vt_u', 'vt_y', 'vt_b', 'vt_l', 'vt_start_sent', 'vt_q_count', 'vt_mode', 'vt_timer', 'vt_extra',
-                        'rmt_v', 'rmt_u', 'rmt_y', 'rmt_b', 'rmt_l', 'rmt_start', 'rmt_count', 'rmt_grammar', 'rmt_diff', 'rmt_school', 'rmt_paper',
+                        'rmt_v', 'rmt_u', 'rmt_y', 'rmt_b', 'rmt_l', 'rmt_start', 'rmt_count', 'rmt_grammar', 'rmt_diff', 'rmt_school', 'rmt_paper', 'rmt_timer',
                         'lpt_v', 'lpt_u', 'lpt_g', 'lpt_count',
                         'lst_v', 'lst_u', 'lst_y', 'lst_b', 'lst_l', 't1_inc_ls',
                         't1_group', 't1_mode', 't1_stu', 't1_start', 't1_end',
@@ -3542,7 +3640,7 @@ if not st.session_state.quiz_loaded:
                                     dv2['題目ID'] = dv2.apply(lambda r: f"V_{r.get('版本','')}_{r.get('年度','')}_{r.get('冊編號','')}_{r.get('單元','')}_{r.get('課編號','')}_{r.get('句編號','')}", axis=1)
                                     rv = dv2[dv2['題目ID'].isin(q_ids_set)].copy()
                                     if not rv.empty:
-                                        vocab_cfg_str2 = str(arow.get('單字設定', '') or '')
+                                        vocab_cfg_str2 = _vcfg_base(arow.get('單字設定', ''))
                                         vcfg2 = vocab_cfg_str2.split('|') if vocab_cfg_str2 else []
                                         rv['_type'] = 'vocab'
                                         rv['_vocab_mode']  = (vcfg2[0] if len(vcfg2)>0 else '自選').replace('學生自選','自選')
@@ -3591,7 +3689,7 @@ if not st.session_state.quiz_loaded:
                                     dv_r['題目ID'] = dv_r.apply(lambda r: f"V_{r.get('版本','')}_{r.get('年度','')}_{r.get('冊編號','')}_{r.get('單元','')}_{r.get('課編號','')}_{r.get('句編號','')}", axis=1)
                                     rv_r = dv_r[dv_r['題目ID'].isin(q_ids_set)].copy()
                                     if not rv_r.empty:
-                                        vocab_cfg_str3 = str(arow.get('單字設定', '') or '')
+                                        vocab_cfg_str3 = _vcfg_base(arow.get('單字設定', ''))
                                         vcfg3 = vocab_cfg_str3.split('|') if vocab_cfg_str3 else []
                                         rv_r['_type']        = 'vocab'
                                         rv_r['_vocab_mode']  = (vcfg3[0] if len(vcfg3)>0 else '自選').replace('學生自選','自選')
@@ -3769,7 +3867,7 @@ if not st.session_state.quiz_loaded:
                                       {f"V_{q}" for q in pending_ids if not any(q.startswith(p) for p in ('V_','R_','RM_','LP_','LS_'))}
                                   )].copy() if not df_v2.empty else pd.DataFrame()
                                   if not pending.empty:
-                                      vocab_cfg_str = str(arow.get('單字設定', '') or '')
+                                      vocab_cfg_str = _vcfg_base(arow.get('單字設定', ''))
                                       vcfg = vocab_cfg_str.split('|') if vocab_cfg_str else []
                                       v_mode_t  = vcfg[0] if len(vcfg) > 0 else '自選'
                                       if v_mode_t == '學生自選':
@@ -3952,7 +4050,7 @@ if not st.session_state.quiz_loaded:
                                   if not pending_rm.empty:
                                       pending_rm['_type'] = 'reading_mcq'
                                   if not pending_v.empty:
-                                      vocab_cfg_str = str(arow.get('單字設定', '') or '')
+                                      vocab_cfg_str = _vcfg_base(arow.get('單字設定', ''))
                                       vcfg = vocab_cfg_str.split('|') if vocab_cfg_str else []
                                       v_mode_mixed = vcfg[0] if len(vcfg) > 0 else '自選'
                                       if v_mode_mixed == '學生自選':
@@ -5145,6 +5243,17 @@ if st.session_state.quiz_loaded:
                                              (_grp_paper + "卷") if _grp_paper else ""] if v])
             st.caption(f"📖 閱讀題組{('（' + _grp_src + '）') if _grp_src else ''}　本篇第 {_grp_pos} / {len(_grp_idx)} 題")
 
+        # V2.9.543：閱讀限時（同一題組共用一個計時；沒有題組的題目每題各自計時）
+        _rm_lim = 0 if (_practice_mode or _race_mode) else _task_time_limits(st.session_state.get("current_task_name", ""))[1]
+        if _rm_lim and not st.session_state.get('show_analysis') and _qt_timer(f"rm|{rm_group or st.session_state.q_idx}", _rm_lim):
+            st.session_state.update({
+                "current_res": f"⏰ {'本篇' if rm_group else ''}時間到！正確答案：{rm_correct}",
+                "show_analysis": True,
+                f"rm_choice_{st.session_state.q_idx}": "",
+            })
+            _log_timeout(q, _rm_lim)
+            st.rerun()
+
         st.markdown(RM_PASSAGE_CSS, unsafe_allow_html=True)
 
         # 電腦/平板：左文右題；手機：上下排（側欄「裝置類型」）
@@ -5943,6 +6052,19 @@ if st.session_state.quiz_loaded:
         _disp_to_orig   = {_display_labels[i]: mcq_order[i] for i in range(len(mcq_order))}
         _correct_display = next((d for d, o in _disp_to_orig.items() if o.upper() == ans_key.upper()), ans_key)
         _correct_text    = parsed_opts.get(ans_key.upper(), "")
+
+        # V2.9.543：單選每題限時
+        _mc_lim = 0 if (_practice_mode or _race_mode) else _task_time_limits(st.session_state.get("current_task_name", ""))[0]
+        if _mc_lim and not already_answered and _qt_timer(f"mc|{st.session_state.q_idx}", _mc_lim):
+            _mcq_written_key = f"mcq_written_{st.session_state.q_idx}"
+            if not st.session_state.get(_mcq_written_key):
+                st.session_state[_mcq_written_key] = True
+                st.session_state.update({
+                    "current_res": f"⏰ 時間到！正確答案：({_correct_display}) {_correct_text}",
+                    "show_analysis": True,
+                })
+                _log_timeout(q, _mc_lim)
+                st.rerun()
 
         # 顯示選項在題目下方（2欄）
         _n_cols = st.session_state.get('mcq_cols', 2)
