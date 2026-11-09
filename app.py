@@ -1,6 +1,8 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.543 - 單選閱讀限時)
+# 🧩 英文全能練習系統 (V2.9.544 - 閱讀題組不單題計時)
 # ==============================================================================
+# 🆕 2.9.544：閱讀題組的小題不再顯示單題 90 秒倒數、也不會因閒置 90 秒跳回任務列表；
+#              只依老師設定的「每個題組作答時間」計時。
 # 🆕 2.9.543：指派單選題可設定「每題作答時間」、閱讀單句可設定「每個題組作答時間」（0 = 不限）。
 #              設定附在任務「單字設定」欄後段（#mc=秒#rm=秒），不需更動 Supabase。
 #              作答時顯示倒數；時間到自動判為逾時（❌），閱讀題組時間到後同篇其餘小題也直接逾時。
@@ -77,7 +79,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.543"
+VERSION = "2.9.544"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -4741,9 +4743,15 @@ if st.session_state.quiz_loaded:
         st.session_state[_q_timer_key] = _time_sys.time()
     _q_elapsed  = int(_time_sys.time() - st.session_state[_q_timer_key])
     _idle_limit = 90
+    # V2.9.544：閱讀題組的小題不單題計時（只算整個題組的時間）
+    try:
+        _cur_q0 = st.session_state.quiz_list[st.session_state.q_idx]
+        _no_q_timer = bool(str(_cur_q0.get("題組") or "").strip()) or _cur_q0.get("_type") == "reading_mcq"
+    except Exception:
+        _no_q_timer = False
 
     # 90 秒閒置：寫入超時記錄並跳回任務列表（多次打字練習模式跳過）
-    if _q_elapsed >= _idle_limit and not st.session_state.get("show_analysis") and not _typing_mode and not _replay_mode and not _ec_mode:
+    if _q_elapsed >= _idle_limit and not st.session_state.get("show_analysis") and not _typing_mode and not _replay_mode and not _ec_mode and not _no_q_timer:
         import pandas as _pd_timeout
         _timeout_row = {
             "時間": get_now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -4784,7 +4792,7 @@ if st.session_state.quiz_loaded:
         st.session_state.pop('_first_q_cleared', None)
     # 計時顯示（多次打字練習模式不顯示倒數）
     _answered_now = st.session_state.get('answered_count', 0)
-    if _typing_mode or _replay_mode or _ec_mode:
+    if _typing_mode or _replay_mode or _ec_mode or _no_q_timer:
         if not st.session_state.get("show_analysis"):
             st.markdown(f"### 🔴 練習中 (第 {st.session_state.q_idx + 1} / {total_q} 題　｜　已作答 {_answered_now} 題) {_mode_label}")
         else:
