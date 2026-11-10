@@ -1,6 +1,8 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.544 - 閱讀題組不單題計時)
+# 🧩 英文全能練習系統 (V2.9.545 - 閱讀字體大小)
 # ==============================================================================
+# 🆕 2.9.545：閱讀單句題上方新增「🔠 字體大小」（A− / A / A＋ / A＋＋），放大文章、題目、選項與解析；
+#              手機上無法用手指放大時使用，選一次後整次作答都沿用。
 # 🆕 2.9.544：閱讀題組的小題不再顯示單題 90 秒倒數、也不會因閒置 90 秒跳回任務列表；
 #              只依老師設定的「每個題組作答時間」計時。
 # 🆕 2.9.543：指派單選題可設定「每題作答時間」、閱讀單句可設定「每個題組作答時間」（0 = 不限）。
@@ -79,7 +81,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.544"
+VERSION = "2.9.545"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -5264,11 +5266,28 @@ if st.session_state.quiz_loaded:
 
         st.markdown(RM_PASSAGE_CSS, unsafe_allow_html=True)
 
+        # V2.9.545：字體大小（手機上無法用手指放大時使用；選一次後整個作答都沿用）
+        _RM_FONT_LV = {"A−": 0.9, "A": 1.0, "A＋": 1.3, "A＋＋": 1.6}
+        if st.session_state.get("rm_font_lvl") not in _RM_FONT_LV:
+            _saved_lv = st.session_state.get("_rm_font_saved", "A")
+            st.session_state["rm_font_lvl"] = _saved_lv if _saved_lv in _RM_FONT_LV else "A"
+        st.radio("🔠 字體大小", list(_RM_FONT_LV.keys()), horizontal=True, key="rm_font_lvl")
+        st.session_state["_rm_font_saved"] = st.session_state.get("rm_font_lvl", "A")
+        _rm_fs = _RM_FONT_LV.get(st.session_state.get("rm_font_lvl", "A"), 1.0)
+        st.markdown(f"""<style>
+        .st-key-rm_area .rm-passage {{ font-size:calc(1.1rem * {_rm_fs}) !important; }}
+        .st-key-rm_area .rm-passage table {{ font-size:.9em !important; }}
+        .st-key-rm_area [data-testid="stMarkdownContainer"] p,
+        .st-key-rm_area [data-testid="stMarkdownContainer"] li {{ font-size:calc(1.1rem * {_rm_fs}) !important; line-height:1.6 !important; }}
+        .st-key-rm_area div[data-testid="stButton"] button p {{ font-size:calc(1.1rem * {_rm_fs}) !important; }}
+        </style>""", unsafe_allow_html=True)
+        _rm_area = st.container(key="rm_area")
+
         # 電腦/平板：左文右題；手機：上下排（側欄「裝置類型」）
         if st.session_state.get('mcq_cols', 2) == 2 and (rm_passage or rm_image):
-            _rm_left, _rm_right = st.columns([1.1, 1])
+            _rm_left, _rm_right = _rm_area.columns([1.1, 1])
         else:
-            _rm_left = _rm_right = st.container()
+            _rm_left = _rm_right = _rm_area.container()
 
         with _rm_left:
             if rm_passage:
