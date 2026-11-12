@@ -1,6 +1,9 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.548 - 手機選項自動換行)
+# 🧩 英文全能練習系統 (V2.9.549 - 任務列表加速)
 # ==============================================================================
+# 🆕 2.9.549：學生任務列表與複習只讀「自己的」作答紀錄（Supabase 依姓名篩選），
+#              不再每分鐘下載全班全部 logs（約 10 萬筆、上百次請求），登入後任務列表載入大幅加快；
+#              寫入新紀錄後自動重新讀取，完成進度即時更新。
 # 🆕 2.9.548：手機版的單選／閱讀選項也自動換行完整顯示（手機版面的按鈕樣式不再蓋掉換行設定，選項左右留白加大）。
 # 🆕 2.9.547：單選題的選項內容太長時也自動換成多列完整顯示（不再被「…」截斷），選項文字靠左對齊。
 # 🆕 2.9.546：閱讀單句的選項內容太長時自動換成多列完整顯示（不再被「…」截斷），選項文字靠左對齊。
@@ -84,7 +87,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.548"
+VERSION = "2.9.549"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -328,6 +331,8 @@ def _insert_log(sb, en_row: dict):
     """寫入 logs；若 Supabase 尚未新增 practice_mode / session_start 欄位，自動改用舊欄位寫入"""
     if st.session_state.get("_log_extra_unsupported"):
         en_row = {k: v for k, v in en_row.items() if k not in _LOG_EXTRA_COLS}
+    # V2.9.549：寫入後讓「我的紀錄」快取失效（只影響這位學生）
+    st.session_state["_my_logs_ver"] = st.session_state.get("_my_logs_ver", 0) + 1
     try:
         return sb.table("logs").insert(en_row).execute()
     except Exception as e:
@@ -486,6 +491,41 @@ def _load_logs_cached():
         return pd.DataFrame()
     except:
         return pd.DataFrame()
+
+@st.cache_data(ttl=120)
+def _load_my_logs_cached(stu_name: str, ver: int = 0):
+    """V2.9.549：只撈單一學生的 logs（任務列表、複習用），不再下載全班全部紀錄"""
+    try:
+        sb   = get_supabase()
+        rows = []
+        page = 0
+        while True:
+            res = sb.table("logs").select(
+                "created_at,name,group_id,question_id,result,student_answer,score,task_name"
+            ).eq("name", stu_name).order("created_at", desc=False) \
+             .range(page * 1000, (page + 1) * 1000 - 1) \
+             .execute()
+            if not res.data:
+                break
+            rows.extend(res.data)
+            if len(res.data) < 1000:
+                break
+            page += 1
+        if rows:
+            return _to_cn(pd.DataFrame(rows), LOGS_COLS)
+        return pd.DataFrame()
+    except Exception:
+        return None
+
+def _load_my_logs(stu_name: str) -> pd.DataFrame:
+    """這位學生自己的紀錄；寫入新紀錄後自動重新讀取。讀取失敗時退回舊方式（全部 logs 再篩選）"""
+    df = _load_my_logs_cached(str(stu_name), st.session_state.get("_my_logs_ver", 0))
+    if df is None:
+        _all = _load_logs_cached()
+        if _all.empty or '姓名' not in _all.columns:
+            return pd.DataFrame()
+        return _all[_all['姓名'] == stu_name].copy()
+    return df
 
 def load_dynamic_data():
     """assignments + logs（相容舊版呼叫，不用快取）"""
@@ -3417,10 +3457,9 @@ if not st.session_state.quiz_loaded:
                         _m2 = _re_tid2.search(r'\[T(\d+)\]', task_name)
                         if _m2:
                             task_id_key_check = 'T' + _m2.group(1)
-                    if df_l.empty:
-                        df_l = _get_df_l()
-                    if not df_l.empty:
-                        _stu_all = df_l[df_l['姓名'] == user_name]
+                    # V2.9.549：只讀這位學生自己的紀錄
+                    _stu_all = _load_my_logs(user_name)
+                    if not _stu_all.empty:
                         # 用題目ID比對（最可靠，相容舊資料沒有任務名稱的 logs）
                         if q_ids_all and '題目ID' in _stu_all.columns:
                             stu_logs_check = _stu_all[_stu_all['題目ID'].isin(q_ids_all)]
@@ -4238,9 +4277,8 @@ if not st.session_state.quiz_loaded:
 
     if st.button("📖 開始復習", type="primary", use_container_width=True, key="rv_start"):
         try:
-            df_l = _get_df_l()  # 懶載入 logs
-            if not df_l.empty:
-                my_logs = df_l[df_l['姓名'] == user_name].copy()
+            my_logs = _load_my_logs(user_name).copy()  # V2.9.549：只讀自己的紀錄
+            if not my_logs.empty:
                 # 不用任務名稱篩選，改用題目ID比對
                 # （因為舊版 logs 沒有寫入任務名稱）
                 if rv_filter == "📋 依任務" and rv_q_ids and '題目ID' in my_logs.columns:
@@ -4251,8 +4289,7 @@ if not st.session_state.quiz_loaded:
             else:
                 my_logs = pd.DataFrame()
         except:
-            df_l = _get_df_l()
-            my_logs = df_l[df_l['姓名'] == user_name].copy() if not df_l.empty and '姓名' in df_l.columns else pd.DataFrame()
+            my_logs = _load_my_logs(user_name).copy()
 
         def _get_qid(r, prefix=""):
             return f"{prefix}{r.get('版本','')}_{r.get('年度','')}_{r.get('冊編號','')}_{r.get('單元','')}_{r.get('課編號','')}_{r.get('句編號','')}"
