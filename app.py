@@ -1,6 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.546 - 閱讀選項自動換行)
+# 🧩 英文全能練習系統 (V2.9.547 - 單選選項自動換行)
 # ==============================================================================
+# 🆕 2.9.547：單選題的選項內容太長時也自動換成多列完整顯示（不再被「…」截斷），選項文字靠左對齊。
 # 🆕 2.9.546：閱讀單句的選項內容太長時自動換成多列完整顯示（不再被「…」截斷），選項文字靠左對齊。
 # 🆕 2.9.545：閱讀單句題上方新增「🔠 字體大小」（A− / A / A＋ / A＋＋），放大文章、題目、選項與解析；
 #              手機上無法用手指放大時使用，選一次後整次作答都沿用。
@@ -82,7 +83,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.546"
+VERSION = "2.9.547"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -6099,7 +6100,13 @@ if st.session_state.quiz_loaded:
 
         # 顯示選項在題目下方（2欄）
         _n_cols = st.session_state.get('mcq_cols', 2)
-        _opt_cols = st.columns(_n_cols)
+        # V2.9.547：選項太長時自動換行，完整顯示
+        st.markdown("""<style>
+        .st-key-mc_area div[data-testid="stButton"] button { height:auto !important; min-height:2.6rem; padding-top:.45rem; padding-bottom:.45rem; justify-content:flex-start; }
+        .st-key-mc_area div[data-testid="stButton"] button * { white-space:normal !important; overflow:visible !important;
+            text-overflow:clip !important; overflow-wrap:anywhere; text-align:left !important; max-width:100% !important; }
+        </style>""", unsafe_allow_html=True)
+        _opt_cols = st.container(key="mc_area").columns(_n_cols)
         for i, orig_opt in enumerate(mcq_order):
             disp_label = _display_labels[i]
             opt_text   = parsed_opts.get(orig_opt, "")
