@@ -1,6 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.545 - 閱讀字體大小)
+# 🧩 英文全能練習系統 (V2.9.546 - 閱讀選項自動換行)
 # ==============================================================================
+# 🆕 2.9.546：閱讀單句的選項內容太長時自動換成多列完整顯示（不再被「…」截斷），選項文字靠左對齊。
 # 🆕 2.9.545：閱讀單句題上方新增「🔠 字體大小」（A− / A / A＋ / A＋＋），放大文章、題目、選項與解析；
 #              手機上無法用手指放大時使用，選一次後整次作答都沿用。
 # 🆕 2.9.544：閱讀題組的小題不再顯示單題 90 秒倒數、也不會因閒置 90 秒跳回任務列表；
@@ -81,7 +82,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.545"
+VERSION = "2.9.546"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -5280,6 +5281,9 @@ if st.session_state.quiz_loaded:
         .st-key-rm_area [data-testid="stMarkdownContainer"] p,
         .st-key-rm_area [data-testid="stMarkdownContainer"] li {{ font-size:calc(1.1rem * {_rm_fs}) !important; line-height:1.6 !important; }}
         .st-key-rm_area div[data-testid="stButton"] button p {{ font-size:calc(1.1rem * {_rm_fs}) !important; }}
+        .st-key-rm_area div[data-testid="stButton"] button {{ height:auto !important; min-height:2.6rem; padding-top:.45rem; padding-bottom:.45rem; justify-content:flex-start; }}
+        .st-key-rm_area div[data-testid="stButton"] button * {{ white-space:normal !important; overflow:visible !important;
+            text-overflow:clip !important; overflow-wrap:anywhere; text-align:left !important; max-width:100% !important; }}
         </style>""", unsafe_allow_html=True)
         _rm_area = st.container(key="rm_area")
 
