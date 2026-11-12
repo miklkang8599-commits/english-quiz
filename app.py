@@ -1,6 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.547 - 單選選項自動換行)
+# 🧩 英文全能練習系統 (V2.9.548 - 手機選項自動換行)
 # ==============================================================================
+# 🆕 2.9.548：手機版的單選／閱讀選項也自動換行完整顯示（手機版面的按鈕樣式不再蓋掉換行設定，選項左右留白加大）。
 # 🆕 2.9.547：單選題的選項內容太長時也自動換成多列完整顯示（不再被「…」截斷），選項文字靠左對齊。
 # 🆕 2.9.546：閱讀單句的選項內容太長時自動換成多列完整顯示（不再被「…」截斷），選項文字靠左對齊。
 # 🆕 2.9.545：閱讀單句題上方新增「🔠 字體大小」（A− / A / A＋ / A＋＋），放大文章、題目、選項與解析；
@@ -83,7 +84,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.547"
+VERSION = "2.9.548"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -688,6 +689,14 @@ if _is_phone:
         .block-container [data-testid="stHorizontalBlock"] > div { min-width:0 !important; width:auto !important; flex:1 1 0 !important; }
         .block-container [data-testid="stHorizontalBlock"] div[data-testid="stButton"] button { padding-left:.1rem !important; padding-right:.1rem !important; }
         .block-container [data-testid="stVerticalBlock"] { gap:.5rem !important; }
+        /* V2.9.548：單選／閱讀選項在手機上也自動換行、完整顯示 */
+        .block-container .st-key-mc_area [data-testid="stHorizontalBlock"] div[data-testid="stButton"] button,
+        .block-container .st-key-rm_area [data-testid="stHorizontalBlock"] div[data-testid="stButton"] button {
+            height:auto !important; min-height:2.9rem; padding:.5rem .7rem !important; justify-content:flex-start !important; }
+        .block-container .st-key-mc_area div[data-testid="stButton"] button *,
+        .block-container .st-key-rm_area div[data-testid="stButton"] button * {
+            white-space:normal !important; overflow:visible !important; text-overflow:clip !important;
+            overflow-wrap:anywhere !important; word-break:break-word; text-align:left !important; max-width:100% !important; }
         </style>""", unsafe_allow_html=True)
 elif _in_quiz:
     # 電腦作答：限制內容寬度、稍微放大文字，按鈕不會被拉得太長
