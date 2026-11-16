@@ -1,6 +1,8 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.549 - 任務列表加速)
+# 🧩 英文全能練習系統 (V2.9.550 - 接續上一次作答)
 # ==============================================================================
+# 🆕 2.9.550：學生任務列表不再顯示完成統計（總題數／已完成／全部完成），任務可反覆練習測驗；
+#              新增「⏩ 快速作答-接續上一次作答」：自動從這個任務上次最後作答的下一題開始，不用記題號。
 # 🆕 2.9.549：學生任務列表與複習只讀「自己的」作答紀錄（Supabase 依姓名篩選），
 #              不再每分鐘下載全班全部 logs（約 10 萬筆、上百次請求），登入後任務列表載入大幅加快；
 #              寫入新紀錄後自動重新讀取，完成進度即時更新。
@@ -87,7 +89,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.549"
+VERSION = "2.9.550"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -526,6 +528,23 @@ def _load_my_logs(stu_name: str) -> pd.DataFrame:
             return pd.DataFrame()
         return _all[_all['姓名'] == stu_name].copy()
     return df
+
+def _last_task_qid(stu_name, task_key) -> str:
+    """V2.9.550：這位學生在這個任務最後作答的題目ID（接續上一次作答用）"""
+    try:
+        df = _load_my_logs(stu_name)
+        if df is None or df.empty or '任務名稱' not in df.columns or '題目ID' not in df.columns:
+            return ""
+        d = df[df['任務名稱'].fillna('').astype(str) == str(task_key)]
+        if '結果' in d.columns:
+            d = d[~d['結果'].fillna('').astype(str).str.contains('📖', na=False)]
+        if d.empty:
+            return ""
+        if '時間' in d.columns:
+            d = d.sort_values('時間')
+        return str(d.iloc[-1]['題目ID'])
+    except Exception:
+        return ""
 
 def load_dynamic_data():
     """assignments + logs（相容舊版呼叫，不用快取）"""
@@ -3448,58 +3467,14 @@ if not st.session_state.quiz_loaded:
             is_lp_task      = task_type == '聽力音標'
             is_ls_task      = task_type == '聽力重組'
 
-            if q_ids_set and not is_race_task:
-                try:
-                    # 用快取的 df_l，依任務編號篩選
-                    task_id_key_check = arow.get('任務編號', '') or ''
-                    if not task_id_key_check and task_name:
-                        import re as _re_tid2
-                        _m2 = _re_tid2.search(r'\[T(\d+)\]', task_name)
-                        if _m2:
-                            task_id_key_check = 'T' + _m2.group(1)
-                    # V2.9.549：只讀這位學生自己的紀錄
-                    _stu_all = _load_my_logs(user_name)
-                    if not _stu_all.empty:
-                        # 用題目ID比對（最可靠，相容舊資料沒有任務名稱的 logs）
-                        if q_ids_all and '題目ID' in _stu_all.columns:
-                            stu_logs_check = _stu_all[_stu_all['題目ID'].isin(q_ids_all)]
-                            # 再加上任務名稱比對的結果（取聯集）
-                            if task_id_key_check and '任務名稱' in _stu_all.columns:
-                                _by_name = _stu_all[_stu_all['任務名稱'].fillna('') == task_id_key_check]
-                                if not _by_name.empty:
-                                    stu_logs_check = pd.concat([stu_logs_check, _by_name]).drop_duplicates()
-                        elif task_id_key_check and '任務名稱' in _stu_all.columns:
-                            stu_logs_check = _stu_all[_stu_all['任務名稱'].fillna('') == task_id_key_check]
-                        else:
-                            stu_logs_check = _stu_all
-                        my_correct = set(stu_logs_check[
-                            stu_logs_check['結果'].fillna('').str.contains('✅', na=False) &
-                            ~stu_logs_check['結果'].fillna('').str.contains('練習', na=False)
-                        ]['題目ID'].tolist())
-                        my_reading = set(stu_logs_check[
-                            stu_logs_check['結果'].fillna('').str.contains('🎤|朗讀|分', na=False) &
-                            ~stu_logs_check['結果'].fillna('').str.contains('練習', na=False)
-                        ]['題目ID'].tolist())
-                        # 已作答 = 有任何非講解紀錄（與複習模式一致）
-                        my_answered = set(stu_logs_check[
-                            ~stu_logs_check['結果'].fillna('').str.contains('📖|練習', na=False)
-                        ]['題目ID'].tolist())
-                    else:
-                        my_correct, my_reading, my_answered = set(), set(), set()
-                    my_done  = my_correct | my_reading | my_answered
-                    done_cnt = len(q_ids_set & my_done)  # 用 q_ids_set（原始格式）避免重複計算
-                    all_done = done_cnt >= len(q_ids_set)
-                except:
-                    my_done = set()
-                    done_cnt, all_done = 0, False
-            else:
-                my_done = set()
-                done_cnt, all_done = 0, False
+            # V2.9.550：任務會反覆練習測驗，不再統計完成數
+            my_done = set()
+            done_cnt, all_done = 0, False
 
             # 競賽任務：不計算完成數，直接顯示開始按鈕
             if is_race_task:
                 done_cnt, all_done = 0, False
-            status_icon = "🏆" if is_race_task else ("🟢" if all_done else ("🎤" if is_reading_task else "🔴"))
+            status_icon = "🏆" if is_race_task else ("🎤" if is_reading_task else "📘")
             if is_race_task:
                 with st.expander(f"{status_icon} {task_name}　{date_info}", expanded=True):
                     _is_practice = False
@@ -3585,15 +3560,12 @@ if not st.session_state.quiz_loaded:
                             })
                             st.rerun()
             else:
-                with st.expander(f"{status_icon} {task_name}　{date_info}　{done_cnt}/{task_q_count} 題完成", expanded=True):
+                with st.expander(f"{status_icon} {task_name}　{date_info}　共 {task_q_count} 題", expanded=True):
                     # 任務說明
                     task_desc_text = str(arow.get('任務說明') or '').strip()
                     if task_desc_text and task_desc_text not in ('nan', 'None', ''):
                         st.info(f"📋 {task_desc_text}")
 
-                    pc1, pc2 = st.columns(2)
-                    pc1.metric("總題數", task_q_count)
-                    pc2.metric("已完成", done_cnt)
 
                     if all_done and not st.session_state.get(f"_retry_started_{task_id_key}"):
                         st.success("🎉 此任務已全部完成！")
@@ -3802,11 +3774,11 @@ if not st.session_state.quiz_loaded:
                         if not is_race_task:
                             _shadow_ok = is_vocab_task or task_type in ("一般", "混合", "")
                             if is_vocab_task:
-                                _mode_opts = ["⚡ 快速答題", "⌨️ 多次打字練習", "🔊 多次撥放", "🏋️ 練習模式", "🎤 跟著唸和錄音", "🇨🇳 英選中"]
+                                _mode_opts = ["⚡ 快速答題", "⏩ 快速作答-接續上一次作答", "⌨️ 多次打字練習", "🔊 多次撥放", "🏋️ 練習模式", "🎤 跟著唸和錄音", "🇨🇳 英選中"]
                             elif task_type in ("一般", "混合", ""):
-                                _mode_opts = ["⚡ 快速答題", "⌨️ 多次打字練習", "🔊 多次撥放", "🏋️ 練習模式", "🎤 跟著唸和錄音"]
+                                _mode_opts = ["⚡ 快速答題", "⏩ 快速作答-接續上一次作答", "⌨️ 多次打字練習", "🔊 多次撥放", "🏋️ 練習模式", "🎤 跟著唸和錄音"]
                             else:
-                                _mode_opts = ["⚡ 快速答題", "🏋️ 練習模式"]
+                                _mode_opts = ["⚡ 快速答題", "⏩ 快速作答-接續上一次作答", "🏋️ 練習模式"]
                                 if _shadow_ok:
                                     _mode_opts.append("🎤 跟著唸和錄音")
                             _mode = st.radio(
@@ -3815,6 +3787,8 @@ if not st.session_state.quiz_loaded:
                                 horizontal=True,
                                 key=f"start_mode_{_task_idx}"
                             )
+                            if _mode == "⏩ 快速作答-接續上一次作答":
+                                st.caption("⏩ 自動從這個任務上次最後作答的下一題開始（快速答題方式），不用記題號")
                             if _mode in ("🏋️ 練習模式", "⚡ 快速答題", "🎤 跟著唸和錄音", "⌨️ 多次打字練習", "🔊 多次撥放", "🇨🇳 英選中"):
                                 _range_cols = st.columns(2)
                                 _start_from = _range_cols[0].number_input(
@@ -3855,7 +3829,7 @@ if not st.session_state.quiz_loaded:
                                 import random as _rr; _rr.shuffle(list(pending_ids))  # noqa
                         else:
                             _is_practice  = (_mode == "🏋️ 練習模式")
-                            _is_quick     = (_mode == "⚡ 快速答題")
+                            _is_quick     = (_mode in ("⚡ 快速答題", "⏩ 快速作答-接續上一次作答"))
                             _is_shadow    = (_mode == "🎤 跟著唸和錄音")
                             _is_typing    = (_mode == "⌨️ 多次打字練習")
                             _is_replay    = (_mode == "🔊 多次撥放")
@@ -3873,10 +3847,16 @@ if not st.session_state.quiz_loaded:
                                       (f"🔊 多次撥放{_range_suffix}" if _is_replay else \
                                       (f"🇨🇳 英選中{_range_suffix}" if _is_ec else \
                                        f"⚡ 快速答題{_range_suffix}"))))))
+                            if _mode == "⏩ 快速作答-接續上一次作答":
+                                label = "⏩ 快速作答-接續上一次作答"
                             if st.button(f"🚀 {label}", key=btn_key, type="primary", use_container_width=True):
                                 _start_idx_fwd = max(0, int(_start_from) - 1)
                                 _end_idx_fwd   = (int(_end_from_val) - 1) if _end_from_val > 0 else None
                                 pending_ids = q_ids_set
+                                # V2.9.550：接續上一次作答 → 記下上次最後作答的題目，載入後跳到下一題
+                                st.session_state.pop("_resume_after_qid", None)
+                                if _mode == "⏩ 快速作答-接續上一次作答":
+                                    st.session_state["_resume_after_qid"] = _last_task_qid(user_name, task_id_key) or "-"
 
                             if not hasattr(st.session_state, "_is_practice_defined"):
                                 _is_practice = _is_practice if "_is_practice" in dir() else False
@@ -4766,6 +4746,23 @@ if st.session_state.quiz_loaded:
     if 'answered_count' not in st.session_state:
         st.session_state['answered_count'] = 0
 
+    # V2.9.550：快速作答-接續上一次作答 → 跳到上次最後作答的下一題
+    if "_resume_after_qid" in st.session_state:
+        _rq = str(st.session_state.pop("_resume_after_qid") or "")
+        _n_ql = len(st.session_state.quiz_list)
+        if _rq and _rq != "-":
+            _alts = {_rq, _rq[2:] if _rq.startswith("V_") else f"V_{_rq}"}
+            _pos = next((i for i, _qq in enumerate(st.session_state.quiz_list) if str(_qq.get("題目ID", "")) in _alts), None)
+            if _pos is not None and _pos + 1 < _n_ql:
+                st.session_state.q_idx = _pos + 1
+                st.toast(f"⏩ 接續上一次作答：從第 {_pos + 2} 題開始")
+            elif _pos is not None:
+                st.session_state.q_idx = 0
+                st.toast("上次已做到最後一題，從第 1 題重新開始")
+            else:
+                st.toast("找不到上次作答的題目，從第 1 題開始")
+        else:
+            st.toast("這個任務還沒有作答紀錄，從第 1 題開始")
     total_q    = len(st.session_state.quiz_list)
     answered_c = st.session_state.get('answered_count', 0)
     _practice_mode = st.session_state.get('practice_mode', False)
