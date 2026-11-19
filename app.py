@@ -1,5 +1,5 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.550 - 接續上一次作答)
+# 🧩 英文全能練習系統 (V2.9.551 - 自動判斷作答裝置)
 # ==============================================================================
 # 🆕 2.9.550：學生任務列表不再顯示完成統計（總題數／已完成／全部完成），任務可反覆練習測驗；
 #              新增「⏩ 快速作答-接續上一次作答」：自動從這個任務上次最後作答的下一題開始，不用記題號。
@@ -89,7 +89,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.550"
+VERSION = "2.9.551"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -616,14 +616,25 @@ if not st.session_state.get('logged_in', False):
                 st.rerun()
             st.stop()
         st.markdown("### 🔵 系統登入")
-        # 作答裝置：預設電腦/平板，沿用上次的選擇（記在網址 ?device=）
+        # 作答裝置：V2.9.551 依瀏覽器的 User-Agent 自動判斷（手機→手機，筆電/桌機/平板→電腦/平板）；
+        # 判斷不出來才沿用上次的選擇（記在網址 ?device=），預設電腦/平板。學生仍可手動改。
         _dev_opts = ["📱 手機", "💻 電腦/平板"]
-        _dev_default = 0 if st.query_params.get("device") == "phone" else 1
+        _dev_auto = None
+        try:
+            _ua = str(st.context.headers.get("User-Agent", "") or "")
+            if _ua:
+                _dev_auto = "phone" if re.search(r"iPhone|iPod|Windows Phone|Android.*Mobile|Mobi", _ua) else "pc"
+        except Exception:
+            _dev_auto = None
+        _dev_pick = _dev_auto or st.query_params.get("device")
+        _dev_default = 0 if _dev_pick == "phone" else 1
         with st.form("login_form"):
             # V2.9.541：關閉瀏覽器自動完成，不顯示之前登入過的帳號密碼
             i_id = st.text_input("帳號 (學號/員工編號)", key="l_id", autocomplete="off")
             i_pw = st.text_input("密碼", type="password", key="l_pw", autocomplete="new-password")
             i_dev = st.radio("作答裝置", _dev_opts, index=_dev_default, horizontal=True, key="l_device")
+            if _dev_auto:
+                st.caption("🔍 已自動偵測為「" + ("📱 手機" if _dev_auto == "phone" else "💻 電腦/平板") + "」，不對可以自己改")
             _login_submitted = st.form_submit_button("🚀 登入系統", use_container_width=True, type="primary")
         # Enter 鍵觸發登入
         st.markdown("""<script>
