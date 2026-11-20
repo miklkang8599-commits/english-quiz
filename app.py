@@ -1,6 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.551 - 自動判斷作答裝置)
+# 🧩 英文全能練習系統 (V2.9.552 - 出題難度可複選)
 # ==============================================================================
+# 🆕 2.9.552：老師出題的「難度」篩選改成可複選（空白 = 不限），重組／單選／朗讀／拼單字／閱讀單句都一樣。
 # 🆕 2.9.550：學生任務列表不再顯示完成統計（總題數／已完成／全部完成），任務可反覆練習測驗；
 #              新增「⏩ 快速作答-接續上一次作答」：自動從這個任務上次最後作答的下一題開始，不用記題號。
 # 🆕 2.9.549：學生任務列表與複習只讀「自己的」作答紀錄（Supabase 依姓名篩選），
@@ -89,7 +90,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.551"
+VERSION = "2.9.552"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1436,10 +1437,10 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     if t1_gram != "（不限）":
                         df_t1_scope = df_t1_scope[df_t1_scope["文法"] == t1_gram]
                 if "難度" in df_t1_scope.columns:
-                    diff_opts = ["（不限）"] + sorted([v for v in df_t1_scope["難度"].unique() if v and v != ""])
-                    t1_diff = extra_cols[1].selectbox("難度（選填）", diff_opts, key="t1_diff")
-                    if t1_diff != "（不限）":
-                        df_t1_scope = df_t1_scope[df_t1_scope["難度"] == t1_diff]
+                    diff_opts = sorted([v for v in df_t1_scope["難度"].unique() if v and v != ""])
+                    t1_diff = extra_cols[1].multiselect("難度（可複選，空白 = 不限）", diff_opts, key="t1_diff")
+                    if t1_diff:
+                        df_t1_scope = df_t1_scope[df_t1_scope["難度"].isin(t1_diff)]
 
                 df_t1_scope["題目ID"] = df_t1_scope.apply(
                     lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1
@@ -1515,10 +1516,10 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     if mc_gram != "（不限）":
                         df_mcq_scope = df_mcq_scope[df_mcq_scope["文法"] == mc_gram]
                 if "難度" in df_mcq_scope.columns:
-                    mc_diff_opts = ["（不限）"] + sorted([v for v in df_mcq_scope["難度"].unique() if v and v != ""])
-                    mc_diff = mc_extra[1].selectbox("難度（選填）", mc_diff_opts, key="mc_diff")
-                    if mc_diff != "（不限）":
-                        df_mcq_scope = df_mcq_scope[df_mcq_scope["難度"] == mc_diff]
+                    mc_diff_opts = sorted([v for v in df_mcq_scope["難度"].unique() if v and v != ""])
+                    mc_diff = mc_extra[1].multiselect("難度（可複選，空白 = 不限）", mc_diff_opts, key="mc_diff")
+                    if mc_diff:
+                        df_mcq_scope = df_mcq_scope[df_mcq_scope["難度"].isin(mc_diff)]
 
                 df_mcq_scope["題目ID"] = df_mcq_scope.apply(
                     lambda r: f"{r['版本']}_{r['年度']}_{r['冊編號']}_{r['單元']}_{r['課編號']}_{r['句編號']}", axis=1
@@ -1599,10 +1600,10 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     if r_gram != "（不限）":
                         df_r_final = df_r_final[df_r_final['文法'] == r_gram]
                 if '難度' in df_r_final.columns:
-                    r_diff_opts = ["（不限）"] + sorted([v for v in df_r_final['難度'].unique() if v and v != ''])
-                    r_diff = r_extra[1].selectbox("難度（選填）", r_diff_opts, key="rt_diff")
-                    if r_diff != "（不限）":
-                        df_r_final = df_r_final[df_r_final['難度'] == r_diff]
+                    r_diff_opts = sorted([v for v in df_r_final['難度'].unique() if v and v != ''])
+                    r_diff = r_extra[1].multiselect("難度（可複選，空白 = 不限）", r_diff_opts, key="rt_diff")
+                    if r_diff:
+                        df_r_final = df_r_final[df_r_final['難度'].isin(r_diff)]
 
                 r_total = len(df_r_final)
                 # 朗讀總題數已下移合併
@@ -1666,10 +1667,10 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     if v_gram != "（不限）":
                         df_v_scope_t1 = df_v_scope_t1[df_v_scope_t1['文法'] == v_gram]
                 if '難度' in df_v_scope_t1.columns:
-                    v_diff_opts = ["（不限）"] + sorted([v for v in df_v_scope_t1['難度'].unique() if v and v != ''])
-                    v_diff = v_extra[1].selectbox("難度（選填）", v_diff_opts, key="vt_diff")
-                    if v_diff != "（不限）":
-                        df_v_scope_t1 = df_v_scope_t1[df_v_scope_t1['難度'] == v_diff]
+                    v_diff_opts = sorted([v for v in df_v_scope_t1['難度'].unique() if v and v != ''])
+                    v_diff = v_extra[1].multiselect("難度（可複選，空白 = 不限）", v_diff_opts, key="vt_diff")
+                    if v_diff:
+                        df_v_scope_t1 = df_v_scope_t1[df_v_scope_t1['難度'].isin(v_diff)]
 
                 v_total = len(df_v_scope_t1)
                 # 拼單字總題數已下移合併
@@ -1801,10 +1802,10 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     if rm_gram != "（不限）":
                         df_rm_scope = df_rm_scope[df_rm_scope['文法'] == rm_gram]
                 if '難度' in df_rm_scope.columns:
-                    rm_diff_opts = ["（不限）"] + sorted([v for v in df_rm_scope['難度'].unique() if v and v != ''])
-                    rm_diff = rm_extra[1].selectbox("難度（選填）", rm_diff_opts, key="rmt_diff")
-                    if rm_diff != "（不限）":
-                        df_rm_scope = df_rm_scope[df_rm_scope['難度'] == rm_diff]
+                    rm_diff_opts = sorted([v for v in df_rm_scope['難度'].unique() if v and v != ''])
+                    rm_diff = rm_extra[1].multiselect("難度（可複選，空白 = 不限）", rm_diff_opts, key="rmt_diff")
+                    if rm_diff:
+                        df_rm_scope = df_rm_scope[df_rm_scope['難度'].isin(rm_diff)]
 
                 rm_total = len(df_rm_scope)
                 rms1, rms2 = st.columns(2)
