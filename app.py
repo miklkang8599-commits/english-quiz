@@ -1,6 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.553 - 起始句編號預設不限)
+# 🧩 英文全能練習系統 (V2.9.554 - 題目數量預設全部)
 # ==============================================================================
+# 🆕 2.9.554：老師出題的「🔢 題目數量」預設＝範圍內全部題數；改了版本／課等範圍後會自動跟著變成新的全部題數（自己改過的數字在範圍不變時保留）。
 # 🆕 2.9.553：老師出題的「🔢 起始句編號」第一個選項改成「（不限）」並預設選它（不從某句開始裁切）。
 # 🆕 2.9.552：老師出題的「難度」篩選改成可複選（空白 = 不限），重組／單選／朗讀／拼單字／閱讀單句都一樣。
 # 🆕 2.9.550：學生任務列表不再顯示完成統計（總題數／已完成／全部完成），任務可反覆練習測驗；
@@ -91,7 +92,14 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.553"
+VERSION = "2.9.554"
+
+def _qc_default(key, total):
+    """V2.9.554：題目數量預設＝全部；範圍題數變了就重設成新的全部題數"""
+    _tk = "_qcTot_" + key
+    if key not in st.session_state or st.session_state.get(_tk) != total:
+        st.session_state[key] = int(total)
+        st.session_state[_tk] = total
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1451,7 +1459,8 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 sc1, sc2 = st.columns(2)
                 all_sent_nums = sorted(df_t1_scope["句編號"].unique(), key=lambda x: int(x) if str(x).isdigit() else 0)
                 t1_start_sent = sc1.selectbox("🔢 起始句編號", ["（不限）"] + list(all_sent_nums), key="t1_start_sent") if all_sent_nums else None
-                t1_q_count    = sc2.number_input("🔢 題目數量", min_value=0, max_value=total_in_scope, value=total_in_scope, key="t1_q_count")
+                _qc_default("t1_q_count", total_in_scope)
+                t1_q_count    = sc2.number_input("🔢 題目數量（預設全部）", min_value=0, max_value=max(total_in_scope, 1), key="t1_q_count")
 
                 if t1_start_sent and t1_start_sent != "（不限）":
                     df_t1_scope["_num"] = pd.to_numeric(df_t1_scope["句編號"], errors="coerce").fillna(0)
@@ -1529,7 +1538,8 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 mcs1, mcs2 = st.columns(2)
                 mc_sent_opts = sorted(df_mcq_scope["句編號"].unique(), key=lambda x: int(x) if str(x).isdigit() else 0)
                 mc_start = mcs1.selectbox("🔢 起始句編號", ["（不限）"] + list(mc_sent_opts), key="mc_start_sent") if mc_sent_opts else None
-                mc_count = mcs2.number_input("🔢 題目數量", 0, max(mc_total,1), mc_total, key="mc_q_count")
+                _qc_default("mc_q_count", mc_total)
+                mc_count = mcs2.number_input("🔢 題目數量（預設全部）", 0, max(mc_total,1), key="mc_q_count")
                 # V2.9.543：單選每題作答時間
                 st.number_input("⏱️ 每題作答時間（秒，0 = 不限）", 0, 600, 0, step=5, key="mc_timer")
 
@@ -1613,7 +1623,8 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 rs1, rs2 = st.columns(2)
                 r_sent_opts = sorted(df_r_final['句編號'].unique(), key=lambda x: int(x) if str(x).isdigit() else 0) if '句編號' in df_r_final.columns else []
                 r_start_sent = rs1.selectbox("🔢 起始句編號", ["（不限）"] + list(r_sent_opts), key="rt_start_sent") if r_sent_opts else None
-                r_q_count    = rs2.number_input("🔢 題目數量", min_value=0, max_value=max(r_total, 1), value=r_total, key="rt_q_count")
+                _qc_default("rt_q_count", r_total)
+                r_q_count    = rs2.number_input("🔢 題目數量（預設全部）", min_value=0, max_value=max(r_total, 1), key="rt_q_count")
 
                 # 套用起始句與數量
                 if r_start_sent and r_start_sent != "（不限）" and '句編號' in df_r_final.columns:
@@ -1679,7 +1690,8 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 vs1, vs2 = st.columns(2)
                 v_sent_opts = sorted(df_v_scope_t1['句編號'].unique(), key=lambda x: int(x) if str(x).isdigit() else 0) if '句編號' in df_v_scope_t1.columns else []
                 vt_start = vs1.selectbox("🔢 起始句編號", ["（不限）"] + list(v_sent_opts), key="vt_start_sent") if v_sent_opts else None
-                vt_count = vs2.number_input("🔢 題目數量", 0, max(v_total, 1), v_total, key="vt_q_count")
+                _qc_default("vt_q_count", v_total)
+                vt_count = vs2.number_input("🔢 題目數量（預設全部）", 0, max(v_total, 1), key="vt_q_count")
 
                 if vt_start and vt_start != "（不限）" and '句編號' in df_v_scope_t1.columns:
                     df_v_scope_t1['_num'] = pd.to_numeric(df_v_scope_t1['句編號'], errors='coerce').fillna(0)
@@ -1812,7 +1824,8 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 rms1, rms2 = st.columns(2)
                 rm_sent_opts = sorted(df_rm_scope['句編號'].unique(), key=lambda x: int(x) if str(x).isdigit() else 0) if '句編號' in df_rm_scope.columns else []
                 rm_start = rms1.selectbox("🔢 起始句編號", ["（不限）"] + list(rm_sent_opts), key="rmt_start") if rm_sent_opts else None
-                rm_count = rms2.number_input("🔢 題目數量", 0, max(rm_total,1), rm_total, key="rmt_count")
+                _qc_default("rmt_count", rm_total)
+                rm_count = rms2.number_input("🔢 題目數量（預設全部）", 0, max(rm_total,1), key="rmt_count")
                 # V2.9.543：閱讀每個題組（整篇文章）的作答時間；沒有題組的題目每題各自計時
                 st.number_input("⏱️ 每個題組作答時間（秒，0 = 不限；整篇所有小題共用）", 0, 3600, 0, step=30, key="rmt_timer")
 
