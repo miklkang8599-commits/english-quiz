@@ -1,6 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.552 - 出題難度可複選)
+# 🧩 英文全能練習系統 (V2.9.553 - 起始句編號預設不限)
 # ==============================================================================
+# 🆕 2.9.553：老師出題的「🔢 起始句編號」第一個選項改成「（不限）」並預設選它（不從某句開始裁切）。
 # 🆕 2.9.552：老師出題的「難度」篩選改成可複選（空白 = 不限），重組／單選／朗讀／拼單字／閱讀單句都一樣。
 # 🆕 2.9.550：學生任務列表不再顯示完成統計（總題數／已完成／全部完成），任務可反覆練習測驗；
 #              新增「⏩ 快速作答-接續上一次作答」：自動從這個任務上次最後作答的下一題開始，不用記題號。
@@ -90,7 +91,7 @@ from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
 
-VERSION = "2.9.552"
+VERSION = "2.9.553"
 
 # ==============================================================================
 # ✅ 修復 1：set_page_config 必須是第一個 Streamlit 呼叫
@@ -1449,10 +1450,10 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
 
                 sc1, sc2 = st.columns(2)
                 all_sent_nums = sorted(df_t1_scope["句編號"].unique(), key=lambda x: int(x) if str(x).isdigit() else 0)
-                t1_start_sent = sc1.selectbox("🔢 起始句編號", all_sent_nums, key="t1_start_sent") if all_sent_nums else None
+                t1_start_sent = sc1.selectbox("🔢 起始句編號", ["（不限）"] + list(all_sent_nums), key="t1_start_sent") if all_sent_nums else None
                 t1_q_count    = sc2.number_input("🔢 題目數量", min_value=0, max_value=total_in_scope, value=total_in_scope, key="t1_q_count")
 
-                if t1_start_sent:
+                if t1_start_sent and t1_start_sent != "（不限）":
                     df_t1_scope["_num"] = pd.to_numeric(df_t1_scope["句編號"], errors="coerce").fillna(0)
                     df_t1_scope = df_t1_scope[df_t1_scope["_num"] >= int(t1_start_sent)].sort_values("_num").copy()
                 if t1_q_count > 0:
@@ -1527,12 +1528,12 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 mc_total = len(df_mcq_scope)
                 mcs1, mcs2 = st.columns(2)
                 mc_sent_opts = sorted(df_mcq_scope["句編號"].unique(), key=lambda x: int(x) if str(x).isdigit() else 0)
-                mc_start = mcs1.selectbox("🔢 起始句編號", mc_sent_opts, key="mc_start_sent") if mc_sent_opts else None
+                mc_start = mcs1.selectbox("🔢 起始句編號", ["（不限）"] + list(mc_sent_opts), key="mc_start_sent") if mc_sent_opts else None
                 mc_count = mcs2.number_input("🔢 題目數量", 0, max(mc_total,1), mc_total, key="mc_q_count")
                 # V2.9.543：單選每題作答時間
                 st.number_input("⏱️ 每題作答時間（秒，0 = 不限）", 0, 600, 0, step=5, key="mc_timer")
 
-                if mc_start:
+                if mc_start and mc_start != "（不限）":
                     df_mcq_scope["_num"] = pd.to_numeric(df_mcq_scope["句編號"], errors="coerce").fillna(0)
                     df_mcq_scope = df_mcq_scope[df_mcq_scope["_num"] >= int(mc_start)].sort_values("_num").copy()
                 if mc_count > 0:
@@ -1611,11 +1612,11 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 # 起始句編號 & 題目數量
                 rs1, rs2 = st.columns(2)
                 r_sent_opts = sorted(df_r_final['句編號'].unique(), key=lambda x: int(x) if str(x).isdigit() else 0) if '句編號' in df_r_final.columns else []
-                r_start_sent = rs1.selectbox("🔢 起始句編號", r_sent_opts, key="rt_start_sent") if r_sent_opts else None
+                r_start_sent = rs1.selectbox("🔢 起始句編號", ["（不限）"] + list(r_sent_opts), key="rt_start_sent") if r_sent_opts else None
                 r_q_count    = rs2.number_input("🔢 題目數量", min_value=0, max_value=max(r_total, 1), value=r_total, key="rt_q_count")
 
                 # 套用起始句與數量
-                if r_start_sent and '句編號' in df_r_final.columns:
+                if r_start_sent and r_start_sent != "（不限）" and '句編號' in df_r_final.columns:
                     df_r_final['_num'] = pd.to_numeric(df_r_final['句編號'], errors='coerce').fillna(0)
                     df_r_final = df_r_final[df_r_final['_num'] >= int(r_start_sent)].sort_values('_num').copy()
                 if r_q_count > 0:
@@ -1677,10 +1678,10 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
 
                 vs1, vs2 = st.columns(2)
                 v_sent_opts = sorted(df_v_scope_t1['句編號'].unique(), key=lambda x: int(x) if str(x).isdigit() else 0) if '句編號' in df_v_scope_t1.columns else []
-                vt_start = vs1.selectbox("🔢 起始句編號", v_sent_opts, key="vt_start_sent") if v_sent_opts else None
+                vt_start = vs1.selectbox("🔢 起始句編號", ["（不限）"] + list(v_sent_opts), key="vt_start_sent") if v_sent_opts else None
                 vt_count = vs2.number_input("🔢 題目數量", 0, max(v_total, 1), v_total, key="vt_q_count")
 
-                if vt_start and '句編號' in df_v_scope_t1.columns:
+                if vt_start and vt_start != "（不限）" and '句編號' in df_v_scope_t1.columns:
                     df_v_scope_t1['_num'] = pd.to_numeric(df_v_scope_t1['句編號'], errors='coerce').fillna(0)
                     df_v_scope_t1 = df_v_scope_t1[df_v_scope_t1['_num'] >= int(vt_start)].sort_values('_num').copy()
                 if vt_count > 0:
@@ -1810,12 +1811,12 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 rm_total = len(df_rm_scope)
                 rms1, rms2 = st.columns(2)
                 rm_sent_opts = sorted(df_rm_scope['句編號'].unique(), key=lambda x: int(x) if str(x).isdigit() else 0) if '句編號' in df_rm_scope.columns else []
-                rm_start = rms1.selectbox("🔢 起始句編號", rm_sent_opts, key="rmt_start") if rm_sent_opts else None
+                rm_start = rms1.selectbox("🔢 起始句編號", ["（不限）"] + list(rm_sent_opts), key="rmt_start") if rm_sent_opts else None
                 rm_count = rms2.number_input("🔢 題目數量", 0, max(rm_total,1), rm_total, key="rmt_count")
                 # V2.9.543：閱讀每個題組（整篇文章）的作答時間；沒有題組的題目每題各自計時
                 st.number_input("⏱️ 每個題組作答時間（秒，0 = 不限；整篇所有小題共用）", 0, 3600, 0, step=30, key="rmt_timer")
 
-                if rm_start and '句編號' in df_rm_scope.columns:
+                if rm_start and rm_start != "（不限）" and '句編號' in df_rm_scope.columns:
                     df_rm_scope['_num'] = pd.to_numeric(df_rm_scope['句編號'], errors='coerce').fillna(0)
                     df_rm_scope = df_rm_scope[df_rm_scope['_num'] >= int(rm_start)].sort_values('_num').copy()
                 if rm_count > 0:
@@ -1934,7 +1935,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     p_list = [str(p) for p in (papers or []) if str(p).strip()]
                     if p_list:
                         l = f"{l}卷{'、'.join(p_list)}"
-                    start_str = f"-起始{start}" if start else ""
+                    start_str = f"-起始{start}" if start and start != "（不限）" else ""
                     # 學校用「、」相接（不可用 -，老師名是從 - 分段取出的）；超過 3 校只列前 3 校
                     s_list = [str(s) for s in (schools or []) if str(s).strip()]
                     s_part = ""
