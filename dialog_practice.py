@@ -25,6 +25,8 @@ from datetime import datetime, timedelta
 import pandas as pd
 import streamlit as st
 
+DLG_VERSION = "2.9.559"   # 只改這個模組時，老師端「🗣️ 對話練習」最上面會顯示這個版本
+
 # ------------------------------------------------------------------------------
 # 內建示範對話
 # ------------------------------------------------------------------------------
@@ -89,6 +91,16 @@ CHAR_STYLE = ("A semi-realistic character illustration in the style of a modern 
               "soft lighting, friendly natural expression. Full body, standing, whole figure visible "
               "from head to shoes, three-quarter view with the body turned toward the viewer's right. "
               "Transparent background, no ground, no shadow, no other objects. No text.")
+# V2.9.559 卡通畫風（預設）：鮮豔、生動，像兒童動畫影集
+SCENE_CARTOON = ("A vibrant 2D cartoon background illustration in the style of a modern kids' animated TV series, "
+                 "bold clean outlines, bright saturated colors, playful simple shapes, cheerful mood, eye-level wide view. "
+                 "No text, no letters, no signs with words.")
+CHAR_CARTOON = ("A cute, lively 2D cartoon character in the style of a modern kids' animated TV series, "
+                "big expressive eyes, big friendly smile, bold clean outlines, bright saturated colors, "
+                "energetic pose with one hand waving. Full body, standing, whole figure visible from head to shoes, "
+                "three-quarter view with the body turned toward the viewer's right. "
+                "Transparent background, no ground, no shadow, no other objects. No text.")
+STYLE_SETS = {"🎨 卡通（生動）": (SCENE_CARTOON, CHAR_CARTOON), "🖼️ 半寫實": (SCENE_STYLE, CHAR_STYLE)}
 
 _SLOT_RE = re.compile(r"\{([^{}]+)\}")
 
@@ -162,13 +174,41 @@ _CSS = """<style>
 .dlg-ch{position:absolute;bottom:0;height:86%;width:38%;display:flex;justify-content:center;align-items:flex-end}
 .dlg-ch.l{left:2%}
 .dlg-ch.r{right:2%}
+.dlg-ch .fig{height:82%;display:flex;align-items:flex-end;justify-content:center;
+  transform-origin:50% 100%;animation:dlg-idle 2.6s ease-in-out infinite}
+.dlg-ch.r .fig{animation-delay:-1.3s}
+.dlg-ch.act .fig{animation:dlg-talk .55s ease-in-out infinite alternate}
+.dlg-ch.dim .fig{filter:brightness(.82) saturate(.85)}
 .dlg-ch img{height:100%;width:auto;max-width:100%;object-fit:contain;object-position:bottom;
   filter:drop-shadow(0 6px 8px rgba(0,0,0,.35))}
 .dlg-ch.r img{transform:scaleX(-1)}
 .dlg-ch .emo{font-size:5rem;line-height:1;margin-bottom:12%}
+@keyframes dlg-idle{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-2%) scale(1.01)}}
+@keyframes dlg-talk{from{transform:translateY(0) scale(1.04)}to{transform:translateY(-5%) scale(1.07)}}
+.dlg-say{position:absolute;top:4%;max-width:56%;background:#fff;color:#111;border:3px solid #222;border-radius:18px;
+  padding:.35rem .7rem;font-size:1.02rem;line-height:1.45;font-weight:600;z-index:3;
+  box-shadow:0 3px 0 rgba(0,0,0,.25);animation:dlg-pop .35s ease-out}
+.dlg-say.l{left:22%}
+.dlg-say.r{right:22%}
+.dlg-say:after{content:"";position:absolute;bottom:-14px;width:0;height:0;border:8px solid transparent;border-top:12px solid #222}
+.dlg-say.l:after{left:14px}
+.dlg-say.r:after{right:14px}
+@keyframes dlg-pop{from{transform:scale(.6);opacity:0}to{transform:scale(1);opacity:1}}
+.dlg-fx{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:2}
+.dlg-fx .p{position:absolute;top:-12%;animation:dlg-fall linear infinite}
+.dlg-fx .drop{width:2px;height:16px;border-radius:2px;background:linear-gradient(rgba(255,255,255,0),rgba(70,130,255,.85))}
+.dlg-fx .flake{color:#fff;font-size:15px;text-shadow:0 0 3px rgba(0,0,0,.25)}
+.dlg-fx .leaf{position:absolute;left:-12%;font-size:18px;animation:dlg-blow linear infinite}
+.dlg-fx .cloud{position:absolute;left:-30%;font-size:46px;opacity:.9;animation:dlg-drift linear infinite}
+.dlg-fx .sun{position:absolute;top:3%;left:3%;font-size:46px;animation:dlg-glow 2.4s ease-in-out infinite}
+.dlg-fx .tint{position:absolute;inset:0}
+@keyframes dlg-fall{from{top:-12%}to{top:108%}}
+@keyframes dlg-blow{from{left:-12%;transform:rotate(0)}to{left:112%;transform:rotate(720deg)}}
+@keyframes dlg-drift{from{left:-30%}to{left:110%}}
+@keyframes dlg-glow{0%,100%{transform:scale(1);filter:drop-shadow(0 0 6px #ffd43b)}50%{transform:scale(1.12);filter:drop-shadow(0 0 18px #ffd43b)}}
 .dlg-tag{position:absolute;bottom:6px;left:50%;transform:translateX(-50%);white-space:nowrap;
   background:rgba(0,0,0,.6);color:#fff;border-radius:8px;padding:0 .45rem;font-size:.82rem}
-.dlg-sign{position:absolute;top:5%;left:50%;transform:translateX(-50%);display:flex;gap:.35rem;
+.dlg-sign{position:absolute;bottom:4%;left:50%;transform:translateX(-50%);display:flex;gap:.35rem;z-index:3;
   background:rgba(255,255,255,.9);border-radius:12px;padding:.3rem .5rem;box-shadow:0 2px 6px rgba(0,0,0,.2)}
 .dlg-sign .it{text-align:center;color:#111;font-size:.8rem;font-weight:600;line-height:1.2}
 .dlg-face{width:2.9rem;height:2.9rem;border-radius:50%;flex:0 0 auto;background:#e7f1ff no-repeat;
@@ -355,11 +395,61 @@ def _face_html(d, role, fallback="🧑"):
     return html.escape(fallback)
 
 
-def _stage_html(d, cards=None, tags=None, show_text=True, emo=None):
-    """情境舞台：背景圖＋左右兩位角色立繪＋上方本輪圖卡看板"""
+_FX_WORDS = [  # V2.9.559 天氣特效：單字比對 → 特效
+    (r"\brain", "rain"), (r"\bstorm", "rain"), (r"\bsnow", "snow"), (r"\bwind(y|s)?\b", "wind"),
+    (r"\bcloud", "cloud"), (r"\bfog", "cloud"), (r"\bsun(ny|shine)?\b", "sun"),
+    (r"\bhot\b", "hot"), (r"\bcold\b", "cold"),
+]
+
+
+def _fx_kinds(cards):
+    out = []
+    for c in cards or []:
+        w = str(c.get("en", "")).lower()
+        for pat, fx in _FX_WORDS:
+            if re.search(pat, w) and fx not in out:
+                out.append(fx)
+    return out
+
+
+def _fx_html(kinds):
+    if not kinds:
+        return ""
+    p = []
+    for fx in kinds:
+        if fx == "rain":
+            for i in range(28):
+                p.append(f"<span class='p drop' style='left:{(i * 37) % 100}%;"
+                         f"animation-duration:{0.55 + (i % 5) * 0.08:.2f}s;animation-delay:-{(i * 0.13) % 1:.2f}s'></span>")
+            p.append("<span class='tint' style='background:rgba(40,60,90,.18)'></span>")
+        elif fx in ("snow", "cold"):
+            n = 22 if fx == "snow" else 10
+            for i in range(n):
+                p.append(f"<span class='p flake' style='left:{(i * 41) % 100}%;"
+                         f"animation-duration:{3 + (i % 4) * 0.7:.1f}s;animation-delay:-{(i * 0.37) % 4:.2f}s'>❄</span>")
+            if fx == "cold":
+                p.append("<span class='tint' style='background:rgba(120,180,255,.18)'></span>")
+        elif fx == "wind":
+            for i in range(7):
+                p.append(f"<span class='leaf' style='top:{12 + (i * 23) % 60}%;"
+                         f"animation-duration:{2.2 + (i % 3) * 0.6:.1f}s;animation-delay:-{i * 0.5:.1f}s'>🍃</span>")
+        elif fx == "cloud":
+            for i in range(3):
+                p.append(f"<span class='cloud' style='top:{2 + i * 9}%;"
+                         f"animation-duration:{18 + i * 6}s;animation-delay:-{i * 7}s'>☁️</span>")
+            p.append("<span class='tint' style='background:rgba(90,100,110,.12)'></span>")
+        elif fx in ("sun", "hot"):
+            p.append("<span class='sun'>☀️</span>")
+            if fx == "hot":
+                p.append("<span class='tint' style='background:rgba(255,120,40,.14)'></span>")
+    return f"<div class='dlg-fx'>{''.join(p)}</div>"
+
+
+def _stage_html(d, cards=None, tags=None, show_text=True, emo=None, active=None, say=""):
+    """情境舞台：背景圖＋左右兩位角色立繪（說話的人會動）＋場景內對話泡泡＋天氣特效＋本輪圖卡看板"""
     bg = _url(d.get("scene"))
     style = f" style=\"background-image:url('{html.escape(bg, quote=True)}')\"" if bg else ""
-    parts = [f"<div class='dlg-stage'{style}>"]
+    parts = [f"<div class='dlg-stage'{style}>", _fx_html(_fx_kinds(cards))]
     tags = tags or {}
     emo = emo or {"A": "👧", "B": "👦"}
     for role, side in (("A", "l"), ("B", "r")):
@@ -367,7 +457,11 @@ def _stage_html(d, cards=None, tags=None, show_text=True, emo=None):
         fig = (f"<img src='{html.escape(u, quote=True)}' alt=''>" if u
                else f"<span class='emo'>{html.escape(emo.get(role, '🧑'))}</span>")
         tag = tags.get(role) or d["names"].get(role, role)
-        parts.append(f"<div class='dlg-ch {side}'>{fig}<span class='dlg-tag'>{html.escape(tag)}</span></div>")
+        st_cls = "" if not active else (" act" if role == active else " dim")
+        parts.append(f"<div class='dlg-ch {side}{st_cls}'><div class='fig'>{fig}</div>"
+                     f"<span class='dlg-tag'>{html.escape(tag)}</span></div>")
+    if active and say:
+        parts.append(f"<div class='dlg-say {'l' if active == 'A' else 'r'}'>{say}</div>")
     if cards:
         its = []
         for c in cards:
@@ -617,10 +711,26 @@ def _render_run(ctx):
     st.progress((rno + 1) / n, text=f"第 {rno + 1} / {n} 輪")
     if has_scene(d):
         other = "B" if me == "A" else "A"
+        # V2.9.559 場景裡的對話泡泡：顯示「下一句該你說」的那句（全部勾完就顯示最後一句）
+        cur = next((t for t in d["turns"] if t["role"] == me
+                    and not run["checks"].get(f"{stage}|{rno}|{t['turn']}")), None)
+        done_all = cur is None
+        if done_all and d["turns"]:
+            cur = d["turns"][-1]
+        say = ""
+        if cur is not None:
+            ck = f"{stage}|{rno}|{cur['turn']}"
+            if done_all or stage == STAGES[0] or run["reveal"].get(ck):
+                say = _fill(cur["en"], combo, "en", "mark") + (" 🎉" if done_all else "")
+            elif stage == STAGES[1]:
+                say = _fill(cur["en"], combo, "en", "blank")
+            else:
+                say = "🎤 換你說！"
         st.markdown(_stage_html(d, list(combo.values()),
                                 tags={me: f"{names[me]}（你）", other: names[other]},
                                 show_text=(stage == STAGES[0]),
-                                emo={me: run["avatar"], other: partner_av}), unsafe_allow_html=True)
+                                emo={me: run["avatar"], other: partner_av},
+                                active=cur["role"] if cur else None, say=say), unsafe_allow_html=True)
     else:
         st.markdown("**這一輪的圖卡**")
         _cards_strip(list(combo.values()), px=72, show_text=(stage == STAGES[0]))
@@ -767,10 +877,11 @@ def _kind(card):
 def _gen_for(card, desc):
     """依種類（圖卡／背景／立繪）產生圖片"""
     k = _kind(card)
+    scene_style, char_style = STYLE_SETS.get(st.session_state.get("dlg_style"), next(iter(STYLE_SETS.values())))
     if k == "scene":
-        return _gen_image(f"{SCENE_STYLE} Scene: {desc}.{SCENE_TAIL}", size="1536x1024", quality="medium")
+        return _gen_image(f"{scene_style} Scene: {desc}.{SCENE_TAIL}", size="1536x1024", quality="medium")
     if k == "char":
-        return _gen_image(f"{CHAR_STYLE} Character: {desc}.", size="1024x1536", transparent=True, quality="medium")
+        return _gen_image(f"{char_style} Character: {desc}.", size="1024x1536", transparent=True, quality="medium")
     return _gen_image(f"{IMG_STYLE} Subject: {desc}.")
 
 
@@ -793,6 +904,7 @@ def _save_card_image(ctx, dialog_id, card, raw):
 
 def render_teacher(ctx):
     st.markdown(_CSS, unsafe_allow_html=True)
+    st.caption(f"對話練習模組 V{DLG_VERSION}")
     dialogs = load_dialogs(ctx)
     tabs = st.tabs(["🖼️ 對話與圖卡", "📌 指派", "🎧 學生紀錄", "⚙️ 設定說明"])
     with tabs[0]:
@@ -866,18 +978,26 @@ def _teacher_scene(ctx, did, d):
     for s in _slots_in(d):
         if d["cards"].get(s):
             first[s] = d["cards"][s][0]
-    st.markdown(_stage_html(d, list(first.values())), unsafe_allow_html=True)
+    t0 = d["turns"][0] if d["turns"] else None
+    st.markdown(_stage_html(d, list(first.values()), active=t0["role"] if t0 else None,
+                            say=_fill(t0["en"], first, "en", "mark") if t0 else ""), unsafe_allow_html=True)
+    st.caption("↑ 預覽：說話的人會跳動、場景裡出現對話泡泡；抽到天氣單字會有下雨、下雪、颳風等特效。")
+    st.radio("畫風（AI 產生時用）", list(STYLE_SETS.keys()), horizontal=True, key="dlg_style")
     items = [d["scene"], d["chars"]["A"], d["chars"]["B"]]
     missing = [c for c in items if not _url(c)]
-    if missing and st.button(f"🎨 一次 AI 產生情境畫面（缺 {len(missing)} 張）", key=f"dlg_scene_all_{did}"):
+    b1, b2 = st.columns(2)
+    go_missing = bool(missing) and b1.button(f"🎨 一次 AI 產生情境畫面（缺 {len(missing)} 張）", key=f"dlg_scene_all_{did}")
+    go_redo = b2.button("🔁 三張全部用目前畫風重畫", key=f"dlg_scene_redo_{did}")
+    todo = items if go_redo else (missing if go_missing else [])
+    if todo:
         bar = st.progress(0.0)
-        for i, c in enumerate(missing):
+        for i, c in enumerate(todo):
             try:
                 raw, _m = _gen_for(c, c["desc"])
                 _save_card_image(ctx, did, c, raw)
             except Exception as e:
                 st.error(f"{c['zh']}：{e}")
-            bar.progress((i + 1) / len(missing), text=f"{i + 1}/{len(missing)}")
+            bar.progress((i + 1) / len(todo), text=f"{i + 1}/{len(todo)}")
         st.rerun()
     cols = st.columns(3)
     for col, c, lbl in zip(cols, items, ["🏞️ 背景", f"🧍 A：{d['names'].get('A', 'A')}", f"🧍 B：{d['names'].get('B', 'B')}"]):
