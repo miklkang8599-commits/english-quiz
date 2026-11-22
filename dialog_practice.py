@@ -25,7 +25,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 import streamlit as st
 
-DLG_VERSION = "2.9.562"   # 只改這個模組時，老師端「🗣️ 對話練習」最上面會顯示這個版本
+DLG_VERSION = "2.9.563"   # 只改這個模組時，老師端「🗣️ 對話練習」最上面會顯示這個版本
 
 # ------------------------------------------------------------------------------
 # 內建示範對話
@@ -195,6 +195,13 @@ _CSS = """<style>
 .dlg-say.r:after{right:14px}
 @keyframes dlg-pop{from{transform:scale(.6);opacity:0}to{transform:scale(1);opacity:1}}
 .dlg-say .dlg-zh{font-weight:400}
+.dlg-rec{position:absolute;top:44%;z-index:4;background:#e03131;color:#fff;font-weight:800;border:3px solid #fff;
+  border-radius:999px;padding:.25rem .8rem;font-size:1rem;white-space:nowrap;box-shadow:0 3px 0 rgba(0,0,0,.25);
+  animation:dlg-blink 1s ease-in-out infinite}
+.dlg-rec.l{left:3%}
+.dlg-rec.r{right:3%}
+.dlg-rec.ok{background:#2f9e44;animation:none}
+@keyframes dlg-blink{0%,100%{transform:scale(1)}50%{transform:scale(1.1)}}
 .dlg-say.prev{opacity:.72;font-size:.85rem;max-width:40%;font-weight:500;border-width:2px;animation:none;z-index:2}
 .dlg-stage.nobg{background:linear-gradient(#a9dcff 0%,#e3f4ff 58%,#9be37f 58%,#6fc257 100%)}
 .dlg-stage.wp{border-radius:16px 16px 0 0;margin-bottom:0}
@@ -456,7 +463,7 @@ def _fx_html(kinds):
 
 
 def _stage_html(d, cards=None, tags=None, show_text=True, emo=None, active=None, say="",
-                prev_role=None, prev_say="", panel=False):
+                prev_role=None, prev_say="", panel=False, rec_role=None, rec_html=""):
     """情境舞台：背景圖＋左右兩位角色立繪（說話的人會動）＋場景內對話泡泡（含上一句）＋天氣特效＋本輪圖卡看板"""
     bg = _url(d.get("scene"))
     style = f" style=\"background-image:url('{html.escape(bg, quote=True)}')\"" if bg else ""
@@ -464,6 +471,8 @@ def _stage_html(d, cards=None, tags=None, show_text=True, emo=None, active=None,
     parts = [f"<div class='{cls}'{style}>", _fx_html(_fx_kinds(cards))]
     if prev_role and prev_say:
         parts.append(f"<div class='dlg-say prev {'l' if prev_role == 'A' else 'r'}'>{prev_say}</div>")
+    if rec_role and rec_html:   # V2.9.563 輪到學生時，場景裡提示「請錄音」
+        parts.append(f"<div class='dlg-rec {'l' if rec_role == 'A' else 'r'}{' ok' if '✅' in rec_html else ''}'>{rec_html}</div>")
     tags = tags or {}
     emo = emo or {"A": "👧", "B": "👦"}
     for role, side in (("A", "l"), ("B", "r")):
@@ -681,34 +690,6 @@ def _render_run(ctx):
     names = {"A": d["names"].get("A", "A"), "B": d["names"].get("B", "B")}
     by_en = {s: {c["en"]: c for c in d["cards"].get(s, [])} for s in d["cards"]}
 
-    # ── 第一步：選角色 ──
-    both_chars = all(_url(d.get("chars", {}).get(r)) for r in ("A", "B"))
-    if not run["avatar"] or not run["role"]:
-        st.markdown(_stage_html(d), unsafe_allow_html=True)
-        if both_chars:
-            av = "🧑"   # 兩位角色都有立繪：不用另外選頭像
-        else:
-            st.markdown("#### 1️⃣ 選一個你的頭像")
-            av = st.radio("頭像", AVATARS, horizontal=True, key="dlg_av_pick", label_visibility="collapsed")
-        st.markdown("#### 你要演誰？" if both_chars else "#### 2️⃣ 你要演誰？")
-        role = st.radio("角色", ["A", "B"], horizontal=True, key="dlg_role_pick",
-                        format_func=lambda r: f"{r}：{names[r]}" + ("（先開口）" if d["turns"] and d["turns"][0]["role"] == r else ""),
-                        label_visibility="collapsed")
-        with st.expander("👀 先看看整段對話"):
-            for t in d["turns"]:
-                st.markdown(f"**{names.get(t['role'], t['role'])}**：{html.escape(t['en'])}　<span style='color:#888'>{html.escape(t['zh'])}</span>",
-                            unsafe_allow_html=True)
-        if st.button("🚀 開始練習", type="primary", key="dlg_setup_ok", use_container_width=True):
-            run["avatar"], run["role"] = av, role
-            st.rerun()
-        return
-
-    me = run["role"]
-    partner_av = AVATARS[(AVATARS.index(run["avatar"]) + 4) % len(AVATARS)] if run["avatar"] in AVATARS else "🧑"
-    avatars = {me: run["avatar"], ("B" if me == "A" else "A"): partner_av}
-    avatars = {r: _face_html(d, r, a) for r, a in avatars.items()}   # V2.9.558 有立繪就用立繪大頭
-    disp = {me: f"{ctx['user_name']}（{names[me]}）", ("B" if me == "A" else "A"): names["B" if me == "A" else "A"]}
-
     # V2.9.562：更新前就開始的練習可能還記著舊關卡名稱（① 跟讀），換成目前的名稱
     run["stages"] = [x for x in STAGES if x in ["① 全文示範" if s == "① 跟讀" else s for s in run["stages"]]] or STAGES[:]
     if st.session_state.get("dlg_stage") == "① 跟讀":
@@ -729,11 +710,36 @@ def _render_run(ctx):
     combo_words = run["combos"][rno]
     combo = {s: by_en.get(s, {}).get(w, {"en": w, "zh": "", "img": "", "slot": s}) for s, w in combo_words.items()}
     turns = d["turns"]
-    other = "B" if me == "A" else "A"
 
+    # V2.9.563：① 全文示範不用選角色，一開始就直接看示範
     if stage == STAGES[0]:
-        _render_demo(d, run, combo, me, other, names, partner_av, speed, rno, n)
+        _render_demo(d, run, combo, run.get("role"), names, speed, rno, n)
         return
+
+    # ── ② ③ 才選角色 ──
+    both_chars = all(_url(d.get("chars", {}).get(r)) for r in ("A", "B"))
+    if not run.get("avatar") or not run.get("role"):
+        st.markdown(_stage_html(d), unsafe_allow_html=True)
+        if both_chars:
+            av = "🧑"   # 兩位角色都有立繪：不用另外選頭像
+        else:
+            st.markdown("#### 1️⃣ 選一個你的頭像")
+            av = st.radio("頭像", AVATARS, horizontal=True, key="dlg_av_pick", label_visibility="collapsed")
+        st.markdown("#### 你要演誰？" if both_chars else "#### 2️⃣ 你要演誰？")
+        role = st.radio("角色", ["A", "B"], horizontal=True, key="dlg_role_pick",
+                        format_func=lambda r: f"{r}：{names[r]}" + ("（先開口）" if turns and turns[0]["role"] == r else ""),
+                        label_visibility="collapsed")
+        if st.button("🚀 開始", type="primary", key="dlg_setup_ok", use_container_width=True):
+            run["avatar"], run["role"] = av, role
+            st.rerun()
+        return
+
+    me = run["role"]
+    other = "B" if me == "A" else "A"
+    partner_av = AVATARS[(AVATARS.index(run["avatar"]) + 4) % len(AVATARS)] if run["avatar"] in AVATARS else "🧑"
+    if st.button(f"🔄 換角色（現在演 {names[me]}）", key="dlg_role_reset"):
+        run["role"] = None
+        st.rerun()
 
     # V2.9.560 場景播放器：一次演一句，A／B 的對話都出現在場景裡，操作按鈕在場景下方的面板
     sk = f"{stage}|{rno}"
@@ -763,13 +769,21 @@ def _render_run(ctx):
         active, say = me, "🎉 這一輪完成！"
     prev = turns[i - 1] if i >= 1 and cur is not None else None
     prev_role = prev["role"] if prev and prev["role"] != active else None
+    rec_html = ""
+    if cur is not None and cur["role"] == me:
+        _k = f"{stage}|{rno}|{cur['turn']}"
+        if st.session_state.get(f"dlg_rec_{_k}") is not None:
+            rec_html = "✅ 錄好了！按下面自評 ⬇"
+        else:
+            rec_html = "🎙️ 請錄音 ⬇"
     st.markdown(_stage_html(d, list(combo.values()),
                             tags={me: f"{names[me]}（你）", other: names[other]},
                             show_text=(stage == STAGES[0]),
                             emo={me: run["avatar"], other: partner_av},
                             active=active, say=say,
                             prev_role=prev_role, prev_say=line_html(prev) if prev_role else "",
-                            panel=True), unsafe_allow_html=True)
+                            panel=True, rec_role=me if rec_html else None, rec_html=rec_html),
+                unsafe_allow_html=True)
 
     def go(step):
         steps[sk] = max(0, min(step, len(turns)))
@@ -946,10 +960,10 @@ function toggle(){const s=document.querySelector('.dm-start');if(s)s.remove();
     return (_CSS + _DEMO_CSS + stage + f"<div class='dm-tr'>{''.join(rows)}</div>" + js)
 
 
-def _render_demo(d, run, combo, me, other, names, partner_av, speed, rno, n):
+def _render_demo(d, run, combo, me, names, speed, rno, n):
     st.progress((rno + 1) / n, text=f"第 {rno + 1} / {n} 輪（每輪換一組單字）")
-    page = _demo_html(d, combo, tags={me: f"{names[me]}（你）", other: names[other]},
-                      emo={me: run["avatar"], other: partner_av}, speed=speed)
+    tags = {r: names[r] + ("（你）" if r == me else "") for r in ("A", "B")}
+    page = _demo_html(d, combo, tags=tags, emo=None, speed=speed)
     try:
         import streamlit.components.v1 as components
         components.html(page, height=410 + 64 * len(d["turns"]), scrolling=False)
