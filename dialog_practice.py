@@ -25,7 +25,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 import streamlit as st
 
-DLG_VERSION = "2.9.559"   # 只改這個模組時，老師端「🗣️ 對話練習」最上面會顯示這個版本
+DLG_VERSION = "2.9.560"   # 只改這個模組時，老師端「🗣️ 對話練習」最上面會顯示這個版本
 
 # ------------------------------------------------------------------------------
 # 內建示範對話
@@ -194,6 +194,16 @@ _CSS = """<style>
 .dlg-say.l:after{left:14px}
 .dlg-say.r:after{right:14px}
 @keyframes dlg-pop{from{transform:scale(.6);opacity:0}to{transform:scale(1);opacity:1}}
+.dlg-say .dlg-zh{font-weight:400}
+.dlg-say.prev{opacity:.72;font-size:.85rem;max-width:40%;font-weight:500;border-width:2px;animation:none;z-index:2}
+.dlg-stage.nobg{background:linear-gradient(#a9dcff 0%,#e3f4ff 58%,#9be37f 58%,#6fc257 100%)}
+.dlg-stage.wp{border-radius:16px 16px 0 0;margin-bottom:0}
+.st-key-dlg_panel{background:linear-gradient(#3d5a73,#2c3e50);border-radius:0 0 16px 16px;
+  padding:.55rem .75rem .75rem;margin-top:-1rem;box-shadow:0 4px 10px rgba(0,0,0,.18)}
+.st-key-dlg_panel .dlg-ph{color:#fff;font-weight:700;font-size:1rem}
+.st-key-dlg_panel label p,.st-key-dlg_panel [data-testid="stCaptionContainer"],
+.st-key-dlg_panel [data-testid="stCaptionContainer"] p{color:#e9eef3 !important}
+.st-key-dlg_panel [data-testid="stAlert"] p{color:inherit !important}
 .dlg-fx{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:2}
 .dlg-fx .p{position:absolute;top:-12%;animation:dlg-fall linear infinite}
 .dlg-fx .drop{width:2px;height:16px;border-radius:2px;background:linear-gradient(rgba(255,255,255,0),rgba(70,130,255,.85))}
@@ -445,11 +455,15 @@ def _fx_html(kinds):
     return f"<div class='dlg-fx'>{''.join(p)}</div>"
 
 
-def _stage_html(d, cards=None, tags=None, show_text=True, emo=None, active=None, say=""):
-    """情境舞台：背景圖＋左右兩位角色立繪（說話的人會動）＋場景內對話泡泡＋天氣特效＋本輪圖卡看板"""
+def _stage_html(d, cards=None, tags=None, show_text=True, emo=None, active=None, say="",
+                prev_role=None, prev_say="", panel=False):
+    """情境舞台：背景圖＋左右兩位角色立繪（說話的人會動）＋場景內對話泡泡（含上一句）＋天氣特效＋本輪圖卡看板"""
     bg = _url(d.get("scene"))
     style = f" style=\"background-image:url('{html.escape(bg, quote=True)}')\"" if bg else ""
-    parts = [f"<div class='dlg-stage'{style}>", _fx_html(_fx_kinds(cards))]
+    cls = "dlg-stage" + ("" if bg else " nobg") + (" wp" if panel else "")
+    parts = [f"<div class='{cls}'{style}>", _fx_html(_fx_kinds(cards))]
+    if prev_role and prev_say:
+        parts.append(f"<div class='dlg-say prev {'l' if prev_role == 'A' else 'r'}'>{prev_say}</div>")
     tags = tags or {}
     emo = emo or {"A": "👧", "B": "👦"}
     for role, side in (("A", "l"), ("B", "r")):
@@ -480,13 +494,16 @@ def _tts(text, voice, speed):
     return cl.audio.speech.create(model="tts-1", voice=voice, input=text, speed=speed).content
 
 
-def _play(text, role, speed):
+def _play(text, role, speed, autoplay=False):
     try:
         audio = _tts(text, VOICE.get(role, "nova"), speed)
     except Exception:
         audio = None
     if audio:
-        st.audio(audio, format="audio/mp3")
+        try:
+            st.audio(audio, format="audio/mp3", autoplay=autoplay)
+        except TypeError:          # 舊版 Streamlit 沒有 autoplay
+            st.audio(audio, format="audio/mp3")
     else:
         st.caption("（語音暫時無法產生）")
 
@@ -666,8 +683,7 @@ def _render_run(ctx):
     # ── 第一步：選角色 ──
     both_chars = all(_url(d.get("chars", {}).get(r)) for r in ("A", "B"))
     if not run["avatar"] or not run["role"]:
-        if has_scene(d):
-            st.markdown(_stage_html(d), unsafe_allow_html=True)
+        st.markdown(_stage_html(d), unsafe_allow_html=True)
         if both_chars:
             av = "🧑"   # 兩位角色都有立繪：不用另外選頭像
         else:
@@ -707,109 +723,133 @@ def _render_run(ctx):
     rno = min(run["round"], n - 1)
     combo_words = run["combos"][rno]
     combo = {s: by_en.get(s, {}).get(w, {"en": w, "zh": "", "img": "", "slot": s}) for s, w in combo_words.items()}
+    turns = d["turns"]
+    other = "B" if me == "A" else "A"
 
+    # V2.9.560 場景播放器：一次演一句，A／B 的對話都出現在場景裡，操作按鈕在場景下方的面板
+    sk = f"{stage}|{rno}"
+    steps = run.setdefault("step", {})
+    i = max(0, min(int(steps.get(sk, 0)), len(turns)))      # i == len(turns)：這一輪演完
     st.progress((rno + 1) / n, text=f"第 {rno + 1} / {n} 輪")
-    if has_scene(d):
-        other = "B" if me == "A" else "A"
-        # V2.9.559 場景裡的對話泡泡：顯示「下一句該你說」的那句（全部勾完就顯示最後一句）
-        cur = next((t for t in d["turns"] if t["role"] == me
-                    and not run["checks"].get(f"{stage}|{rno}|{t['turn']}")), None)
-        done_all = cur is None
-        if done_all and d["turns"]:
-            cur = d["turns"][-1]
-        say = ""
-        if cur is not None:
-            ck = f"{stage}|{rno}|{cur['turn']}"
-            if done_all or stage == STAGES[0] or run["reveal"].get(ck):
-                say = _fill(cur["en"], combo, "en", "mark") + (" 🎉" if done_all else "")
-            elif stage == STAGES[1]:
-                say = _fill(cur["en"], combo, "en", "blank")
-            else:
-                say = "🎤 換你說！"
-        st.markdown(_stage_html(d, list(combo.values()),
-                                tags={me: f"{names[me]}（你）", other: names[other]},
-                                show_text=(stage == STAGES[0]),
-                                emo={me: run["avatar"], other: partner_av},
-                                active=cur["role"] if cur else None, say=say), unsafe_allow_html=True)
+
+    def line_html(t):
+        k_ = f"{stage}|{rno}|{t['turn']}"
+        mine_ = t["role"] == me
+        if stage == STAGES[0] or run["reveal"].get(k_):
+            out = _fill(t["en"], combo, "en", "mark")
+            if stage == STAGES[0] and t["zh"]:
+                out += f"<div class='dlg-zh'>{_fill(t['zh'], combo, 'zh', 'mark')}</div>"
+            return out
+        if stage == STAGES[1]:
+            return _fill(t["en"], combo, "en", "blank" if mine_ else "mark")
+        if mine_:
+            zh_ = _fill(t["zh"], combo, "zh", "blank") if t["zh"] else ""
+            return "🎤 換你說！" + (f"<div class='dlg-zh'>{zh_}</div>" if zh_ else "")
+        return "🔊 ……"
+
+    cur = turns[i] if i < len(turns) else None
+    if cur is not None:
+        active, say = cur["role"], line_html(cur)
     else:
-        st.markdown("**這一輪的圖卡**")
-        _cards_strip(list(combo.values()), px=72, show_text=(stage == STAGES[0]))
+        active, say = me, "🎉 這一輪完成！"
+    prev = turns[i - 1] if i >= 1 and cur is not None else None
+    prev_role = prev["role"] if prev and prev["role"] != active else None
+    st.markdown(_stage_html(d, list(combo.values()),
+                            tags={me: f"{names[me]}（你）", other: names[other]},
+                            show_text=(stage == STAGES[0]),
+                            emo={me: run["avatar"], other: partner_av},
+                            active=active, say=say,
+                            prev_role=prev_role, prev_say=line_html(prev) if prev_role else "",
+                            panel=True), unsafe_allow_html=True)
 
-    for t in d["turns"]:
-        role, tno = t["role"], t["turn"]
-        mine = role == me
-        k = f"{stage}|{rno}|{tno}"
-        revealed = run["reveal"].get(k, False)
-        plain = _fill(t["en"], combo, "en", "plain")
-        if stage == STAGES[0]:
-            body = _fill(t["en"], combo, "en", "mark")
-            zh = _fill(t["zh"], combo, "zh", "mark") if t["zh"] else ""
-        elif stage == STAGES[1]:
-            if mine and not revealed:
-                body = _fill(t["en"], combo, "en", "blank")
-            else:
-                body = _fill(t["en"], combo, "en", "mark")
-            zh = ""
-        else:
-            if mine:
-                body = (_fill(t["en"], combo, "en", "mark") if revealed
-                        else "<span class='dlg-hidden'>（輪到你說）</span>")
-                zh = _fill(t["zh"], combo, "zh", "blank") if t["zh"] else ""
-            else:
-                body = (_fill(t["en"], combo, "en", "mark") if revealed
-                        else "<span class='dlg-hidden'>🔊 聽聽看</span>")
-                zh = ""
-        _bubble(avatars.get(role, "🧑"), disp.get(role, role), body, zh, mine)
-
-        if not mine:
-            _play(plain, role, speed)
-            if stage == STAGES[2] and not revealed:
-                if st.button("📝 顯示文字", key=f"dlg_rv_{k}"):
-                    run["reveal"][k] = True
-                    st.rerun()
-            continue
-
-        # 學生自己的句子
-        if stage == STAGES[0] or revealed:
-            _play(plain, role, speed)
-        rec = st.audio_input("🎙️ 錄音", key=f"dlg_rec_{k}")
-        if stage != STAGES[0] and not revealed:
-            if st.button("👀 看答案", key=f"dlg_ans_{k}"):
-                run["reveal"][k] = True
-                st.rerun()
-        done = run["checks"].get(k)
-        b1, b2, b3 = st.columns([1, 1, 2])
-        if b1.button("✅ 說對了", key=f"dlg_ok_{k}", use_container_width=True,
-                     type="primary" if done == "✅" else "secondary"):
-            if _save_log(ctx, run, stage, rno + 1, tno, combo_words, "✅", rec.getvalue() if rec else None):
-                run["checks"][k] = "✅"
-            st.rerun()
-        if b2.button("🔁 再練", key=f"dlg_again_{k}", use_container_width=True,
-                     type="primary" if done == "🔁" else "secondary"):
-            if _save_log(ctx, run, stage, rno + 1, tno, combo_words, "🔁", rec.getvalue() if rec else None):
-                run["checks"][k] = "🔁"
-            st.rerun()
-        if done:
-            b3.caption(f"已記錄：{done}" + ("（含錄音）" if rec else ""))
-
-    st.divider()
-    n1, n2, n3 = st.columns(3)
-    if n1.button("⬅️ 上一輪", key="dlg_prev", disabled=rno == 0, use_container_width=True):
-        run["round"] = rno - 1
+    def go(step):
+        steps[sk] = max(0, min(step, len(turns)))
         st.rerun()
-    if rno < n - 1:
-        if n3.button("下一輪 ➡️", key="dlg_next", type="primary", use_container_width=True):
-            run["round"] = rno + 1
+
+    with st.container(key="dlg_panel"):
+        if cur is not None:
+            k = f"{stage}|{rno}|{cur['turn']}"
+            mine = cur["role"] == me
+            revealed = run["reveal"].get(k, False)
+            plain = _fill(cur["en"], combo, "en", "plain")
+            played = run.setdefault("played", [])
+            first_show = k not in played
+            if first_show:
+                played.append(k)
+            who = "🎤 輪到你說" if mine else f"👂 聽 {names[cur['role']]} 說"
+            st.markdown(f"<div class='dlg-ph'>第 {i + 1} / {len(turns)} 句｜{html.escape(who)}</div>",
+                        unsafe_allow_html=True)
+            if not mine:
+                _play(plain, cur["role"], speed, autoplay=first_show)
+                c1, c2, c3 = st.columns(3)
+                if c1.button("⬅️ 上一句", key=f"dlg_pv_{k}", disabled=i == 0, use_container_width=True):
+                    go(i - 1)
+                if stage == STAGES[2] and not revealed:
+                    if c2.button("📝 顯示文字", key=f"dlg_rv_{k}", use_container_width=True):
+                        run["reveal"][k] = True
+                        st.rerun()
+                if c3.button("下一句 ➡️", key=f"dlg_nx_{k}", type="primary", use_container_width=True):
+                    go(i + 1)
+            else:
+                if stage == STAGES[0] or revealed:
+                    _play(plain, cur["role"], speed, autoplay=first_show and stage == STAGES[0])
+                rec = st.audio_input("🎙️ 錄下你說的這一句", key=f"dlg_rec_{k}")
+                done = run["checks"].get(k)
+                c1, c2, c3, c4 = st.columns(4)
+                if c1.button("⬅️ 上一句", key=f"dlg_pv_{k}", disabled=i == 0, use_container_width=True):
+                    go(i - 1)
+                if stage != STAGES[0] and not revealed:
+                    if c2.button("👀 看答案", key=f"dlg_ans_{k}", use_container_width=True):
+                        run["reveal"][k] = True
+                        st.rerun()
+                if c3.button("✅ 說對了", key=f"dlg_ok_{k}", use_container_width=True,
+                             type="primary" if done == "✅" else "secondary"):
+                    if _save_log(ctx, run, stage, rno + 1, cur["turn"], combo_words, "✅", rec.getvalue() if rec else None):
+                        run["checks"][k] = "✅"
+                        go(i + 1)
+                    st.rerun()
+                if c4.button("🔁 再練", key=f"dlg_again_{k}", use_container_width=True,
+                             type="primary" if done == "🔁" else "secondary"):
+                    if _save_log(ctx, run, stage, rno + 1, cur["turn"], combo_words, "🔁", rec.getvalue() if rec else None):
+                        run["checks"][k] = "🔁"
+                        go(i + 1)
+                    st.rerun()
+                if done:
+                    st.caption(f"已記錄：{done}（再按一次會再記一筆）")
+        else:
+            rk = [v for kk, v in run["checks"].items() if kk.startswith(f"{sk}|")]
+            st.markdown(f"<div class='dlg-ph'>🎉 第 {rno + 1} 輪完成！✅ {rk.count('✅')}　🔁 {rk.count('🔁')}</div>",
+                        unsafe_allow_html=True)
+            c1, c2, c3 = st.columns(3)
+            if c1.button("🔁 這一輪再演一次", key=f"dlg_again_round_{sk}", use_container_width=True):
+                go(0)
+            if c2.button("⬅️ 上一句", key=f"dlg_pv_end_{sk}", use_container_width=True):
+                go(len(turns) - 1)
+            if rno < n - 1:
+                if c3.button("下一輪 ➡️", key="dlg_next", type="primary", use_container_width=True):
+                    run["round"] = rno + 1
+                    st.rerun()
+            else:
+                nxt = run["stages"].index(stage) + 1
+                if nxt < len(run["stages"]):
+                    if c3.button(f"進入 {run['stages'][nxt]} ➡️", key="dlg_next_stage", type="primary",
+                                 use_container_width=True):
+                        run["goto_stage"] = run["stages"][nxt]
+                        run["round"] = 0
+                        st.rerun()
+                else:
+                    sc = [v for kk, v in run["checks"].items()]
+                    c3.success(f"🏁 全部完成！✅ {sc.count('✅')}　🔁 {sc.count('🔁')}")
+
+    with st.expander("📜 這一輪的整段對話"):
+        for j, t in enumerate(turns):
+            mark = "▶️ " if j == i else ""
+            st.markdown(f"{mark}**{html.escape(names.get(t['role'], t['role']))}**："
+                        f"{line_html(t) if j < i or stage == STAGES[0] else '……'}", unsafe_allow_html=True)
+    if rno > 0:
+        if st.button("⬅️ 回上一輪", key="dlg_prev"):
+            run["round"] = rno - 1
             st.rerun()
-    else:
-        mine_checks = [v for kk, v in run["checks"].items() if kk.startswith(stage + "|")]
-        n2.success(f"🎉 這一關完成！✅ {mine_checks.count('✅')}　🔁 {mine_checks.count('🔁')}")
-        nxt = run["stages"].index(stage) + 1
-        if nxt < len(run["stages"]):
-            if n3.button(f"進入 {run['stages'][nxt]} ➡️", key="dlg_next_stage", type="primary", use_container_width=True):
-                run["goto_stage"] = run["stages"][nxt]
-                run["round"] = 0
-                st.rerun()
 
 
 # ------------------------------------------------------------------------------
