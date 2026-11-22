@@ -352,19 +352,22 @@ def _save_log(ctx, run, stage, rno, tno, combo_words, check, audio_bytes):
         try:
             sb.storage.from_("dialog_audio").upload(path, audio_bytes, {"content-type": "audio/wav"})
         except Exception as e:
-            st.toast(f"錄音上傳失敗：{type(e).__name__}", icon="⚠️")
+            # V2.9.557：錯誤留在畫面上（toast 會被 st.rerun 蓋掉）
+            st.session_state["dlg_last_err"] = f"錄音上傳失敗（紀錄仍會存）：{type(e).__name__}: {e}"
             path = ""
+    aid = run.get("assign_id")
     try:
         sb.table("dialog_logs").insert({
-            "name": ctx["user_name"], "user_id": ctx["user_id"], "group_id": ctx["group_id"],
-            "assign_id": run.get("assign_id"), "dialog_id": run["dialog_id"],
-            "stage": stage, "round_no": rno, "turn_no": tno,
+            "name": str(ctx.get("user_name") or ""), "user_id": str(ctx.get("user_id") or ""),
+            "group_id": str(ctx.get("group_id") or ""),
+            "assign_id": int(aid) if aid not in (None, "") else None, "dialog_id": str(run["dialog_id"]),
+            "stage": str(stage), "round_no": int(rno), "turn_no": int(tno),
             "words": ";".join(f"{k}={v}" for k, v in combo_words.items()),
-            "self_check": check, "audio_path": path,
+            "self_check": str(check), "audio_path": path,
         }).execute()
         return True
     except Exception as e:
-        st.toast(f"紀錄寫入失敗：{type(e).__name__}", icon="⚠️")
+        st.session_state["dlg_last_err"] = f"紀錄寫入失敗：{type(e).__name__}: {e}"
         return False
 
 
@@ -461,6 +464,9 @@ def _render_run(ctx):
     d = dialogs.get(run["dialog_id"])
     top1, top2 = st.columns([4, 1])
     top1.markdown(f"### 🗣️ {html.escape(run['title'])}")
+    _err = st.session_state.pop("dlg_last_err", "")
+    if _err:
+        st.error("⚠️ " + _err)
     if top2.button("⬅️ 返回", key="dlg_back", use_container_width=True):
         st.session_state.pop("dlg_run", None)
         st.rerun()
