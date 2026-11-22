@@ -103,6 +103,10 @@ create index if not exists dialog_logs_assign_idx on dialog_logs(assign_id, crea
 alter table dialog_cards disable row level security;
 alter table dialog_assignments disable row level security;
 alter table dialog_logs disable row level security;
+-- 有些 Supabase 專案會自動把新資料表的 RLS 打開，所以再加上允許讀寫的規則
+create policy "dlg_cards_rw" on dialog_cards for all to anon, authenticated using (true) with check (true);
+create policy "dlg_assign_rw" on dialog_assignments for all to anon, authenticated using (true) with check (true);
+create policy "dlg_logs_rw" on dialog_logs for all to anon, authenticated using (true) with check (true);
 
 -- Storage：flashcards 圖卡（公開讀取）、dialog_audio 學生錄音（不公開，老師用簽名網址抽聽）
 insert into storage.buckets (id, name, public) values ('flashcards', 'flashcards', true)
@@ -759,7 +763,8 @@ def _teacher_assign(ctx, dialogs):
     df_s = ctx["df_s"]
     stu = df_s[~df_s["分組"].isin(["ADMIN", "TEACHER"])] if "分組" in df_s.columns else df_s
     groups = sorted([g for g in stu["分組"].unique().tolist() if g]) if "分組" in stu.columns else []
-    g_pick = st.multiselect("指派班級（整班）", groups, key="dlg_a_groups")
+    g_pick = st.multiselect("指派班級（整班）", groups, key="dlg_a_groups",
+                            format_func=lambda g: f"{g}（{'、'.join(sorted(stu[stu['分組'] == g]['姓名'].tolist()))}）")
     s_pick = st.multiselect("或指定學生", sorted(stu["姓名"].unique().tolist()) if "姓名" in stu.columns else [],
                             key="dlg_a_stus")
     targets = sorted(set(stu[stu["分組"].isin(g_pick)]["姓名"].tolist() if g_pick else []) | set(s_pick))
