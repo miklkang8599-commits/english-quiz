@@ -1,6 +1,10 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.554 - 題目數量預設全部)
+# 🧩 英文全能練習系統 (V2.9.555 - 對話練習：替換字＋圖卡)
 # ==============================================================================
+# 🆕 2.9.555：新增「🗣️ 對話練習」（程式在 dialog_practice.py）：一段對話換不同單字反覆練，每個單字一張圖卡。
+#              學生：跟讀 → 看圖說 → 角色對話，每句可錄音、自己勾「說對了／再練」（不自動評分）。
+#              老師（導師中心第 5 個分頁）：圖卡上傳／AI 產生、指派（選圖卡、輪數、關卡）、學生紀錄與抽聽錄音。
+#              內建 D00 天氣示範；需先在 Supabase 執行一次設定 SQL（分頁內「⚙️ 設定說明」）。
 # 🆕 2.9.554：老師出題的「🔢 題目數量」預設＝範圍內全部題數；改了版本／課等範圍後會自動跟著變成新的全部題數（自己改過的數字在範圍不變時保留）。
 # 🆕 2.9.553：老師出題的「🔢 起始句編號」第一個選項改成「（不限）」並預設選它（不從某句開始裁切）。
 # 🆕 2.9.552：老師出題的「難度」篩選改成可複選（空白 = 不限），重組／單選／朗讀／拼單字／閱讀單句都一樣。
@@ -91,8 +95,26 @@ import requests
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client, Client
+try:
+    import dialog_practice as dlgp   # V2.9.555 對話練習；模組出錯時其他功能照常
+    _DLG_ERR = ""
+except Exception as _e_dlg:
+    dlgp = None
+    _DLG_ERR = f"{type(_e_dlg).__name__}: {_e_dlg}"
 
-VERSION = "2.9.554"
+VERSION = "2.9.555"
+
+def _dlg_ctx():
+    """V2.9.555：給對話練習模組的共用資料"""
+    return {
+        "conn": conn, "sb": get_supabase, "df_s": df_s,
+        "user_name": st.session_state.get("user_name", ""),
+        "user_id": st.session_state.get("user_id", ""),
+        "group_id": st.session_state.get("group_id", ""),
+        "is_admin": is_admin(st.session_state.get("group_id", "")),
+        "is_phone": st.session_state.get("mcq_cols", 2) == 1,
+        "today": get_now().date(),
+    }
 
 def _qc_default(key, total):
     """V2.9.554：題目數量預設＝全部；範圍題數變了就重設成新的全部題數"""
@@ -1342,7 +1364,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
         except Exception as e:
             st.error(f"❌ 寫入失敗：{e}")
 
-    t1, t2, t3, t4 = st.tabs(["📋 指派任務", "📋 學生名單", "📖 題目講解", "🏆 競賽結果"])
+    t1, t2, t3, t4, t5 = st.tabs(["📋 指派任務", "📋 學生名單", "📖 題目講解", "🏆 競賽結果", "🗣️ 對話練習"])
 
     with t1:
         # 指派任務獨立更新鍵（只更新 assignments）
@@ -3385,6 +3407,13 @@ CREATE TABLE IF NOT EXISTS students (
                 st.caption(f"共 {len(_rank_df)} 位學生作答　總題數：{_total_q} 題")
                 st.dataframe(_rank_df, use_container_width=True, hide_index=False)
 
+    with t5:
+        # V2.9.555：對話練習（圖卡管理／指派／學生紀錄）
+        if dlgp is None:
+            st.error("對話練習模組載入失敗：" + _DLG_ERR)
+        else:
+            dlgp.render_teacher(_dlg_ctx())
+
     st.stop()
 
 # ------------------------------------------------------------------------------
@@ -3397,6 +3426,16 @@ if not st.session_state.quiz_loaded:
     # ══════════════════════════════════════════════════════════════════════
     user_name = st.session_state.user_name
     today_dt  = get_now().date()
+
+    # V2.9.555：老師指派的對話練習列在最前面；正在練對話時這裡畫練習畫面並停止
+    if dlgp is not None:
+        try:
+            dlgp.render_student_entry(_dlg_ctx())
+        except Exception as _e_dlg2:
+            if type(_e_dlg2).__name__ in ("StopException", "RerunException", "RerunData"):
+                raise
+            if is_admin(st.session_state.group_id):
+                st.error(f"對話練習發生錯誤：{type(_e_dlg2).__name__}: {_e_dlg2}")
 
     # 找出指派給這位學生、未刪除、日期有效的任務
     my_tasks = []
