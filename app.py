@@ -1,6 +1,8 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.556 - 對話練習指派班級顯示學生名字)
+# 🧩 英文全能練習系統 (V2.9.558 - 對話練習情境畫面)
 # ==============================================================================
+# 🆕 2.9.558：對話練習加情境畫面（背景＋角色立繪）；dialog_practice.py 更新時自動重新載入（不用重開 App）。
+# 🆕 2.9.557：對話練習紀錄寫入失敗時，錯誤訊息留在畫面上。
 # 🆕 2.9.556：對話練習「指派班級（整班）」選項後面列出該班學生名字；設定 SQL 補上資料表讀寫規則（RLS）。
 # 🆕 2.9.555：新增「🗣️ 對話練習」（程式在 dialog_practice.py）：一段對話換不同單字反覆練，每個單字一張圖卡。
 #              學生：跟讀 → 看圖說 → 角色對話，每句可錄音、自己勾「說對了／再練」（不自動評分）。
@@ -102,8 +104,18 @@ try:
 except Exception as _e_dlg:
     dlgp = None
     _DLG_ERR = f"{type(_e_dlg).__name__}: {_e_dlg}"
+# V2.9.558：Streamlit 重跑時不會重新 import 已載入的模組；dialog_practice.py 檔案有變就重新載入
+if dlgp is not None:
+    try:
+        import importlib as _imp_dlg, os as _os_dlg
+        _dlg_mt = _os_dlg.path.getmtime(dlgp.__file__)
+        if getattr(dlgp, "_loaded_mtime", None) != _dlg_mt:   # 第一次也重載，確保不是舊版
+            dlgp = _imp_dlg.reload(dlgp)
+        dlgp._loaded_mtime = _dlg_mt
+    except Exception as _e_dlg2:
+        _DLG_ERR = f"{type(_e_dlg2).__name__}: {_e_dlg2}"
 
-VERSION = "2.9.556"
+VERSION = "2.9.558"
 
 def _dlg_ctx():
     """V2.9.555：給對話練習模組的共用資料"""
