@@ -25,7 +25,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 import streamlit as st
 
-DLG_VERSION = "2.9.561"   # 只改這個模組時，老師端「🗣️ 對話練習」最上面會顯示這個版本
+DLG_VERSION = "2.9.562"   # 只改這個模組時，老師端「🗣️ 對話練習」最上面會顯示這個版本
 
 # ------------------------------------------------------------------------------
 # 內建示範對話
@@ -709,6 +709,10 @@ def _render_run(ctx):
     avatars = {r: _face_html(d, r, a) for r, a in avatars.items()}   # V2.9.558 有立繪就用立繪大頭
     disp = {me: f"{ctx['user_name']}（{names[me]}）", ("B" if me == "A" else "A"): names["B" if me == "A" else "A"]}
 
+    # V2.9.562：更新前就開始的練習可能還記著舊關卡名稱（① 跟讀），換成目前的名稱
+    run["stages"] = [x for x in STAGES if x in ["① 全文示範" if s == "① 跟讀" else s for s in run["stages"]]] or STAGES[:]
+    if st.session_state.get("dlg_stage") == "① 跟讀":
+        st.session_state["dlg_stage"] = STAGES[0]
     if run.get("goto_stage"):
         # 不能在 radio 畫出來之後才改它的值，所以下一關的切換放在這裡（畫 radio 之前）
         st.session_state["dlg_stage"] = run.pop("goto_stage")
@@ -718,7 +722,7 @@ def _render_run(ctx):
     stage = c1.radio("關卡", run["stages"], horizontal=True, key="dlg_stage")
     speed_lbl = c2.radio("語速", ["正常", "慢速"], horizontal=True, key="dlg_speed")
     speed = 1.0 if speed_lbl == "正常" else 0.75
-    st.caption("💡 " + STAGE_HELP[stage])
+    st.caption("💡 " + STAGE_HELP.get(stage, ""))
 
     n = run["rounds"]
     rno = min(run["round"], n - 1)
@@ -1221,6 +1225,9 @@ def _teacher_assign(ctx, dialogs):
     c1, c2 = st.columns(2)
     rounds = c1.number_input("練幾輪（每輪換一組圖卡）", 1, 30, max(3, min(longest, 10)), key=f"dlg_a_n_{did}")
     end = c2.date_input("截止日期", value=ctx["today"] + timedelta(days=7), key="dlg_a_end")
+    if "dlg_a_stages" in st.session_state:   # 舊關卡名稱留在畫面狀態裡會出錯，先濾掉
+        st.session_state["dlg_a_stages"] = [x for x in STAGES if x in
+                                            ["① 全文示範" if s == "① 跟讀" else s for s in st.session_state["dlg_a_stages"]]]
     stages = st.multiselect("關卡", STAGES, default=STAGES, key="dlg_a_stages")
 
     df_s = ctx["df_s"]
