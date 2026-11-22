@@ -25,7 +25,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 import streamlit as st
 
-DLG_VERSION = "2.9.560"   # 只改這個模組時，老師端「🗣️ 對話練習」最上面會顯示這個版本
+DLG_VERSION = "2.9.561"   # 只改這個模組時，老師端「🗣️ 對話練習」最上面會顯示這個版本
 
 # ------------------------------------------------------------------------------
 # 內建示範對話
@@ -70,9 +70,9 @@ DEMO_DIALOG = {
     },
 }
 
-STAGES = ["① 跟讀", "② 看圖說", "③ 角色對話"]
+STAGES = ["① 全文示範", "② 看圖說", "③ 角色對話"]
 STAGE_HELP = {
-    "① 跟讀": "句子完整顯示，替換字有顏色。先聽示範，再錄音跟讀。",
+    "① 全文示範": "按場景裡的 ▶️，兩位角色把整段對話演一遍；點下面任一句可以單獨再聽。換下一輪會換一組單字。",
     "② 看圖說": "替換字變成圖卡，看圖自己說出完整句子，錄完按「看答案」對照。",
     "③ 角色對話": "對方只出聲音；輪到你時只看中文提示和圖卡，說出英文。",
 }
@@ -596,6 +596,7 @@ def _make_combos(sel, n):
 
 
 def _start_run(dialog_id, dialog, sel, rounds, stages, assign_id=None, title=""):
+    stages = ["① 全文示範" if str(x).strip() == "① 跟讀" else str(x).strip() for x in stages]  # 舊指派相容
     allc = {s: [c["en"] for c in dialog["cards"].get(s, [])] for s in _slots_in(dialog)}
     sel = {s: (sel.get(s) or allc.get(s, [])) for s in allc}
     for k in [k for k in st.session_state.keys() if str(k).startswith(("dlg_rec_", "dlg_stage"))]:
@@ -726,6 +727,10 @@ def _render_run(ctx):
     turns = d["turns"]
     other = "B" if me == "A" else "A"
 
+    if stage == STAGES[0]:
+        _render_demo(d, run, combo, me, other, names, partner_av, speed, rno, n)
+        return
+
     # V2.9.560 場景播放器：一次演一句，A／B 的對話都出現在場景裡，操作按鈕在場景下方的面板
     sk = f"{stage}|{rno}"
     steps = run.setdefault("step", {})
@@ -850,6 +855,114 @@ def _render_run(ctx):
         if st.button("⬅️ 回上一輪", key="dlg_prev"):
             run["round"] = rno - 1
             st.rerun()
+
+
+# ── V2.9.561 ① 全文示範：場景自動演完整段對話（瀏覽器端播放，控制鈕在場景裡） ──
+_DEMO_CSS = """<style>
+html,body{margin:0;padding:0;background:transparent;font-family:"Source Sans Pro",system-ui,sans-serif}
+.dlg-stage{margin:0 !important}
+.dm-start{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:6;
+  background:rgba(0,0,0,.18);cursor:pointer}
+.dm-start span{background:#ff922b;color:#fff;font-size:1.25rem;font-weight:800;padding:.6rem 1.3rem;border-radius:999px;
+  border:3px solid #fff;box-shadow:0 4px 0 rgba(0,0,0,.25);animation:dm-pulse 1.2s ease-in-out infinite}
+@keyframes dm-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.07)}}
+.dm-ctrl{position:absolute;right:8px;top:8px;display:flex;gap:6px;z-index:5}
+.dm-ctrl button{border:2px solid #222;background:#fff;border-radius:999px;width:38px;height:38px;font-size:17px;
+  cursor:pointer;box-shadow:0 2px 0 rgba(0,0,0,.25);padding:0}
+.dm-ctrl button.main{background:#ffd43b;width:46px}
+.dm-cnt{position:absolute;left:8px;top:8px;z-index:5;background:rgba(0,0,0,.55);color:#fff;border-radius:999px;
+  padding:.1rem .6rem;font-size:.85rem}
+.dlg-say.mid{left:30%}
+.dm-tr{margin-top:.5rem}
+.dm-row{display:flex;gap:.5rem;align-items:flex-start;padding:.35rem .5rem;border-radius:10px;cursor:pointer;
+  font-size:1.02rem;line-height:1.5;color:#222}
+.dm-row:hover{background:#f1f3f5}
+.dm-row.on{background:#fff3bf}
+.dm-row .nm{font-weight:700;min-width:3.2rem;color:#1c7ed6}
+.dm-row .nm.B{color:#e8590c}
+.dm-row .zh{font-size:.88rem;color:#666}
+</style>"""
+
+
+def _demo_html(d, combo, tags, emo, speed):
+    import base64
+    lines, rows = [], []
+    for j, t in enumerate(d["turns"]):
+        plain = _fill(t["en"], combo, "en", "plain")
+        try:
+            a = "data:audio/mp3;base64," + base64.b64encode(_tts(plain, VOICE.get(t["role"], "nova"), speed)).decode()
+        except Exception:
+            a = ""
+        en_html = _fill(t["en"], combo, "en", "mark")
+        zh_html = _fill(t["zh"], combo, "zh", "mark") if t["zh"] else ""
+        bub = en_html + (f"<div class='dlg-zh'>{zh_html}</div>" if zh_html else "")
+        lines.append({"r": t["role"], "h": bub, "a": a})
+        nm = html.escape(d["names"].get(t["role"], t["role"]))
+        rows.append(f"<div class='dm-row' id='r{j}' onclick='one({j})'><span class='nm {t['role']}'>{nm}</span>"
+                    f"<div><div>{en_html}</div><div class='zh'>{zh_html}</div></div></div>")
+    stage = _stage_html(d, list(combo.values()), tags=tags, show_text=True, emo=emo)
+    data = json.dumps(lines, ensure_ascii=False).replace("</", "<\\/")
+    js = """<script>
+const L=__DATA__;
+const S=document.querySelector('.dlg-stage');
+const CH={A:S.querySelector('.dlg-ch.l'),B:S.querySelector('.dlg-ch.r')};
+const say=document.createElement('div');say.style.display='none';S.appendChild(say);
+const pv=document.createElement('div');pv.style.display='none';S.appendChild(pv);
+const cnt=document.createElement('div');cnt.className='dm-cnt';cnt.textContent='全文示範';S.appendChild(cnt);
+const ctl=document.createElement('div');ctl.className='dm-ctrl';
+ctl.innerHTML="<button title='重來' onclick='restart()'>⏮</button><button title='上一句' onclick='one(Math.max(0,i-1))'>⏪</button>"+
+ "<button class='main' id='pp' title='播放／暫停' onclick='toggle()'>▶️</button><button title='下一句' onclick='one(Math.min(L.length-1,i+1))'>⏩</button>";
+S.appendChild(ctl);
+const st=document.createElement('div');st.className='dm-start';st.innerHTML='<span>▶️ 播放全文示範</span>';
+st.onclick=()=>{st.remove();restart();};S.appendChild(st);
+const au=new Audio();let i=-1,playing=false,tm=null;
+function pop(el){el.style.animation='none';void el.offsetWidth;el.style.animation='';}
+function show(k){
+  i=k;
+  for(const r of ['A','B']){CH[r].classList.remove('act','dim');if(k>=0&&k<L.length)CH[r].classList.add(L[k].r===r?'act':'dim');}
+  document.querySelectorAll('.dm-row').forEach((e,n)=>e.classList.toggle('on',n===k));
+  if(k>=L.length){say.className='dlg-say mid';say.innerHTML='🎉 示範完畢！再按 ⏮ 可以重看';say.style.display='';pv.style.display='none';pop(say);cnt.textContent='全文示範';return;}
+  const side=L[k].r==='A'?'l':'r';
+  say.className='dlg-say '+side;say.innerHTML=L[k].h;say.style.display='';pop(say);
+  if(k>0&&L[k-1].r!==L[k].r){pv.className='dlg-say prev '+(L[k-1].r==='A'?'l':'r');pv.innerHTML=L[k-1].h;pv.style.display='';}
+  else pv.style.display='none';
+  cnt.textContent='第 '+(k+1)+' / '+L.length+' 句';
+}
+function upd(){document.getElementById('pp').textContent=playing?'⏸':'▶️';}
+function sound(k){clearTimeout(tm);au.pause();if(L[k].a){au.src=L[k].a;au.play().catch(()=>{});}else{tm=setTimeout(()=>au.onended(),2500);}}
+function play(k){show(k);if(k>=L.length){playing=false;upd();return;}sound(k);}
+au.onended=()=>{if(playing)tm=setTimeout(()=>play(i+1),450);};
+function restart(){const s=document.querySelector('.dm-start');if(s)s.remove();playing=true;upd();play(0);}
+function one(k){const s=document.querySelector('.dm-start');if(s)s.remove();playing=false;upd();show(k);sound(k);}
+function toggle(){const s=document.querySelector('.dm-start');if(s)s.remove();
+  if(playing){playing=false;au.pause();clearTimeout(tm);}
+  else{playing=true;if(i<0||i>=L.length)play(0);else if(au.src&&au.paused&&!au.ended&&au.currentTime>0)au.play();else play(i);}
+  upd();}
+</script>""".replace("__DATA__", data)
+    return (_CSS + _DEMO_CSS + stage + f"<div class='dm-tr'>{''.join(rows)}</div>" + js)
+
+
+def _render_demo(d, run, combo, me, other, names, partner_av, speed, rno, n):
+    st.progress((rno + 1) / n, text=f"第 {rno + 1} / {n} 輪（每輪換一組單字）")
+    page = _demo_html(d, combo, tags={me: f"{names[me]}（你）", other: names[other]},
+                      emo={me: run["avatar"], other: partner_av}, speed=speed)
+    try:
+        import streamlit.components.v1 as components
+        components.html(page, height=410 + 64 * len(d["turns"]), scrolling=False)
+    except Exception as e:
+        st.error(f"示範畫面無法顯示：{type(e).__name__}: {e}")
+    c1, c2, c3 = st.columns(3)
+    if c1.button("⬅️ 上一輪", key="dlg_demo_prev", disabled=rno == 0, use_container_width=True):
+        run["round"] = rno - 1
+        st.rerun()
+    if rno < n - 1 and c2.button("🔀 換一組單字（下一輪）", key="dlg_demo_next", use_container_width=True):
+        run["round"] = rno + 1
+        st.rerun()
+    nxt = 1 if len(run["stages"]) > 1 else None
+    if nxt and c3.button(f"進入 {run['stages'][nxt]} ➡️", key="dlg_demo_stage", type="primary", use_container_width=True):
+        run["goto_stage"] = run["stages"][nxt]
+        run["round"] = 0
+        st.rerun()
 
 
 # ------------------------------------------------------------------------------
