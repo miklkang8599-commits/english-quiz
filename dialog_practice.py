@@ -7,6 +7,7 @@
 #
 # 資料：
 #   Google Sheets「對話範本」：對話ID｜標題｜程度｜回合｜角色｜角色名稱｜英文｜中文
+#                            （選填 V2.9.558：情境｜角色描述 → 給 AI 畫背景與角色立繪）
 #   Google Sheets「替換字」  ：對話ID｜欄位｜英文｜中文｜圖｜圖片描述
 #   （兩張表不存在也能用：程式內建「D00 天氣示範」）
 #   Supabase：dialog_cards（圖卡圖片）、dialog_assignments（指派）、dialog_logs（練習紀錄）
@@ -32,6 +33,15 @@ DEMO_DIALOG = {
     "title": "天氣（示範）",
     "level": "國小",
     "names": {"A": "Amy", "B": "Ben"},
+    # V2.9.558 情境畫面：背景（不含人物）＋兩位角色立繪
+    "scene_desc": "the front gate of a Taiwanese elementary school on a weekday morning, "
+                  "trees, a wide sidewalk, school building behind the gate, open sky",
+    "char_desc": {
+        "A": "Amy, a cheerful elementary school girl with a black ponytail, white school shirt, "
+             "navy blue skirt, red backpack",
+        "B": "Ben, a friendly elementary school boy with short black hair, white school T-shirt, "
+             "navy blue shorts, blue backpack",
+    },
     "turns": [
         {"turn": 1, "role": "A", "en": "Hi, Ben! How's the weather today?", "zh": "嗨，Ben！今天天氣如何？"},
         {"turn": 2, "role": "B", "en": "It's {weather} today.", "zh": "今天{weather}。"},
@@ -69,6 +79,16 @@ VOICE = {"A": "nova", "B": "onyx"}
 IMG_STYLE = ("A cute, simple cartoon flashcard illustration for young English learners. "
              "Single clear subject, centered, thick clean outlines, bright friendly colors, "
              "plain white background. No text, no letters, no words, no numbers.")
+# V2.9.558 情境畫面：半寫實繪本／動畫電影風（比照片級寫實更能維持同一角色長相）
+SCENE_STYLE = ("A semi-realistic illustration in the style of a modern animated film or picture book, "
+               "soft natural lighting, warm friendly colors, detailed but clean, eye-level wide view. "
+               "No text, no letters, no signs with words.")
+SCENE_TAIL = (" Background scene only: no people, no animals. Leave open ground on the lower left "
+              "and lower right for characters to stand.")
+CHAR_STYLE = ("A semi-realistic character illustration in the style of a modern animated film, "
+              "soft lighting, friendly natural expression. Full body, standing, whole figure visible "
+              "from head to shoes, three-quarter view with the body turned toward the viewer's right. "
+              "Transparent background, no ground, no shadow, no other objects. No text.")
 
 _SLOT_RE = re.compile(r"\{([^{}]+)\}")
 
@@ -137,6 +157,22 @@ _CSS = """<style>
   background:#fff;color:#111;min-width:96px}
 .dlg-card .w{font-weight:600;font-size:1rem}
 .dlg-card .z{font-size:.8rem;color:#666}
+.dlg-stage{position:relative;width:100%;aspect-ratio:3/2;max-height:380px;border-radius:16px;overflow:hidden;
+  margin:.3rem 0 .7rem;background:#cfe8ff center/cover no-repeat}
+.dlg-ch{position:absolute;bottom:0;height:86%;width:38%;display:flex;justify-content:center;align-items:flex-end}
+.dlg-ch.l{left:2%}
+.dlg-ch.r{right:2%}
+.dlg-ch img{height:100%;width:auto;max-width:100%;object-fit:contain;object-position:bottom;
+  filter:drop-shadow(0 6px 8px rgba(0,0,0,.35))}
+.dlg-ch.r img{transform:scaleX(-1)}
+.dlg-ch .emo{font-size:5rem;line-height:1;margin-bottom:12%}
+.dlg-tag{position:absolute;bottom:6px;left:50%;transform:translateX(-50%);white-space:nowrap;
+  background:rgba(0,0,0,.6);color:#fff;border-radius:8px;padding:0 .45rem;font-size:.82rem}
+.dlg-sign{position:absolute;top:5%;left:50%;transform:translateX(-50%);display:flex;gap:.35rem;
+  background:rgba(255,255,255,.9);border-radius:12px;padding:.3rem .5rem;box-shadow:0 2px 6px rgba(0,0,0,.2)}
+.dlg-sign .it{text-align:center;color:#111;font-size:.8rem;font-weight:600;line-height:1.2}
+.dlg-face{width:2.9rem;height:2.9rem;border-radius:50%;flex:0 0 auto;background:#e7f1ff no-repeat;
+  background-size:230%;background-position:50% 3%;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.25)}
 </style>"""
 
 
@@ -190,6 +226,11 @@ def load_dialogs(ctx):
             role = (_s(r.get("角色")) or "A").upper()[:1]
             if _s(r.get("角色名稱")):
                 d["names"][role] = _s(r.get("角色名稱"))
+            # V2.9.558 選填欄：情境（背景描述）、角色描述（立繪描述）
+            if _s(r.get("情境")):
+                d["scene_desc"] = _s(r.get("情境"))
+            if _s(r.get("角色描述")):
+                d.setdefault("char_desc", {})[role] = _s(r.get("角色描述"))
             try:
                 tno = int(float(_s(r.get("回合")) or 0))
             except ValueError:
@@ -219,6 +260,17 @@ def load_dialogs(ctx):
                 c["id"] = card_id(did, slot, c["en"])
                 if imgs.get(c["id"]):
                     c["img"] = imgs[c["id"]]
+        # V2.9.558 情境畫面（背景＋兩位角色立繪），圖存在 dialog_cards（欄位 _scene／_char）
+        sid = card_id(did, "_scene", "bg")
+        d["scene"] = {"id": sid, "slot": "_scene", "en": "bg", "zh": "情境背景", "img": imgs.get(sid, ""),
+                      "desc": d.pop("scene_desc", "") or f"an everyday scene for a dialogue about {d['title']}"}
+        cdesc = d.pop("char_desc", {}) or {}
+        d["chars"] = {}
+        for role in ("A", "B"):
+            cid = card_id(did, "_char", role)
+            nm = d["names"].get(role, role)
+            d["chars"][role] = {"id": cid, "slot": "_char", "en": role, "zh": nm, "img": imgs.get(cid, ""),
+                                "desc": cdesc.get(role) or f"{nm}, a friendly elementary school student"}
     return dialogs
 
 
@@ -283,6 +335,47 @@ def _cards_strip(cards, px=64, show_text=True):
                if show_text else "")
         items.append(f"<div class='dlg-card'>{_img_html(c, px)}{txt}</div>")
     st.markdown(f"<div class='dlg-cards'>{''.join(items)}</div>", unsafe_allow_html=True)
+
+
+# ── V2.9.558 情境畫面 ──
+def _url(card):
+    v = _s((card or {}).get("img"))
+    return v if v.startswith("http") else ""
+
+
+def has_scene(d):
+    return bool(_url(d.get("scene")) or any(_url(c) for c in d.get("chars", {}).values()))
+
+
+def _face_html(d, role, fallback="🧑"):
+    """對話泡泡旁的大頭：有立繪就裁頭部，沒有就用 emoji"""
+    u = _url(d.get("chars", {}).get(role))
+    if u:
+        return f"<div class='dlg-face' style=\"background-image:url('{html.escape(u, quote=True)}')\"></div>"
+    return html.escape(fallback)
+
+
+def _stage_html(d, cards=None, tags=None, show_text=True, emo=None):
+    """情境舞台：背景圖＋左右兩位角色立繪＋上方本輪圖卡看板"""
+    bg = _url(d.get("scene"))
+    style = f" style=\"background-image:url('{html.escape(bg, quote=True)}')\"" if bg else ""
+    parts = [f"<div class='dlg-stage'{style}>"]
+    tags = tags or {}
+    emo = emo or {"A": "👧", "B": "👦"}
+    for role, side in (("A", "l"), ("B", "r")):
+        u = _url(d.get("chars", {}).get(role))
+        fig = (f"<img src='{html.escape(u, quote=True)}' alt=''>" if u
+               else f"<span class='emo'>{html.escape(emo.get(role, '🧑'))}</span>")
+        tag = tags.get(role) or d["names"].get(role, role)
+        parts.append(f"<div class='dlg-ch {side}'>{fig}<span class='dlg-tag'>{html.escape(tag)}</span></div>")
+    if cards:
+        its = []
+        for c in cards:
+            txt = f"<div>{html.escape(c['en'])}</div>" if show_text else ""
+            its.append(f"<div class='it'>{_img_html(c, 46)}{txt}</div>")
+        parts.append(f"<div class='dlg-sign'>{''.join(its)}</div>")
+    parts.append("</div>")
+    return "".join(parts)
 
 
 @st.cache_data(show_spinner=False, max_entries=600)
@@ -477,10 +570,16 @@ def _render_run(ctx):
     by_en = {s: {c["en"]: c for c in d["cards"].get(s, [])} for s in d["cards"]}
 
     # ── 第一步：選角色 ──
+    both_chars = all(_url(d.get("chars", {}).get(r)) for r in ("A", "B"))
     if not run["avatar"] or not run["role"]:
-        st.markdown("#### 1️⃣ 選一個你的頭像")
-        av = st.radio("頭像", AVATARS, horizontal=True, key="dlg_av_pick", label_visibility="collapsed")
-        st.markdown("#### 2️⃣ 你要演誰？")
+        if has_scene(d):
+            st.markdown(_stage_html(d), unsafe_allow_html=True)
+        if both_chars:
+            av = "🧑"   # 兩位角色都有立繪：不用另外選頭像
+        else:
+            st.markdown("#### 1️⃣ 選一個你的頭像")
+            av = st.radio("頭像", AVATARS, horizontal=True, key="dlg_av_pick", label_visibility="collapsed")
+        st.markdown("#### 你要演誰？" if both_chars else "#### 2️⃣ 你要演誰？")
         role = st.radio("角色", ["A", "B"], horizontal=True, key="dlg_role_pick",
                         format_func=lambda r: f"{r}：{names[r]}" + ("（先開口）" if d["turns"] and d["turns"][0]["role"] == r else ""),
                         label_visibility="collapsed")
@@ -496,6 +595,7 @@ def _render_run(ctx):
     me = run["role"]
     partner_av = AVATARS[(AVATARS.index(run["avatar"]) + 4) % len(AVATARS)] if run["avatar"] in AVATARS else "🧑"
     avatars = {me: run["avatar"], ("B" if me == "A" else "A"): partner_av}
+    avatars = {r: _face_html(d, r, a) for r, a in avatars.items()}   # V2.9.558 有立繪就用立繪大頭
     disp = {me: f"{ctx['user_name']}（{names[me]}）", ("B" if me == "A" else "A"): names["B" if me == "A" else "A"]}
 
     if run.get("goto_stage"):
@@ -515,8 +615,15 @@ def _render_run(ctx):
     combo = {s: by_en.get(s, {}).get(w, {"en": w, "zh": "", "img": "", "slot": s}) for s, w in combo_words.items()}
 
     st.progress((rno + 1) / n, text=f"第 {rno + 1} / {n} 輪")
-    st.markdown("**這一輪的圖卡**")
-    _cards_strip(list(combo.values()), px=72, show_text=(stage == STAGES[0]))
+    if has_scene(d):
+        other = "B" if me == "A" else "A"
+        st.markdown(_stage_html(d, list(combo.values()),
+                                tags={me: f"{names[me]}（你）", other: names[other]},
+                                show_text=(stage == STAGES[0]),
+                                emo={me: run["avatar"], other: partner_av}), unsafe_allow_html=True)
+    else:
+        st.markdown("**這一輪的圖卡**")
+        _cards_strip(list(combo.values()), px=72, show_text=(stage == STAGES[0]))
 
     for t in d["turns"]:
         role, tno = t["role"], t["turn"]
@@ -598,16 +705,20 @@ def _render_run(ctx):
 # ------------------------------------------------------------------------------
 # 老師端
 # ------------------------------------------------------------------------------
-def _gen_image(prompt):
+def _gen_image(prompt, size="1024x1024", transparent=False, quality="low"):
     import base64
     import openai
     cl = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
     last = None
-    for model, kw in (("gpt-image-1-mini", {"quality": "low"}),
-                      ("gpt-image-1", {"quality": "low"}),
-                      ("dall-e-3", {"quality": "standard", "response_format": "b64_json"})):
+    gkw = {"quality": quality, "size": size}
+    if transparent:
+        gkw["background"] = "transparent"
+    dsize = {"1536x1024": "1792x1024", "1024x1536": "1024x1792"}.get(size, size)
+    for model, kw in (("gpt-image-1-mini", gkw),
+                      ("gpt-image-1", gkw),
+                      ("dall-e-3", {"quality": "standard", "response_format": "b64_json", "size": dsize})):
         try:
-            r = cl.images.generate(model=model, prompt=prompt, size="1024x1024", n=1, **kw)
+            r = cl.images.generate(model=model, prompt=prompt, n=1, **kw)
             b64 = r.data[0].b64_json
             if b64:
                 return base64.b64decode(b64), model
@@ -626,11 +737,48 @@ def _to_png(raw):
     return buf.getvalue()
 
 
+def _prep_image(raw, kind):
+    """回傳 (bytes, 副檔名, content-type)。背景 → JPG 寬 1024；立繪 → 保留透明的 PNG；圖卡 → PNG 512"""
+    if kind == "scene":
+        from PIL import Image
+        im = Image.open(io.BytesIO(raw)).convert("RGB")
+        im.thumbnail((1024, 1024))
+        buf = io.BytesIO()
+        im.save(buf, format="JPEG", quality=82, optimize=True)
+        return buf.getvalue(), "jpg", "image/jpeg"
+    if kind == "char":
+        from PIL import Image
+        im = Image.open(io.BytesIO(raw))
+        im = im.convert("RGBA")
+        bb = im.getbbox()          # 裁掉透明留白，人物在舞台上才站得大
+        if bb:
+            im = im.crop(bb)
+        im.thumbnail((420, 640))
+        buf = io.BytesIO()
+        im.save(buf, format="PNG", optimize=True)
+        return buf.getvalue(), "png", "image/png"
+    return _to_png(raw), "png", "image/png"
+
+
+def _kind(card):
+    return {"_scene": "scene", "_char": "char"}.get(card.get("slot"), "card")
+
+
+def _gen_for(card, desc):
+    """依種類（圖卡／背景／立繪）產生圖片"""
+    k = _kind(card)
+    if k == "scene":
+        return _gen_image(f"{SCENE_STYLE} Scene: {desc}.{SCENE_TAIL}", size="1536x1024", quality="medium")
+    if k == "char":
+        return _gen_image(f"{CHAR_STYLE} Character: {desc}.", size="1024x1536", transparent=True, quality="medium")
+    return _gen_image(f"{IMG_STYLE} Subject: {desc}.")
+
+
 def _save_card_image(ctx, dialog_id, card, raw):
     sb = ctx["sb"]()
-    png = _to_png(raw)
-    path = f"{re.sub(r'[^A-Za-z0-9_-]', '_', dialog_id)}/{hashlib.md5(card['id'].encode('utf-8')).hexdigest()}.png"
-    sb.storage.from_("flashcards").upload(path, png, {"content-type": "image/png", "upsert": "true"})
+    png, ext, ctype = _prep_image(raw, _kind(card))
+    path = f"{re.sub(r'[^A-Za-z0-9_-]', '_', dialog_id)}/{hashlib.md5(card['id'].encode('utf-8')).hexdigest()}.{ext}"
+    sb.storage.from_("flashcards").upload(path, png, {"content-type": ctype, "upsert": "true"})
     url = sb.storage.from_("flashcards").get_public_url(path)
     if isinstance(url, dict):
         url = url.get("publicUrl") or url.get("publicURL") or ""
@@ -677,6 +825,7 @@ def _teacher_cards(ctx, dialogs):
             st.markdown(f"**{t['turn']}. {html.escape(d['names'].get(t['role'], t['role']))}**："
                         f"{html.escape(t['en'])}　<span style='color:#888'>{html.escape(t['zh'])}</span>",
                         unsafe_allow_html=True)
+    _teacher_scene(ctx, did, d)
     missing_slots = [s for s in _slots_in(d) if not d["cards"].get(s)]
     if missing_slots:
         st.warning("這些欄位在「替換字」表還沒有單字：" + "、".join(missing_slots))
@@ -708,9 +857,44 @@ def _teacher_cards(ctx, dialogs):
                     _card_editor(ctx, did, c)
 
 
+def _teacher_scene(ctx, did, d):
+    """V2.9.558 情境畫面：背景（不含人物）＋角色 A／B 立繪（透明背景）"""
+    st.markdown("#### 🎬 情境畫面（背景＋角色立繪）")
+    st.caption("學生練習時，對話會出現在這個場景裡，兩位角色站左右兩邊。"
+               "背景和人物分開畫，同一個角色每一輪長相都一樣。半寫實插畫風，每張約 20–60 秒。")
+    first = {}
+    for s in _slots_in(d):
+        if d["cards"].get(s):
+            first[s] = d["cards"][s][0]
+    st.markdown(_stage_html(d, list(first.values())), unsafe_allow_html=True)
+    items = [d["scene"], d["chars"]["A"], d["chars"]["B"]]
+    missing = [c for c in items if not _url(c)]
+    if missing and st.button(f"🎨 一次 AI 產生情境畫面（缺 {len(missing)} 張）", key=f"dlg_scene_all_{did}"):
+        bar = st.progress(0.0)
+        for i, c in enumerate(missing):
+            try:
+                raw, _m = _gen_for(c, c["desc"])
+                _save_card_image(ctx, did, c, raw)
+            except Exception as e:
+                st.error(f"{c['zh']}：{e}")
+            bar.progress((i + 1) / len(missing), text=f"{i + 1}/{len(missing)}")
+        st.rerun()
+    cols = st.columns(3)
+    for col, c, lbl in zip(cols, items, ["🏞️ 背景", f"🧍 A：{d['names'].get('A', 'A')}", f"🧍 B：{d['names'].get('B', 'B')}"]):
+        with col:
+            st.caption(lbl)
+            _card_editor(ctx, did, c)
+    st.divider()
+
+
 def _card_editor(ctx, did, c):
-    st.markdown(f"<div class='dlg-card'>{_img_html(c, 88)}<div class='w'>{html.escape(c['en'])}</div>"
-                f"<div class='z'>{html.escape(c.get('zh', ''))}</div></div>", unsafe_allow_html=True)
+    if _kind(c) == "card":
+        st.markdown(f"<div class='dlg-card'>{_img_html(c, 88)}<div class='w'>{html.escape(c['en'])}</div>"
+                    f"<div class='z'>{html.escape(c.get('zh', ''))}</div></div>", unsafe_allow_html=True)
+    elif _url(c):
+        st.image(_url(c))
+    else:
+        st.caption("（還沒有圖）")
     hk = hashlib.md5(c["id"].encode("utf-8")).hexdigest()[:10]
     with st.popover("✏️ 換圖", use_container_width=True):
         up = st.file_uploader("上傳圖片", type=["png", "jpg", "jpeg", "webp"], key=f"dlg_up_{hk}")
@@ -727,7 +911,7 @@ def _card_editor(ctx, did, c):
         if st.button("🎨 AI 產生", key=f"dlg_gen_{hk}"):
             with st.spinner("產生中（約 10–30 秒）…"):
                 try:
-                    raw, model = _gen_image(f"{IMG_STYLE} Subject: {desc}.")
+                    raw, model = _gen_for(c, desc)
                     st.session_state[pend_key] = raw
                 except Exception as e:
                     st.error(f"產生失敗：{e}")
