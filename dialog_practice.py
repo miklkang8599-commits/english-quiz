@@ -25,7 +25,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 import streamlit as st
 
-DLG_VERSION = "2.9.563"   # 只改這個模組時，老師端「🗣️ 對話練習」最上面會顯示這個版本
+DLG_VERSION = "2.9.564"   # 只改這個模組時，老師端「🗣️ 對話練習」最上面會顯示這個版本
 
 # ------------------------------------------------------------------------------
 # 內建示範對話
@@ -76,6 +76,8 @@ STAGE_HELP = {
     "② 看圖說": "替換字變成圖卡，看圖自己說出完整句子，錄完按「看答案」對照。",
     "③ 角色對話": "對方只出聲音；輪到你時只看中文提示和圖卡，說出英文。",
 }
+# V2.9.564 ② ③ 的進行方式：整篇連播（簡單）＝從頭播放，輪到你就停下來錄音，按「繼續」播到下一個錄音點
+FLOWS = ["🎬 整篇連播（簡單）", "🧩 逐句練習"]
 AVATARS = ["🧒", "👧", "👦", "🧑", "🐶", "🐱", "🐼", "🦊", "🐰", "🐯", "🐸", "🤖"]
 VOICE = {"A": "nova", "B": "onyx"}
 IMG_STYLE = ("A cute, simple cartoon flashcard illustration for young English learners. "
@@ -737,7 +739,9 @@ def _render_run(ctx):
     me = run["role"]
     other = "B" if me == "A" else "A"
     partner_av = AVATARS[(AVATARS.index(run["avatar"]) + 4) % len(AVATARS)] if run["avatar"] in AVATARS else "🧑"
-    if st.button(f"🔄 換角色（現在演 {names[me]}）", key="dlg_role_reset"):
+    f1, f2 = st.columns([3, 2])
+    flow = f1.radio("進行方式", FLOWS, horizontal=True, key="dlg_flow")
+    if f2.button(f"🔄 換角色（現在演 {names[me]}）", key="dlg_role_reset", use_container_width=True):
         run["role"] = None
         st.rerun()
 
@@ -745,7 +749,6 @@ def _render_run(ctx):
     sk = f"{stage}|{rno}"
     steps = run.setdefault("step", {})
     i = max(0, min(int(steps.get(sk, 0)), len(turns)))      # i == len(turns)：這一輪演完
-    st.progress((rno + 1) / n, text=f"第 {rno + 1} / {n} 輪")
 
     def line_html(t):
         k_ = f"{stage}|{rno}|{t['turn']}"
@@ -761,6 +764,13 @@ def _render_run(ctx):
             zh_ = _fill(t["zh"], combo, "zh", "blank") if t["zh"] else ""
             return "🎤 換你說！" + (f"<div class='dlg-zh'>{zh_}</div>" if zh_ else "")
         return "🔊 ……"
+
+    if flow == FLOWS[0]:
+        _render_flow(ctx, d, run, stage, combo, combo_words, me, names, speed, rno, n, line_html,
+                     tags={me: f"{names[me]}（你）", other: names[other]},
+                     emo={me: run["avatar"], other: partner_av})
+        return
+    st.progress((rno + 1) / n, text=f"第 {rno + 1} / {n} 輪")
 
     cur = turns[i] if i < len(turns) else None
     if cur is not None:
@@ -980,6 +990,159 @@ def _render_demo(d, run, combo, me, names, speed, rno, n):
     if nxt and c3.button(f"進入 {run['stages'][nxt]} ➡️", key="dlg_demo_stage", type="primary", use_container_width=True):
         run["goto_stage"] = run["stages"][nxt]
         run["round"] = 0
+        st.rerun()
+
+
+
+# ── V2.9.564 整篇連播：從頭播放，輪到學生就停下來錄音，按「繼續」播到下一個錄音點 ──
+_FLOW_CSS = """<style>
+.dm-tap{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:6;
+  background:rgba(0,0,0,.18);cursor:pointer}
+.dm-tap span{background:#ff922b;color:#fff;font-size:1.2rem;font-weight:800;padding:.55rem 1.2rem;border-radius:999px;
+  border:3px solid #fff;box-shadow:0 4px 0 rgba(0,0,0,.25)}
+</style>"""
+
+
+def _flow_html(d, tags, emo, cards, show_text, seg, prev0, stop, pill, play, nonce):
+    """seg：這一段要播的對方句子 [{r,h,a}]；prev0：段落開始前的上一句；stop：停下來要學生說的那句 {r,h}"""
+    stage = _stage_html(d, cards, tags=tags, show_text=show_text, emo=emo)
+    data = json.dumps({"L": seg, "P": prev0, "S": stop, "pill": pill, "play": bool(play), "n": nonce},
+                      ensure_ascii=False).replace("</", "<\\/")
+    js = """<script>
+const D=__DATA__,L=D.L;
+const S=document.querySelector('.dlg-stage');
+const CH={A:S.querySelector('.dlg-ch.l'),B:S.querySelector('.dlg-ch.r')};
+const say=document.createElement('div');say.style.display='none';S.appendChild(say);
+const pv=document.createElement('div');pv.style.display='none';S.appendChild(pv);
+const cnt=document.createElement('div');cnt.className='dm-cnt';S.appendChild(cnt);
+const au=new Audio();let i=-1,tm=null;
+function pop(el){el.style.animation='none';void el.offsetWidth;el.style.animation='';}
+function act(r){for(const x of ['A','B']){CH[x].classList.remove('act','dim');if(r)CH[x].classList.add(x===r?'act':'dim');}}
+function line(cur,prev){
+  act(cur.r);say.className='dlg-say '+(cur.r==='A'?'l':'r');say.innerHTML=cur.h;say.style.display='';pop(say);
+  if(prev&&prev.r!==cur.r){pv.className='dlg-say prev '+(prev.r==='A'?'l':'r');pv.innerHTML=prev.h;pv.style.display='';}
+  else pv.style.display='none';
+}
+function stopNow(){
+  const last=L.length?L[L.length-1]:D.P;
+  if(!D.S){act(null);say.className='dlg-say mid';say.innerHTML='🎉 這一輪演完了！';say.style.display='';
+    pv.style.display='none';pop(say);cnt.textContent='整篇連播';return;}
+  line(D.S,last);
+  const rc=document.createElement('div');rc.className='dlg-rec '+(D.S.r==='A'?'l':'r')+(D.pill.indexOf('✅')>=0?' ok':'');
+  rc.innerHTML=D.pill;S.appendChild(rc);cnt.textContent='換你說';
+}
+function tap(){if(document.querySelector('.dm-tap'))return;const t=document.createElement('div');t.className='dm-tap';
+  t.innerHTML='<span>▶️ 繼續播放</span>';t.onclick=()=>{t.remove();au.play().catch(()=>{});};S.appendChild(t);}
+function next(){
+  i++;if(i>=L.length){stopNow();return;}
+  line(L[i],i>0?L[i-1]:D.P);cnt.textContent='🔊 播放中';
+  if(L[i].a){au.src=L[i].a;au.play().catch(tap);}else{tm=setTimeout(next,2200);}
+}
+au.onended=()=>{tm=setTimeout(next,450);};
+if(D.play&&L.length)next();else stopNow();
+</script>""".replace("__DATA__", data)
+    return _CSS + _DEMO_CSS + _FLOW_CSS + stage + js
+
+
+def _render_flow(ctx, d, run, stage, combo, combo_words, me, names, speed, rno, n, line_html, tags, emo):
+    import base64
+    turns = d["turns"]
+    sk = f"{stage}|{rno}"
+    fpos = run.setdefault("fpos", {})
+    mine_idx = [j for j, t in enumerate(turns) if t["role"] == me]
+    q = max(0, min(int(fpos.get(sk, 0)), len(mine_idx)))
+    s = mine_idx[q - 1] + 1 if q > 0 else 0
+    e = mine_idx[q] if q < len(mine_idx) else len(turns)
+    stop_t = turns[e] if e < len(turns) else None
+    k = f"{stage}|{rno}|{stop_t['turn']}" if stop_t else ""
+    rec_key = f"dlg_frec_{k}"
+    has_rec = bool(k) and st.session_state.get(rec_key) is not None
+    revealed = bool(k) and run["reveal"].get(k, False)
+    want = st.session_state.pop("dlg_fplay", None) == sk
+    play = want or not (has_rec or revealed)   # 錄完／看答案後重畫時停在錄音點，不會又從段落開頭播
+
+    st.progress((rno + 1) / n, text=f"第 {rno + 1} / {n} 輪｜錄音點 {min(q + 1, len(mine_idx))} / {len(mine_idx)}")
+    seg = []
+    for t in turns[s:e]:
+        plain = _fill(t["en"], combo, "en", "plain")
+        try:
+            a = "data:audio/mp3;base64," + base64.b64encode(_tts(plain, VOICE.get(t["role"], "nova"), speed)).decode()
+        except Exception:
+            a = ""
+        seg.append({"r": t["role"], "h": line_html(t), "a": a})
+    prev0 = {"r": turns[s - 1]["role"], "h": line_html(turns[s - 1])} if s > 0 else None
+    stop = {"r": stop_t["role"], "h": line_html(stop_t)} if stop_t else None
+    pill = "✅ 錄好了！按「繼續」⬇" if has_rec else "🎙️ 請錄音 ⬇"
+    nonce = run.setdefault("fnonce", 0)
+    page = _flow_html(d, tags, emo, list(combo.values()), False, seg, prev0, stop, pill, play, nonce)
+    try:
+        import streamlit.components.v1 as components
+        components.html(page, height=395, scrolling=False)
+    except Exception as ex:
+        st.error(f"場景畫面無法顯示：{type(ex).__name__}: {ex}")
+
+    def replay(new_q):
+        run["fnonce"] = nonce + 1
+        fpos[sk] = new_q
+        st.session_state["dlg_fplay"] = sk
+        st.rerun()
+
+    def restart():
+        for kk in [x for x in list(st.session_state.keys()) if str(x).startswith(f"dlg_frec_{sk}|")]:
+            del st.session_state[kk]
+        for kk in [x for x in list(run["reveal"].keys()) if x.startswith(f"{sk}|")]:
+            run["reveal"].pop(kk, None)
+        replay(0)
+
+    with st.container(key="dlg_panel"):
+        if stop_t is not None:
+            st.markdown(f"<div class='dlg-ph'>🎙️ 錄音點 {q + 1} / {len(mine_idx)}｜換你說，錄好按「繼續」</div>",
+                        unsafe_allow_html=True)
+            if revealed:
+                _play(_fill(stop_t["en"], combo, "en", "plain"), me, speed)
+            rec = st.audio_input("🎙️ 錄下你說的這一句", key=rec_key)
+            c1, c2, c3, c4 = st.columns(4)
+            if c1.button("⏮ 從頭開始", key=f"dlg_f_top_{k}", use_container_width=True):
+                restart()
+            if c2.button("🔁 重聽這段", key=f"dlg_f_re_{k}", use_container_width=True):
+                replay(q)
+            if not revealed and c3.button("👀 看答案", key=f"dlg_f_ans_{k}", use_container_width=True):
+                run["reveal"][k] = True
+                st.rerun()
+            if c4.button("▶️ 繼續", key=f"dlg_f_go_{k}", type="primary", use_container_width=True,
+                         disabled=rec is None):
+                _save_log(ctx, run, stage, rno + 1, stop_t["turn"], combo_words, "🎙️", rec.getvalue() if rec else None)
+                run["checks"][k] = "🎙️"
+                replay(q + 1)
+            if rec is None:
+                st.caption("錄好音，「▶️ 繼續」才會亮起來。沒有麥克風可以按下面略過。")
+                if st.button("⏭ 這句先不錄，直接繼續", key=f"dlg_f_skip_{k}"):
+                    replay(q + 1)
+        else:
+            got = sum(1 for kk in run["checks"] if kk.startswith(f"{sk}|"))
+            st.markdown(f"<div class='dlg-ph'>🎉 第 {rno + 1} 輪演完了！錄了 {got} / {len(mine_idx)} 句</div>",
+                        unsafe_allow_html=True)
+            c1, c2 = st.columns(2)
+            if c1.button("⏮ 從頭再來一次", key=f"dlg_f_again_{sk}", use_container_width=True):
+                restart()
+            if rno < n - 1:
+                if c2.button("下一輪 ➡️", key="dlg_f_next", type="primary", use_container_width=True):
+                    run["round"] = rno + 1
+                    st.session_state["dlg_fplay"] = f"{stage}|{rno + 1}"
+                    st.rerun()
+            else:
+                nxt = run["stages"].index(stage) + 1
+                if nxt < len(run["stages"]):
+                    if c2.button(f"進入 {run['stages'][nxt]} ➡️", key="dlg_f_next_stage", type="primary",
+                                 use_container_width=True):
+                        run["goto_stage"] = run["stages"][nxt]
+                        run["round"] = 0
+                        st.rerun()
+                else:
+                    sc = list(run["checks"].values())
+                    c2.success(f"🏁 全部完成！共錄了 {len(sc)} 句")
+    if rno > 0 and st.button("⬅️ 回上一輪", key="dlg_f_prev"):
+        run["round"] = rno - 1
         st.rerun()
 
 
