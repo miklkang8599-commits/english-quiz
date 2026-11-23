@@ -25,7 +25,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 import streamlit as st
 
-DLG_VERSION = "2.9.569"   # 只改這個模組時，老師端「🗣️ 對話練習」最上面會顯示這個版本
+DLG_VERSION = "2.9.570"   # 只改這個模組時，老師端「🗣️ 對話練習」最上面會顯示這個版本
 
 # ------------------------------------------------------------------------------
 # 內建示範對話
@@ -1253,6 +1253,36 @@ def _gen_image(prompt, size="1024x1024", transparent=False, quality="low"):
     raise RuntimeError(f"{type(last).__name__}: {last}")
 
 
+# V2.9.570 圖卡提示＋中文字卡
+_NO_TEXT = " No text, no letters, no words, no numbers."
+
+
+def _card_prompt(desc, hint=""):
+    """老師的額外要求放最後、優先；有要求時不加「不要文字」，老師才能要求在圖上寫中文"""
+    hint = _s(hint)
+    if not hint:
+        return f"{IMG_STYLE} Subject: {desc}."
+    return (f"{IMG_STYLE.replace(_NO_TEXT, '')} Subject: {desc}. "
+            f"Teacher's extra requirements (follow these exactly; they override the style above): {hint}")
+
+
+_TC_COLORS = ["#FFE08A", "#BDE7FF", "#C8F2C2", "#FFD1DC", "#E3D4FF", "#FFD8B0", "#D6F0EE", "#F5F0C8"]
+
+
+def _text_card_svg(text, i=0):
+    """中文字卡（不用 AI）：彩色圓角卡片中間寫大大的字，學生一看就懂，又不會看到英文答案"""
+    s = _s(text) or "?"
+    rows = [s] if len(s) <= 4 else [s[:(len(s) + 1) // 2], s[(len(s) + 1) // 2:]]
+    fs = int(min(190, 440 / max(len(r) for r in rows)))
+    body = "".join(
+        f"<text x='256' y='{256 + (j - (len(rows) - 1) / 2) * fs * 1.15:.0f}' font-size='{fs}' font-weight='700' "
+        f"text-anchor='middle' dominant-baseline='central' fill='#222' font-family=\"'Noto Sans TC','Microsoft JhengHei',"
+        f"'PingFang TC','Heiti TC',sans-serif\">{html.escape(r)}</text>" for j, r in enumerate(rows))
+    return ("<svg xmlns='http://www.w3.org/2000/svg' width='512' height='512' viewBox='0 0 512 512'>"
+            f"<rect x='16' y='16' width='480' height='480' rx='56' fill='{_TC_COLORS[i % len(_TC_COLORS)]}' "
+            f"stroke='#333' stroke-width='10'/>{body}</svg>").encode("utf-8")
+
+
 def _to_png(raw):
     from PIL import Image
     im = Image.open(io.BytesIO(raw))
@@ -1264,7 +1294,9 @@ def _to_png(raw):
 
 
 def _prep_image(raw, kind):
-    """回傳 (bytes, 副檔名, content-type)。背景 → JPG 寬 1024；立繪 → 保留透明的 PNG；圖卡 → PNG 512"""
+    """回傳 (bytes, 副檔名, content-type)。背景 → JPG 寬 1024；立繪 → 保留透明的 PNG；圖卡 → PNG 512；中文字卡 → SVG"""
+    if raw[:5] == b"<svg ":
+        return raw, "svg", "image/svg+xml"
     if kind == "scene":
         from PIL import Image
         im = Image.open(io.BytesIO(raw)).convert("RGB")
@@ -1290,15 +1322,17 @@ def _kind(card):
     return {"_scene": "scene", "_char": "char"}.get(card.get("slot"), "card")
 
 
-def _gen_for(card, desc):
-    """依種類（圖卡／背景／立繪）產生圖片"""
+def _gen_for(card, desc, hint=""):
+    """依種類（圖卡／背景／立繪）產生圖片；hint＝老師的額外要求"""
     k = _kind(card)
+    if k != "card" and _s(hint):
+        desc = f"{desc}. {_s(hint)}"
     scene_style, char_style = STYLE_SETS.get(st.session_state.get("dlg_style"), next(iter(STYLE_SETS.values())))
     if k == "scene":
         return _gen_image(f"{scene_style} Scene: {desc}.{SCENE_TAIL}", size="1536x1024", quality="medium")
     if k == "char":
         return _gen_image(f"{char_style} Character: {desc}.", size="1024x1536", transparent=True, quality="medium")
-    return _gen_image(f"{IMG_STYLE} Subject: {desc}.")
+    return _gen_image(_card_prompt(desc, hint))
 
 
 def _save_card_image(ctx, dialog_id, card, raw):
@@ -1672,12 +1706,16 @@ def _teacher_cards(ctx, dialogs):
     all_cards = [c for s in d["cards"] for c in d["cards"][s]]
     no_img = [c for c in all_cards if not _s(c.get("img")).startswith("http")]
     st.markdown(f"**圖卡：{len(all_cards)} 張，其中 {len(no_img)} 張還沒有圖片檔**（emoji 只是暫代）")
+    hint = st.text_input("🖌️ 給 AI 的圖卡要求（可空白；「一次產生」和每張「換圖→AI 產生」都會照這個畫）", key=f"dlg_hint_{did}",
+                         placeholder="例：畫成一頁日曆，正中間用大大的繁體中文寫出星期幾（例如：星期一），不要出現英文")
+    st.caption("💡 星期、月份、數字這類光看圖分不出來的字，建議用各組下面的「🈶 中文字卡」：不用 AI、馬上做好、字一定正確。"
+               "AI 畫中文字常會寫錯。")
     if no_img and st.button(f"🎨 一次 AI 產生 {len(no_img)} 張缺圖", key="dlg_gen_all"):
         bar = st.progress(0.0)
         ok = 0
         for i, c in enumerate(no_img):
             try:
-                raw, _m = _gen_image(f"{IMG_STYLE} Subject: {c.get('desc') or c['en']}.")
+                raw, _m = _gen_image(_card_prompt(c.get('desc') or c['en'], hint))
                 _save_card_image(ctx, did, c, raw)
                 ok += 1
             except Exception as e:
@@ -1688,12 +1726,21 @@ def _teacher_cards(ctx, dialogs):
 
     ncol = 2 if ctx.get("is_phone") else 4
     for slot, cards in d["cards"].items():
-        st.markdown(f"##### 欄位 `{{{slot}}}`")
+        h1, h2 = st.columns([3, 2])
+        h1.markdown(f"##### 欄位 `{{{slot}}}`")
+        if h2.button(f"🈶 這組全部做成中文字卡（{len(cards)} 張）", key=f"dlg_tc_{did}_{slot}", use_container_width=True,
+                     help="每張卡寫上它的中文（沒有中文就寫英文），會取代原本的圖"):
+            for j, c in enumerate(cards):
+                try:
+                    _save_card_image(ctx, did, c, _text_card_svg(c.get("zh") or c["en"], j))
+                except Exception as e:
+                    st.error(f"{c['en']}：{type(e).__name__}: {e}")
+            st.rerun()
         for i in range(0, len(cards), ncol):
             cols = st.columns(ncol)
-            for col, c in zip(cols, cards[i:i + ncol]):
+            for j, (col, c) in enumerate(zip(cols, cards[i:i + ncol])):
                 with col:
-                    _card_editor(ctx, did, c)
+                    _card_editor(ctx, did, c, hint, i + j)
 
 
 def _teacher_scene(ctx, did, d):
@@ -1734,7 +1781,7 @@ def _teacher_scene(ctx, did, d):
     st.divider()
 
 
-def _card_editor(ctx, did, c):
+def _card_editor(ctx, did, c, hint="", idx=0):
     if _kind(c) == "card":
         st.markdown(f"<div class='dlg-card'>{_img_html(c, 88)}<div class='w'>{html.escape(c['en'])}</div>"
                     f"<div class='z'>{html.escape(c.get('zh', ''))}</div></div>", unsafe_allow_html=True)
@@ -1753,12 +1800,23 @@ def _card_editor(ctx, did, c):
             except Exception as e:
                 st.error(f"儲存失敗：{type(e).__name__}: {e}")
         st.markdown("---")
+        if _kind(c) == "card":
+            tc = st.text_input("🈶 中文字卡上的字", value=c.get("zh") or c["en"], key=f"dlg_tct_{hk}")
+            if st.button("🈶 改用中文字卡（不用 AI）", key=f"dlg_tcok_{hk}", disabled=not tc.strip()):
+                try:
+                    _save_card_image(ctx, did, c, _text_card_svg(tc.strip(), idx))
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"儲存失敗：{type(e).__name__}: {e}")
+            st.markdown("---")
         desc = st.text_input("AI 圖片描述（英文較準）", value=c.get("desc") or c["en"], key=f"dlg_desc_{hk}")
+        extra = st.text_input("給 AI 的額外要求（可中文）", value=hint, key=f"dlg_hint1_{hk}",
+                              placeholder="例：畫成日曆，上面寫大大的「星期一」")
         pend_key = f"dlg_pending_{hk}"
         if st.button("🎨 AI 產生", key=f"dlg_gen_{hk}"):
             with st.spinner("產生中（約 10–30 秒）…"):
                 try:
-                    raw, model = _gen_for(c, desc)
+                    raw, model = _gen_for(c, desc, extra)
                     st.session_state[pend_key] = raw
                 except Exception as e:
                     st.error(f"產生失敗：{e}")
