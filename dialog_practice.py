@@ -2,7 +2,7 @@
 # 🗣️ 對話練習（替換字＋圖卡）模組 — 英文全能練習系統 V2.9.555 起
 # ==============================================================================
 # 一段固定對話，句中 {欄位} 換成不同單字（每個單字一張圖卡）反覆練習。
-# 學生：跟讀 → 看圖說 → 角色對話，每句可錄音，自己勾「說對了／再練」（不自動評分）。
+# 學生：測驗 → 全文示範 → 看圖練習說，每句可錄音，自己勾「說對了／再練」（不自動評分）。
 # 老師：圖卡管理（上傳圖片／AI 產生）、指派（選對話、勾圖卡、輪數）、學生紀錄（抽聽錄音）。
 #
 # 資料：
@@ -25,7 +25,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 import streamlit as st
 
-DLG_VERSION = "2.9.564"   # 只改這個模組時，老師端「🗣️ 對話練習」最上面會顯示這個版本
+DLG_VERSION = "2.9.565"   # 只改這個模組時，老師端「🗣️ 對話練習」最上面會顯示這個版本
 
 # ------------------------------------------------------------------------------
 # 內建示範對話
@@ -70,11 +70,22 @@ DEMO_DIALOG = {
     },
 }
 
-STAGES = ["① 全文示範", "② 看圖說", "③ 角色對話"]
+# V2.9.565 關卡順序：先測驗，再看全文示範，最後看圖練習說
+STAGE_TEST, STAGE_DEMO, STAGE_PIC = "① 測驗", "② 全文示範", "③ 看圖練習說"
+STAGES = [STAGE_TEST, STAGE_DEMO, STAGE_PIC]
+_OLD_STAGE = {"① 跟讀": STAGE_DEMO, "① 全文示範": STAGE_DEMO, "② 看圖說": STAGE_PIC, "③ 角色對話": STAGE_TEST}
+
+
+def _norm_stage(s):
+    """舊指派／舊練習裡的關卡名稱換成目前的名稱"""
+    s = str(s).strip()
+    return _OLD_STAGE.get(s, s)
+
+
 STAGE_HELP = {
-    "① 全文示範": "按場景裡的 ▶️，兩位角色把整段對話演一遍；點下面任一句可以單獨再聽。換下一輪會換一組單字。",
-    "② 看圖說": "替換字變成圖卡，看圖自己說出完整句子，錄完按「看答案」對照。",
-    "③ 角色對話": "對方只出聲音；輪到你時只看中文提示和圖卡，說出英文。",
+    STAGE_TEST: "測驗：對方只出聲音；輪到你時只看中文提示，說出英文。",
+    STAGE_DEMO: "按場景裡的 ▶️，兩位角色把整段對話演一遍；點下面任一句可以單獨再聽。換下一輪會換一組單字。",
+    STAGE_PIC: "看圖練習說：替換字變成圖卡，看圖自己說出完整句子，錄完按「看答案」對照。",
 }
 # V2.9.564 ② ③ 的進行方式：整篇連播（簡單）＝從頭播放，輪到你就停下來錄音，按「繼續」播到下一個錄音點
 FLOWS = ["🎬 整篇連播（簡單）", "🧩 逐句練習"]
@@ -607,7 +618,7 @@ def _make_combos(sel, n):
 
 
 def _start_run(dialog_id, dialog, sel, rounds, stages, assign_id=None, title=""):
-    stages = ["① 全文示範" if str(x).strip() == "① 跟讀" else str(x).strip() for x in stages]  # 舊指派相容
+    stages = [_norm_stage(x) for x in stages]  # 舊指派相容
     allc = {s: [c["en"] for c in dialog["cards"].get(s, [])] for s in _slots_in(dialog)}
     sel = {s: (sel.get(s) or allc.get(s, [])) for s in allc}
     for k in [k for k in st.session_state.keys() if str(k).startswith(("dlg_rec_", "dlg_stage"))]:
@@ -693,9 +704,9 @@ def _render_run(ctx):
     by_en = {s: {c["en"]: c for c in d["cards"].get(s, [])} for s in d["cards"]}
 
     # V2.9.562：更新前就開始的練習可能還記著舊關卡名稱（① 跟讀），換成目前的名稱
-    run["stages"] = [x for x in STAGES if x in ["① 全文示範" if s == "① 跟讀" else s for s in run["stages"]]] or STAGES[:]
-    if st.session_state.get("dlg_stage") == "① 跟讀":
-        st.session_state["dlg_stage"] = STAGES[0]
+    run["stages"] = [x for x in STAGES if x in [_norm_stage(s) for s in run["stages"]]] or STAGES[:]
+    if st.session_state.get("dlg_stage") in _OLD_STAGE:
+        st.session_state["dlg_stage"] = _norm_stage(st.session_state["dlg_stage"])
     if run.get("goto_stage"):
         # 不能在 radio 畫出來之後才改它的值，所以下一關的切換放在這裡（畫 radio 之前）
         st.session_state["dlg_stage"] = run.pop("goto_stage")
@@ -714,7 +725,7 @@ def _render_run(ctx):
     turns = d["turns"]
 
     # V2.9.563：① 全文示範不用選角色，一開始就直接看示範
-    if stage == STAGES[0]:
+    if stage == STAGE_DEMO:
         _render_demo(d, run, combo, run.get("role"), names, speed, rno, n)
         return
 
@@ -727,23 +738,25 @@ def _render_run(ctx):
         else:
             st.markdown("#### 1️⃣ 選一個你的頭像")
             av = st.radio("頭像", AVATARS, horizontal=True, key="dlg_av_pick", label_visibility="collapsed")
-        st.markdown("#### 你要演誰？" if both_chars else "#### 2️⃣ 你要演誰？")
-        role = st.radio("角色", ["A", "B"], horizontal=True, key="dlg_role_pick",
-                        format_func=lambda r: f"{r}：{names[r]}" + ("（先開口）" if turns and turns[0]["role"] == r else ""),
-                        label_visibility="collapsed")
-        if st.button("🚀 開始", type="primary", key="dlg_setup_ok", use_container_width=True):
-            run["avatar"], run["role"] = av, role
-            st.rerun()
+        st.markdown("#### 👇 點選你要演的角色" if both_chars else "#### 2️⃣ 點選你要演的角色")
+        for col, r in zip(st.columns(2), ("A", "B")):
+            lbl = f"🙋 我演 {names[r]}" + ("（先開口）" if turns and turns[0]["role"] == r else "")
+            if col.button(lbl, key=f"dlg_pick_{r}", type="primary", use_container_width=True):
+                run["avatar"], run["role"] = av, r
+                st.rerun()
         return
 
     me = run["role"]
     other = "B" if me == "A" else "A"
     partner_av = AVATARS[(AVATARS.index(run["avatar"]) + 4) % len(AVATARS)] if run["avatar"] in AVATARS else "🧑"
-    f1, f2 = st.columns([3, 2])
+    f1, f2, f3 = st.columns([3, 1.4, 1.4])
     flow = f1.radio("進行方式", FLOWS, horizontal=True, key="dlg_flow")
-    if f2.button(f"🔄 換角色（現在演 {names[me]}）", key="dlg_role_reset", use_container_width=True):
-        run["role"] = None
-        st.rerun()
+    for col, r in ((f2, "A"), (f3, "B")):    # V2.9.565 角色直接點選切換
+        if col.button(("✅ " if r == me else "") + f"演 {names[r]}", key=f"dlg_role_{r}", disabled=r == me,
+                      type="primary" if r == me else "secondary", use_container_width=True):
+            run["role"] = r
+            run["step"], run["fpos"] = {}, {}
+            st.rerun()
 
     # V2.9.560 場景播放器：一次演一句，A／B 的對話都出現在場景裡，操作按鈕在場景下方的面板
     sk = f"{stage}|{rno}"
@@ -753,12 +766,12 @@ def _render_run(ctx):
     def line_html(t):
         k_ = f"{stage}|{rno}|{t['turn']}"
         mine_ = t["role"] == me
-        if stage == STAGES[0] or run["reveal"].get(k_):
+        if stage == STAGE_DEMO or run["reveal"].get(k_):
             out = _fill(t["en"], combo, "en", "mark")
-            if stage == STAGES[0] and t["zh"]:
+            if stage == STAGE_DEMO and t["zh"]:
                 out += f"<div class='dlg-zh'>{_fill(t['zh'], combo, 'zh', 'mark')}</div>"
             return out
-        if stage == STAGES[1]:
+        if stage == STAGE_PIC:
             return _fill(t["en"], combo, "en", "blank" if mine_ else "mark")
         if mine_:
             zh_ = _fill(t["zh"], combo, "zh", "blank") if t["zh"] else ""
@@ -788,7 +801,7 @@ def _render_run(ctx):
             rec_html = "🎙️ 請錄音 ⬇"
     st.markdown(_stage_html(d, list(combo.values()),
                             tags={me: f"{names[me]}（你）", other: names[other]},
-                            show_text=(stage == STAGES[0]),
+                            show_text=(stage == STAGE_DEMO),
                             emo={me: run["avatar"], other: partner_av},
                             active=active, say=say,
                             prev_role=prev_role, prev_say=line_html(prev) if prev_role else "",
@@ -817,21 +830,21 @@ def _render_run(ctx):
                 c1, c2, c3 = st.columns(3)
                 if c1.button("⬅️ 上一句", key=f"dlg_pv_{k}", disabled=i == 0, use_container_width=True):
                     go(i - 1)
-                if stage == STAGES[2] and not revealed:
+                if stage == STAGE_TEST and not revealed:
                     if c2.button("📝 顯示文字", key=f"dlg_rv_{k}", use_container_width=True):
                         run["reveal"][k] = True
                         st.rerun()
                 if c3.button("下一句 ➡️", key=f"dlg_nx_{k}", type="primary", use_container_width=True):
                     go(i + 1)
             else:
-                if stage == STAGES[0] or revealed:
-                    _play(plain, cur["role"], speed, autoplay=first_show and stage == STAGES[0])
+                if stage == STAGE_DEMO or revealed:
+                    _play(plain, cur["role"], speed, autoplay=first_show and stage == STAGE_DEMO)
                 rec = st.audio_input("🎙️ 錄下你說的這一句", key=f"dlg_rec_{k}")
                 done = run["checks"].get(k)
                 c1, c2, c3, c4 = st.columns(4)
                 if c1.button("⬅️ 上一句", key=f"dlg_pv_{k}", disabled=i == 0, use_container_width=True):
                     go(i - 1)
-                if stage != STAGES[0] and not revealed:
+                if stage != STAGE_DEMO and not revealed:
                     if c2.button("👀 看答案", key=f"dlg_ans_{k}", use_container_width=True):
                         run["reveal"][k] = True
                         st.rerun()
@@ -878,7 +891,7 @@ def _render_run(ctx):
         for j, t in enumerate(turns):
             mark = "▶️ " if j == i else ""
             st.markdown(f"{mark}**{html.escape(names.get(t['role'], t['role']))}**："
-                        f"{line_html(t) if j < i or stage == STAGES[0] else '……'}", unsafe_allow_html=True)
+                        f"{line_html(t) if j < i or stage == STAGE_DEMO else '……'}", unsafe_allow_html=True)
     if rno > 0:
         if st.button("⬅️ 回上一輪", key="dlg_prev"):
             run["round"] = rno - 1
@@ -986,8 +999,8 @@ def _render_demo(d, run, combo, me, names, speed, rno, n):
     if rno < n - 1 and c2.button("🔀 換一組單字（下一輪）", key="dlg_demo_next", use_container_width=True):
         run["round"] = rno + 1
         st.rerun()
-    nxt = 1 if len(run["stages"]) > 1 else None
-    if nxt and c3.button(f"進入 {run['stages'][nxt]} ➡️", key="dlg_demo_stage", type="primary", use_container_width=True):
+    nxt = run["stages"].index(STAGE_DEMO) + 1 if STAGE_DEMO in run["stages"] else len(run["stages"])
+    if nxt < len(run["stages"]) and c3.button(f"進入 {run['stages'][nxt]} ➡️", key="dlg_demo_stage", type="primary", use_container_width=True):
         run["goto_stage"] = run["stages"][nxt]
         run["round"] = 0
         st.rerun()
@@ -1404,7 +1417,7 @@ def _teacher_assign(ctx, dialogs):
     end = c2.date_input("截止日期", value=ctx["today"] + timedelta(days=7), key="dlg_a_end")
     if "dlg_a_stages" in st.session_state:   # 舊關卡名稱留在畫面狀態裡會出錯，先濾掉
         st.session_state["dlg_a_stages"] = [x for x in STAGES if x in
-                                            ["① 全文示範" if s == "① 跟讀" else s for s in st.session_state["dlg_a_stages"]]]
+                                            [_norm_stage(s) for s in st.session_state["dlg_a_stages"]]]
     stages = st.multiselect("關卡", STAGES, default=STAGES, key="dlg_a_stages")
 
     df_s = ctx["df_s"]
