@@ -25,7 +25,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 import streamlit as st
 
-DLG_VERSION = "2.9.571"   # 只改這個模組時，老師端「🗣️ 對話練習」最上面會顯示這個版本
+DLG_VERSION = "2.9.572"   # 只改這個模組時，老師端「🗣️ 對話練習」最上面會顯示這個版本
 
 # ------------------------------------------------------------------------------
 # 內建示範對話
@@ -426,6 +426,9 @@ def _fill(tpl, combo, field="en", mode="plain"):
             out.append(m.group(0) if mode == "plain" else html.escape(m.group(0)))
         else:
             val = card["en"] if field == "en" else (card.get("zh") or card["en"])
+            # V2.9.572 替換字在句首時第一個字母大寫（his → His）
+            if field == "en" and val and re.search(r"(^|[.?!]\s*)$", tpl[:m.start()].strip()):
+                val = val[0].upper() + val[1:]
             if mode == "plain":
                 out.append(val)
             elif mode == "mark":
@@ -1376,6 +1379,10 @@ Rules:
   Each slot needs at least 3 cards. Words that cannot be swapped (e.g. "today") just stay in the sentences.
 - One card is chosen at random for each slot, and the same placeholder always shows the same word in every
   turn. The dialogue must make sense for ANY choice. Different slots never get the same word in one round.
+- A slot may start a sentence: write its cards in lowercase (e.g. "his"); the program capitalizes it there.
+- If patterns differ only in a pronoun/person word (e.g. his / her, he / she), make that word ONE slot
+  (e.g. {who}) whose cards are those words, each with a picture desc showing who it means ("a boy", "a girl"),
+  instead of repeating near-identical turns.
 - YES/NO QUESTIONS about a swappable word: write the question with {?slot} and the answer as two versions
   joined by " || " (YES version first) in BOTH "en" and "zh". Example:
   {"role": "A", "en": "Is it {?day} today?", "zh": "今天是{?day}嗎？"},
