@@ -25,7 +25,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 import streamlit as st
 
-DLG_VERSION = "2.9.565"   # 只改這個模組時，老師端「🗣️ 對話練習」最上面會顯示這個版本
+DLG_VERSION = "2.9.566"   # 只改這個模組時，老師端「🗣️ 對話練習」最上面會顯示這個版本
 
 # ------------------------------------------------------------------------------
 # 內建示範對話
@@ -319,6 +319,10 @@ def load_dialogs(ctx):
                 seen_sheet_cards.add((did, slot))
             d["cards"][slot].append({"en": en, "zh": _s(r.get("中文")),
                                      "img": _s(r.get("圖")), "desc": _s(r.get("圖片描述"))})
+    # V2.9.566 剛用「AI 產生對話」存檔、試算表快取還沒更新的對話，先放進清單
+    for pid, pdlg in (st.session_state.get("dlg_pending") or {}).items():
+        if pid not in dialogs:
+            dialogs[pid] = json.loads(json.dumps(pdlg, ensure_ascii=False))
     imgs = _load_card_images(ctx["sb"])
     for did, d in dialogs.items():
         d.pop("_from_demo", None)
@@ -1249,18 +1253,275 @@ def _save_card_image(ctx, dialog_id, card, raw):
     return url
 
 
+# ── V2.9.566 AI 產生對話：貼上課文句型＋單字 → AI 擬一段替換字對話 → 老師修改 → 存進試算表 ──
+_GEN_SYS = """You design short dialogue-practice tasks for Taiwanese EFL students.
+Given a lesson's target sentence patterns and vocabulary, write ONE natural two-person dialogue (A and B)
+that practises the patterns, with swappable words written as {slot} placeholders. Return JSON only:
+{"title": "short title in Traditional Chinese",
+ "names": {"A": "English first name", "B": "English first name"},
+ "scene_desc": "English description of a background place (no people) that fits the dialogue",
+ "char_desc": {"A": "English appearance of A: name, age, hair, clothes", "B": "..."},
+ "turns": [{"role": "A", "en": "...", "zh": "Traditional Chinese translation"}],
+ "slots": {"slot_name": [{"en": "word", "zh": "Traditional Chinese", "img": "one emoji",
+                          "desc": "English description of a flashcard picture for this word"}]}}
+Rules:
+- 4 to 8 turns, A and B alternate, A speaks first. Use the given sentence patterns as exactly as possible;
+  every pattern should appear at least once. Keep sentences short and at the students' level.
+- A and B each have at least 2 lines (students may play either role).
+- Write {slot_name} (lowercase ascii, e.g. {day}) where a vocabulary word can be swapped. The same
+  placeholder must appear in both "en" and "zh" of that turn ("zh" shows the Chinese meaning there).
+- Cards for each slot come from the given vocabulary (add closely related words only if fewer than 3 fit).
+  Each slot needs at least 3 cards. Words that cannot be swapped (e.g. "today") just stay in the sentences.
+- One card is chosen at random for each slot, independently, and the same placeholder always shows the same
+  word in every turn. The dialogue must make sense for ANY choice. If two places must be different words
+  (e.g. "Is it {day} today?" / "No, it isn't. It's {day2}."), use two slots with NON-OVERLAPPING card lists.
+- JSON only, no markdown."""
+
+_GEN_MODELS = ["gpt-4o", "gpt-4o-mini"]
+
+
+def _ai_dialog(lesson, patterns, words, level):
+    import openai
+    cl = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+    user = (f"Lesson: {lesson or '(not given)'}\nStudent level: {level or '國小'}\n\n"
+            f"Target sentence patterns:\n{patterns.strip()}\n\nVocabulary:\n{words.strip()}")
+    last = None
+    for model in _GEN_MODELS:
+        try:
+            r = cl.chat.completions.create(
+                model=model, temperature=0.7, response_format={"type": "json_object"},
+                messages=[{"role": "system", "content": _GEN_SYS}, {"role": "user", "content": user}])
+            return _norm_gen(json.loads(r.choices[0].message.content))
+        except Exception as e:
+            last = e
+    raise RuntimeError(f"{type(last).__name__}: {last}")
+
+
+def _norm_gen(g):
+    """把 AI 回傳的 JSON 整理成固定格式（缺的欄位補空）"""
+    g = g if isinstance(g, dict) else {}
+    names = g.get("names") or {}
+    cdesc = g.get("char_desc") or {}
+    out = {"title": _s(g.get("title")),
+           "names": {"A": _s(names.get("A")) or "Amy", "B": _s(names.get("B")) or "Ben"},
+           "scene_desc": _s(g.get("scene_desc")),
+           "char_desc": {"A": _s(cdesc.get("A")), "B": _s(cdesc.get("B"))},
+           "turns": [], "slots": {}}
+    for t in g.get("turns") or []:
+        if isinstance(t, dict) and _s(t.get("en")):
+            role = (_s(t.get("role")) or "A").upper()[:1]
+            out["turns"].append({"role": role if role in ("A", "B") else "A",
+                                 "en": _s(t.get("en")), "zh": _s(t.get("zh"))})
+    for slot, cards in (g.get("slots") or {}).items():
+        slot = re.sub(r"[^a-z0-9_]", "", str(slot).lower())
+        cs = [{"en": _s(c.get("en")), "zh": _s(c.get("zh")), "img": _s(c.get("img")), "desc": _s(c.get("desc"))}
+              for c in (cards or []) if isinstance(c, dict) and _s(c.get("en"))]
+        if slot and cs:
+            out["slots"][slot] = cs
+    return out
+
+
+def _check_gen(g):
+    """檢查 AI 擬的對話能不能用，回傳要提醒老師的問題"""
+    warn = []
+    used = set()
+    for n, t in enumerate(g["turns"], 1):
+        en_s = set(re.findall(r"\{(\w+)\}", t["en"]))
+        zh_s = set(re.findall(r"\{(\w+)\}", t["zh"]))
+        used |= en_s
+        for s in en_s - set(g["slots"]):
+            warn.append(f"第 {n} 句用了 {{{s}}}，但替換字裡沒有這個欄位")
+        if t["zh"] and en_s != zh_s:
+            warn.append(f"第 {n} 句英文和中文的 {{欄位}} 不一致")
+    for s, cs in g["slots"].items():
+        if s not in used:
+            warn.append(f"替換字欄位 {{{s}}} 沒有出現在對話裡")
+        if len(cs) < 2:
+            warn.append(f"欄位 {{{s}}} 只有 {len(cs)} 張圖卡，至少要 2 張才能替換")
+    ss = sorted(used & set(g["slots"]))
+    for a_i in range(len(ss)):
+        for b_i in range(a_i + 1, len(ss)):
+            both = {c["en"].lower() for c in g["slots"][ss[a_i]]} & {c["en"].lower() for c in g["slots"][ss[b_i]]}
+            if both:
+                warn.append(f"{{{ss[a_i]}}} 和 {{{ss[b_i]}}} 有相同的字（{', '.join(sorted(both))}），"
+                            "可能抽到一樣的（例如「Is it Monday? No, it's Monday.」）")
+    roles = [t["role"] for t in g["turns"]]
+    if roles.count("A") < 1 or roles.count("B") < 1:
+        warn.append("A、B 兩個角色都要有台詞")
+    return warn
+
+
+def _gen_rows(did, level, g):
+    """產生要寫進「對話範本」「替換字」兩張表的列"""
+    rows_t, seen = [], set()
+    for n, t in enumerate(g["turns"], 1):
+        first_role = t["role"] not in seen
+        seen.add(t["role"])
+        rows_t.append({"對話ID": did, "標題": g["title"] if n == 1 else "", "程度": level if n == 1 else "",
+                       "回合": n, "角色": t["role"], "角色名稱": g["names"].get(t["role"], t["role"]),
+                       "英文": t["en"], "中文": t["zh"], "情境": g["scene_desc"] if n == 1 else "",
+                       "角色描述": g["char_desc"].get(t["role"], "") if first_role else ""})
+    rows_c = [{"對話ID": did, "欄位": s, "英文": c["en"], "中文": c["zh"], "圖": c["img"], "圖片描述": c["desc"]}
+              for s, cs in g["slots"].items() for c in cs]
+    return rows_t, rows_c
+
+
+def _gen_as_dialog(level, g):
+    """存檔後、試算表快取還沒更新前，先用這份資料讓對話出現在清單裡"""
+    return {"title": g["title"], "level": level, "names": dict(g["names"]),
+            "scene_desc": g["scene_desc"], "char_desc": dict(g["char_desc"]),
+            "turns": [{"turn": n, "role": t["role"], "en": t["en"], "zh": t["zh"]} for n, t in enumerate(g["turns"], 1)],
+            "cards": {s: [dict(c) for c in cs] for s, cs in g["slots"].items()}}
+
+
+def _gspread_book():
+    import gspread
+    from google.oauth2.service_account import Credentials
+    gs = st.secrets["connections"]["gsheets"]
+    info = {"type": "service_account", "project_id": gs["project_id"], "private_key_id": gs["private_key_id"],
+            "private_key": gs["private_key"], "client_email": gs["client_email"], "client_id": gs["client_id"],
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth", "token_uri": "https://oauth2.googleapis.com/token",
+            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+            "client_x509_cert_url": gs.get("client_x509_cert_url", "")}
+    gc = gspread.authorize(Credentials.from_service_account_info(
+        info, scopes=["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]))
+    ref = str(gs["spreadsheet"])
+    return gc.open_by_url(ref) if ref.startswith("http") else gc.open_by_key(ref)
+
+
+def _append_rows(book, title, rows, headers):
+    """把 rows（dict）接在工作表最後面；工作表不存在就建立；缺的標題欄補在最右邊"""
+    try:
+        ws = book.worksheet(title)
+    except Exception:
+        ws = book.add_worksheet(title=title, rows=200, cols=max(12, len(headers)))
+        ws.append_row(headers, value_input_option="RAW")
+    head = [str(h).strip() for h in ws.row_values(1)]
+    if not any(head):
+        head = []
+    miss = [h for h in headers if h not in head]
+    if miss:
+        head = head + miss
+        if ws.col_count < len(head):
+            ws.add_cols(len(head) - ws.col_count)
+        ws.update(values=[head], range_name="A1")
+    ws.append_rows([[r.get(h, "") for h in head] for r in rows], value_input_option="RAW")
+
+
+def _teacher_gen(ctx, dialogs):
+    st.markdown("#### 🪄 貼上課文的句型和單字，AI 幫你擬一段替換字對話")
+    st.caption("AI 會自己判斷哪些單字可以替換、怎麼排成 A／B 對話，並寫好情境和角色描述（之後可以一鍵畫圖）。產生後可以先修改再存。")
+    c1, c2, c3 = st.columns([3, 2, 1])
+    lesson = c1.text_input("課名／單元", key="dlg_g_lesson", placeholder="例：Wonder World B05 L03")
+    auto_id = re.sub(r"[^A-Za-z0-9]+", "-", lesson).strip("-").upper()[:30]
+    did = (c2.text_input("對話ID（空白＝用課名）", key="dlg_g_id", placeholder=auto_id or "例：WW-B05-L03").strip()
+           or auto_id)
+    level = c3.text_input("程度", value="國小", key="dlg_g_level")
+    p1, p2 = st.columns(2)
+    pats = p1.text_area("課文句型（一行一句）", height=170, key="dlg_g_pats",
+                        placeholder="What day is today?\nIt's Sunday.\nIs it Monday today?\nYes, it is.\nNo, it isn't. It's Tuesday.")
+    words = p2.text_area("課文單字（一行一個）", height=170, key="dlg_g_words",
+                         placeholder="Sunday\nMonday\nTuesday\n…\nday\ntoday")
+    if st.button("🪄 AI 產生對話" if not st.session_state.get("dlg_gen") else "🔁 重新產生一版",
+                 type="primary", key="dlg_g_go", disabled=not pats.strip()):
+        with st.spinner("AI 正在擬對話…（約 10～20 秒）"):
+            try:
+                st.session_state["dlg_gen"] = _ai_dialog(lesson, pats, words, level)
+                st.session_state["dlg_gen_n"] = st.session_state.get("dlg_gen_n", 0) + 1
+            except Exception as e:
+                st.error(f"AI 產生失敗：{type(e).__name__}: {e}")
+    g0 = st.session_state.get("dlg_gen")
+    if not g0:
+        return
+    gn = st.session_state.get("dlg_gen_n", 0)
+
+    st.markdown("---")
+    st.markdown("##### ✏️ 檢查／修改（表格可以直接改字、加列、刪列）")
+    a1, a2, a3 = st.columns([2, 1, 1])
+    title = a1.text_input("標題", value=g0["title"] or lesson, key=f"dlg_g_title_{gn}")
+    na = a2.text_input("A 角色名字", value=g0["names"]["A"], key=f"dlg_g_na_{gn}")
+    nb = a3.text_input("B 角色名字", value=g0["names"]["B"], key=f"dlg_g_nb_{gn}")
+    st.caption("對話（句子裡的 {欄位} 會換成下面的替換字）")
+    df_t = st.data_editor(pd.DataFrame(g0["turns"], columns=["role", "en", "zh"]), num_rows="dynamic",
+                          use_container_width=True, key=f"dlg_g_turns_{gn}",
+                          column_config={"role": st.column_config.SelectboxColumn("角色", options=["A", "B"], required=True, width="small"),
+                                         "en": st.column_config.TextColumn("英文", width="large"),
+                                         "zh": st.column_config.TextColumn("中文", width="large")})
+    st.caption("替換字（每個欄位至少 2～3 張圖卡；「圖」可以放 emoji，之後也能 AI 產生圖片）")
+    cards0 = [{"slot": s, **c} for s, cs in g0["slots"].items() for c in cs]
+    df_c = st.data_editor(pd.DataFrame(cards0, columns=["slot", "en", "zh", "img", "desc"]), num_rows="dynamic",
+                          use_container_width=True, key=f"dlg_g_cards_{gn}",
+                          column_config={"slot": st.column_config.TextColumn("欄位", width="small"),
+                                         "en": st.column_config.TextColumn("英文"),
+                                         "zh": st.column_config.TextColumn("中文"),
+                                         "img": st.column_config.TextColumn("圖", width="small"),
+                                         "desc": st.column_config.TextColumn("圖片描述（英文，給 AI 畫圖卡）", width="large")})
+    with st.expander("🎬 情境與角色描述（給 AI 畫背景和角色立繪，英文）"):
+        scene = st.text_area("情境（背景，不含人物）", value=g0["scene_desc"], key=f"dlg_g_scene_{gn}", height=80)
+        da = st.text_area(f"A 角色描述", value=g0["char_desc"]["A"], key=f"dlg_g_da_{gn}", height=70)
+        db = st.text_area(f"B 角色描述", value=g0["char_desc"]["B"], key=f"dlg_g_db_{gn}", height=70)
+
+    slots = {}
+    for r in df_c.to_dict("records"):
+        s = re.sub(r"[^a-z0-9_]", "", _s(r.get("slot")).lower())
+        if s and _s(r.get("en")):
+            slots.setdefault(s, []).append({"en": _s(r.get("en")), "zh": _s(r.get("zh")),
+                                            "img": _s(r.get("img")), "desc": _s(r.get("desc"))})
+    g = {"title": _s(title) or did, "names": {"A": _s(na) or "A", "B": _s(nb) or "B"},
+         "scene_desc": _s(scene), "char_desc": {"A": _s(da), "B": _s(db)}, "slots": slots,
+         "turns": [{"role": (_s(r.get("role")) or "A").upper()[:1], "en": _s(r.get("en")), "zh": _s(r.get("zh"))}
+                   for r in df_t.to_dict("records") if _s(r.get("en"))]}
+
+    st.markdown("##### 👀 預覽（隨機抽一組替換字）")
+    combo = {s: random.Random(gn).choice(cs) for s, cs in slots.items()}
+    for t in g["turns"]:
+        nm = html.escape(g["names"].get(t["role"], t["role"]))
+        zh = _fill(t["zh"], combo, "zh", "mark") if t["zh"] else ""
+        st.markdown(f"**{t['role']}｜{nm}**：{_fill(t['en'], combo, 'en', 'mark')}"
+                    + (f"<span style='color:#888'>　{zh}</span>" if zh else ""), unsafe_allow_html=True)
+    warn = _check_gen(g)
+    for w in warn:
+        st.warning("⚠️ " + w)
+
+    exists = did in dialogs
+    if not did:
+        st.info("請填「課名／單元」或「對話ID」。")
+    elif exists:
+        st.error(f"對話ID「{did}」已經存在，請換一個 ID（例如加 -2）。")
+    rows_t, rows_c = _gen_rows(did, level, g)
+    if st.button(f"💾 存進試算表（對話ID：{did or '—'}）", type="primary", key="dlg_g_save",
+                 disabled=not did or exists or not g["turns"]):
+        try:
+            book = _gspread_book()
+            _append_rows(book, "對話範本", rows_t, ["對話ID", "標題", "程度", "回合", "角色", "角色名稱", "英文", "中文", "情境", "角色描述"])
+            _append_rows(book, "替換字", rows_c, ["對話ID", "欄位", "英文", "中文", "圖", "圖片描述"])
+            st.session_state.setdefault("dlg_pending", {})[did] = _gen_as_dialog(level, g)
+            _read_sheet.clear()
+            st.session_state.pop("dlg_gen", None)
+            st.success(f"✅ 已存進試算表：{did}。接著到「🖼️ 對話與圖卡」選它，一鍵產生情境畫面和圖卡圖片，再到「📌 指派」。")
+        except Exception as e:
+            st.error(f"寫入試算表失敗：{type(e).__name__}: {e}　→ 可以用下面「手動貼上」的內容自己貼進試算表。")
+    with st.expander("📋 手動貼上用（複製後貼到試算表最下面一列）"):
+        st.caption("「對話範本」分頁（欄位順序：對話ID｜標題｜程度｜回合｜角色｜角色名稱｜英文｜中文｜情境｜角色描述）")
+        st.code("\n".join("\t".join(str(r[h]) for h in r) for r in rows_t), language=None)
+        st.caption("「替換字」分頁（欄位順序：對話ID｜欄位｜英文｜中文｜圖｜圖片描述）")
+        st.code("\n".join("\t".join(str(r[h]) for h in r) for r in rows_c), language=None)
+
+
 def render_teacher(ctx):
     st.markdown(_CSS, unsafe_allow_html=True)
     st.caption(f"對話練習模組 V{DLG_VERSION}")
     dialogs = load_dialogs(ctx)
-    tabs = st.tabs(["🖼️ 對話與圖卡", "📌 指派", "🎧 學生紀錄", "⚙️ 設定說明"])
+    tabs = st.tabs(["🪄 AI 產生對話", "🖼️ 對話與圖卡", "📌 指派", "🎧 學生紀錄", "⚙️ 設定說明"])
     with tabs[0]:
-        _teacher_cards(ctx, dialogs)
+        _teacher_gen(ctx, dialogs)
     with tabs[1]:
-        _teacher_assign(ctx, dialogs)
+        _teacher_cards(ctx, dialogs)
     with tabs[2]:
-        _teacher_records(ctx, dialogs)
+        _teacher_assign(ctx, dialogs)
     with tabs[3]:
+        _teacher_records(ctx, dialogs)
+    with tabs[4]:
         _teacher_setup()
 
 
