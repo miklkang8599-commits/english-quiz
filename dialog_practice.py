@@ -25,7 +25,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 import streamlit as st
 
-DLG_VERSION = "2.9.566"   # 只改這個模組時，老師端「🗣️ 對話練習」最上面會顯示這個版本
+DLG_VERSION = "2.9.567"   # 只改這個模組時，老師端「🗣️ 對話練習」最上面會顯示這個版本
 
 # ------------------------------------------------------------------------------
 # 內建示範對話
@@ -349,13 +349,54 @@ def load_dialogs(ctx):
 
 
 def _slots_in(dialog):
+    """對話裡用到的替換字欄位（{?day} 算在 day 裡）"""
+    out = []
+    for t in dialog["turns"]:
+        for m in _SLOT_RE.finditer(t["en"] + " " + t["zh"]):
+            s = _base_slot(m.group(1))
+            if s and s not in out:
+                out.append(s)
+    return out
+
+
+# V2.9.567 是非問句：
+#   問句寫 {?day}：從 {day} 的圖卡裡抽；「是」的輪和 {day} 同一個字，「不是」的輪一定是不同的字（程式篩選）
+#   回答用「 || 」分開兩種說法：Yes, it is. || No, it isn't. It's {day}.（中文也一樣）
+#   每輪輪流出「是」和「不是」，兩種回答都會練到
+def _base_slot(s):
+    return str(s).strip().lstrip("?").strip()
+
+
+def _ask_slots(dialog):
     out = []
     for t in dialog["turns"]:
         for m in _SLOT_RE.finditer(t["en"] + " " + t["zh"]):
             s = m.group(1).strip()
-            if s not in out:
+            if s.startswith("?") and s not in out:
                 out.append(s)
     return out
+
+
+def _is_yes(combo_words):
+    return all(w == combo_words.get(_base_slot(s)) for s, w in combo_words.items() if str(s).startswith("?"))
+
+
+def _pick_branch(text, yes):
+    if "||" not in (text or ""):
+        return text
+    a, b = text.split("||", 1)
+    return (a if yes else b).strip()
+
+
+def _resolve_turns(turns, combo_words):
+    """依這一輪的字，選出「是」或「不是」那一種說法"""
+    yes = _is_yes(combo_words)
+    return [dict(t, en=_pick_branch(t["en"], yes), zh=_pick_branch(t["zh"], yes)) for t in turns]
+
+
+def _sign_cards(combo):
+    """場景看板只放真正答案的卡（不放問句 {?…} 的卡，免得學生混淆）"""
+    return [c for s, c in combo.items() if not str(s).startswith("?")]
 
 
 # ------------------------------------------------------------------------------
@@ -604,7 +645,7 @@ def _save_log(ctx, run, stage, rno, tno, combo_words, check, audio_bytes):
 # ------------------------------------------------------------------------------
 # 學生端
 # ------------------------------------------------------------------------------
-def _make_combos(sel, n):
+def _make_combos(sel, n, asks=()):
     cols = {}
     for slot, words in sel.items():
         words = list(words)
@@ -618,7 +659,26 @@ def _make_combos(sel, n):
                 w.append(w.pop(0))
             seq += w
         cols[slot] = seq[:n]
-    return [{s: cols[s][i] for s in cols} for i in range(n)]
+    combos = [{s: cols[s][i] for s in cols} for i in range(n)]
+    # V2.9.567 不同欄位但圖卡重疊時（例如 {day} 和 {day2}），同一輪不要抽到同一個字
+    for cb in combos:
+        used = []
+        for s in list(cb):
+            if cb[s] in used:
+                left = [w for w in sel.get(s, []) if w not in used]
+                if left:
+                    cb[s] = random.choice(left)
+            used.append(cb[s])
+    # 是非問句 {?x}：輪流出「是」（同一個字）和「不是」（一定不同的字）
+    off = random.randint(0, 1)
+    for i, cb in enumerate(combos):
+        for q in asks:
+            b = _base_slot(q)
+            if b not in cb:
+                continue
+            others = [w for w in sel.get(b, []) if w != cb[b]]
+            cb[q] = cb[b] if (i + off) % 2 == 0 or not others else random.choice(others)
+    return combos
 
 
 def _start_run(dialog_id, dialog, sel, rounds, stages, assign_id=None, title=""):
@@ -630,7 +690,7 @@ def _start_run(dialog_id, dialog, sel, rounds, stages, assign_id=None, title="")
     st.session_state["dlg_run"] = {
         "assign_id": assign_id, "dialog_id": dialog_id, "title": title or dialog["title"],
         "sel": sel, "rounds": max(1, int(rounds)), "stages": [x for x in STAGES if x in stages] or STAGES[:],
-        "combos": _make_combos(sel, max(1, int(rounds))), "avatar": None, "role": None,
+        "combos": _make_combos(sel, max(1, int(rounds)), _ask_slots(dialog)), "avatar": None, "role": None,
         "round": 0, "checks": {}, "reveal": {},
     }
 
@@ -725,7 +785,9 @@ def _render_run(ctx):
     n = run["rounds"]
     rno = min(run["round"], n - 1)
     combo_words = run["combos"][rno]
-    combo = {s: by_en.get(s, {}).get(w, {"en": w, "zh": "", "img": "", "slot": s}) for s, w in combo_words.items()}
+    combo = {s: by_en.get(_base_slot(s), {}).get(w, {"en": w, "zh": "", "img": "", "slot": _base_slot(s)})
+             for s, w in combo_words.items()}
+    d = dict(d, turns=_resolve_turns(d["turns"], combo_words))   # V2.9.567 是非問句選「是／不是」的說法
     turns = d["turns"]
 
     # V2.9.563：① 全文示範不用選角色，一開始就直接看示範
@@ -803,7 +865,7 @@ def _render_run(ctx):
             rec_html = "✅ 錄好了！按下面自評 ⬇"
         else:
             rec_html = "🎙️ 請錄音 ⬇"
-    st.markdown(_stage_html(d, list(combo.values()),
+    st.markdown(_stage_html(d, _sign_cards(combo),
                             tags={me: f"{names[me]}（你）", other: names[other]},
                             show_text=(stage == STAGE_DEMO),
                             emo={me: run["avatar"], other: partner_av},
@@ -945,7 +1007,7 @@ def _demo_html(d, combo, tags, emo, speed):
         nm = html.escape(d["names"].get(t["role"], t["role"]))
         rows.append(f"<div class='dm-row' id='r{j}' onclick='one({j})'><span class='nm {t['role']}'>{nm}</span>"
                     f"<div><div>{en_html}</div><div class='zh'>{zh_html}</div></div></div>")
-    stage = _stage_html(d, list(combo.values()), tags=tags, show_text=True, emo=emo)
+    stage = _stage_html(d, _sign_cards(combo), tags=tags, show_text=True, emo=emo)
     data = json.dumps(lines, ensure_ascii=False).replace("</", "<\\/")
     js = """<script>
 const L=__DATA__;
@@ -1091,7 +1153,7 @@ def _render_flow(ctx, d, run, stage, combo, combo_words, me, names, speed, rno, 
     stop = {"r": stop_t["role"], "h": line_html(stop_t)} if stop_t else None
     pill = "✅ 錄好了！按「繼續」⬇" if has_rec else "🎙️ 請錄音 ⬇"
     nonce = run.setdefault("fnonce", 0)
-    page = _flow_html(d, tags, emo, list(combo.values()), False, seg, prev0, stop, pill, play, nonce)
+    page = _flow_html(d, tags, emo, _sign_cards(combo), False, seg, prev0, stop, pill, play, nonce)
     try:
         import streamlit.components.v1 as components
         components.html(page, height=395, scrolling=False)
@@ -1272,9 +1334,15 @@ Rules:
   placeholder must appear in both "en" and "zh" of that turn ("zh" shows the Chinese meaning there).
 - Cards for each slot come from the given vocabulary (add closely related words only if fewer than 3 fit).
   Each slot needs at least 3 cards. Words that cannot be swapped (e.g. "today") just stay in the sentences.
-- One card is chosen at random for each slot, independently, and the same placeholder always shows the same
-  word in every turn. The dialogue must make sense for ANY choice. If two places must be different words
-  (e.g. "Is it {day} today?" / "No, it isn't. It's {day2}."), use two slots with NON-OVERLAPPING card lists.
+- One card is chosen at random for each slot, and the same placeholder always shows the same word in every
+  turn. The dialogue must make sense for ANY choice. Different slots never get the same word in one round.
+- YES/NO QUESTIONS about a swappable word: write the question with {?slot} and the answer as two versions
+  joined by " || " (YES version first) in BOTH "en" and "zh". Example:
+  {"role": "A", "en": "Is it {?day} today?", "zh": "今天是{?day}嗎？"},
+  {"role": "B", "en": "Yes, it is. || No, it isn't. It's {day}.", "zh": "是的，沒錯。 || 不，不是。今天是{day}。"}
+  {day} is the real answer (shown to students as a picture); the program makes {?day} the same word in
+  "yes" rounds and a DIFFERENT word in "no" rounds, and shows the matching version. {?day} needs no cards
+  of its own. If the lesson has yes/no answers like "Yes, it is. / No, it isn't.", practise them this way.
 - JSON only, no markdown."""
 
 _GEN_MODELS = ["gpt-4o", "gpt-4o-mini"]
@@ -1326,25 +1394,22 @@ def _check_gen(g):
     warn = []
     used = set()
     for n, t in enumerate(g["turns"], 1):
-        en_s = set(re.findall(r"\{(\w+)\}", t["en"]))
-        zh_s = set(re.findall(r"\{(\w+)\}", t["zh"]))
-        used |= en_s
-        for s in en_s - set(g["slots"]):
+        en_s = set(re.findall(r"\{(\??\w+)\}", t["en"]))
+        zh_s = set(re.findall(r"\{(\??\w+)\}", t["zh"]))
+        used |= {_base_slot(x) for x in en_s}
+        for s in {_base_slot(x) for x in en_s} - set(g["slots"]):
             warn.append(f"第 {n} 句用了 {{{s}}}，但替換字裡沒有這個欄位")
         if t["zh"] and en_s != zh_s:
             warn.append(f"第 {n} 句英文和中文的 {{欄位}} 不一致")
+        if t["zh"] and ("||" in t["en"]) != ("||" in t["zh"]):
+            warn.append(f"第 {n} 句英文和中文都要用「||」分開「是／不是」兩種說法")
     for s, cs in g["slots"].items():
         if s not in used:
             warn.append(f"替換字欄位 {{{s}}} 沒有出現在對話裡")
         if len(cs) < 2:
             warn.append(f"欄位 {{{s}}} 只有 {len(cs)} 張圖卡，至少要 2 張才能替換")
-    ss = sorted(used & set(g["slots"]))
-    for a_i in range(len(ss)):
-        for b_i in range(a_i + 1, len(ss)):
-            both = {c["en"].lower() for c in g["slots"][ss[a_i]]} & {c["en"].lower() for c in g["slots"][ss[b_i]]}
-            if both:
-                warn.append(f"{{{ss[a_i]}}} 和 {{{ss[b_i]}}} 有相同的字（{', '.join(sorted(both))}），"
-                            "可能抽到一樣的（例如「Is it Monday? No, it's Monday.」）")
+    if any("||" in t["en"] for t in g["turns"]) and not any("{?" in t["en"] for t in g["turns"]):
+        warn.append("有「是／不是」兩種回答（||），但問句沒有用 {?欄位}，程式不知道要比對哪個字")
     roles = [t["role"] for t in g["turns"]]
     if roles.count("A") < 1 or roles.count("B") < 1:
         warn.append("A、B 兩個角色都要有台詞")
@@ -1441,7 +1506,7 @@ def _teacher_gen(ctx, dialogs):
     title = a1.text_input("標題", value=g0["title"] or lesson, key=f"dlg_g_title_{gn}")
     na = a2.text_input("A 角色名字", value=g0["names"]["A"], key=f"dlg_g_na_{gn}")
     nb = a3.text_input("B 角色名字", value=g0["names"]["B"], key=f"dlg_g_nb_{gn}")
-    st.caption("對話（句子裡的 {欄位} 會換成下面的替換字）")
+    st.caption("對話（句子裡的 {欄位} 會換成下面的替換字；是非問句：問句寫 {?day}，回答寫「Yes, it is. || No, it isn't. It's {day}.」）")
     df_t = st.data_editor(pd.DataFrame(g0["turns"], columns=["role", "en", "zh"]), num_rows="dynamic",
                           use_container_width=True, key=f"dlg_g_turns_{gn}",
                           column_config={"role": st.column_config.SelectboxColumn("角色", options=["A", "B"], required=True, width="small"),
@@ -1472,13 +1537,17 @@ def _teacher_gen(ctx, dialogs):
          "turns": [{"role": (_s(r.get("role")) or "A").upper()[:1], "en": _s(r.get("en")), "zh": _s(r.get("zh"))}
                    for r in df_t.to_dict("records") if _s(r.get("en"))]}
 
-    st.markdown("##### 👀 預覽（隨機抽一組替換字）")
-    combo = {s: random.Random(gn).choice(cs) for s, cs in slots.items()}
-    for t in g["turns"]:
-        nm = html.escape(g["names"].get(t["role"], t["role"]))
-        zh = _fill(t["zh"], combo, "zh", "mark") if t["zh"] else ""
-        st.markdown(f"**{t['role']}｜{nm}**：{_fill(t['en'], combo, 'en', 'mark')}"
-                    + (f"<span style='color:#888'>　{zh}</span>" if zh else ""), unsafe_allow_html=True)
+    st.markdown("##### 👀 預覽（隨機抽兩輪替換字；有是非問句時，一輪「是」、一輪「不是」）")
+    by_w = {s: {c["en"]: c for c in cs} for s, cs in slots.items()}
+    asks = _ask_slots({"turns": g["turns"]})
+    for pi, cw in enumerate(_make_combos({s: [c["en"] for c in cs] for s, cs in slots.items()}, 2, asks), 1):
+        combo = {s: by_w.get(_base_slot(s), {}).get(w, {"en": w, "zh": ""}) for s, w in cw.items()}
+        st.caption(f"範例 {pi}" + ("" if not asks else ("（是）" if _is_yes(cw) else "（不是）")))
+        for t in _resolve_turns(g["turns"], cw):
+            nm = html.escape(g["names"].get(t["role"], t["role"]))
+            zh = _fill(t["zh"], combo, "zh", "mark") if t["zh"] else ""
+            st.markdown(f"**{t['role']}｜{nm}**：{_fill(t['en'], combo, 'en', 'mark')}"
+                        + (f"<span style='color:#888'>　{zh}</span>" if zh else ""), unsafe_allow_html=True)
     warn = _check_gen(g)
     for w in warn:
         st.warning("⚠️ " + w)
@@ -1795,7 +1864,7 @@ def _teacher_records(ctx, dialogs):
                     if "=" in kv:
                         s, w = kv.split("=", 1)
                         combo[s] = {"en": w, "zh": ""}
-                line = _fill(t["en"], combo, "en", "plain")
+                line = _fill(_pick_branch(t["en"], _is_yes({s: c["en"] for s, c in combo.items()})), combo, "en", "plain")
         st.markdown(f"{r['self_check']} **{html.escape(str(r.get('stage','')))}** 第 {r.get('round_no')} 輪｜"
                     f"{html.escape(line)}　<span style='color:#888;font-size:.8rem'>{str(r['created_at'])[:16].replace('T',' ')}</span>",
                     unsafe_allow_html=True)
