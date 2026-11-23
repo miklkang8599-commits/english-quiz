@@ -25,7 +25,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 import streamlit as st
 
-DLG_VERSION = "2.9.572"   # 只改這個模組時，老師端「🗣️ 對話練習」最上面會顯示這個版本
+DLG_VERSION = "2.9.573"   # 只改這個模組時，老師端「🗣️ 對話練習」最上面會顯示這個版本
 
 # ------------------------------------------------------------------------------
 # 內建示範對話
@@ -1376,7 +1376,8 @@ Rules:
 - Write {slot_name} (lowercase ascii, e.g. {day}) where a vocabulary word can be swapped. The same
   placeholder must appear in both "en" and "zh" of that turn ("zh" shows the Chinese meaning there).
 - Cards for each slot come from the given vocabulary (add closely related words only if fewer than 3 fit).
-  Each slot needs at least 3 cards. Words that cannot be swapped (e.g. "today") just stay in the sentences.
+  Each slot needs at least 3 cards. Each vocabulary line is ONE item, even with a space (e.g. "social studies",
+  "ice cream" is one card). Use EVERY vocabulary item that fits a slot; do not leave any out. Words that cannot be swapped (e.g. "today") just stay in the sentences.
 - One card is chosen at random for each slot, and the same placeholder always shows the same word in every
   turn. The dialogue must make sense for ANY choice. Different slots never get the same word in one round.
 - A slot may start a sentence: write its cards in lowercase (e.g. "his"); the program capitalizes it there.
@@ -1421,12 +1422,32 @@ def _apply_fixed(g, fixed):
     return g
 
 
+def _vocab_items(words):
+    """V2.9.573 單字表 → 項目（一行一個；同一行用逗號、頓號、分號隔開也可以；「social studies」算一個）"""
+    out = []
+    for ln in (words or "").splitlines():
+        for w in re.split(r"[,，、;；/]", ln):
+            w = re.sub(r"\s+", " ", w).strip()
+            if w and w.lower() not in [x.lower() for x in out]:
+                out.append(w)
+    return out
+
+
+def _missing_vocab(words, slots, turns):
+    """V2.9.573 單字表裡、沒做成圖卡也沒出現在句子裡的字"""
+    cards = {c["en"].strip().lower() for cs in slots.values() for c in cs}
+    text = " ".join(t["en"] for t in turns).lower()
+    return [w for w in _vocab_items(words)
+            if w.lower() not in cards and not re.search(r"(?<![a-z])" + re.escape(w.lower()) + r"(?![a-z])", text)]
+
+
 def _ai_dialog(lesson, patterns, words, level, n_turns=0, fixed_text=""):
     import openai
     cl = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
     fixed = _parse_fixed(fixed_text)
     user = (f"Lesson: {lesson or '(not given)'}\nStudent level: {level or '國小'}\n\n"
-            f"Target sentence patterns:\n{patterns.strip()}\n\nVocabulary:\n{words.strip()}")
+            f"Target sentence patterns:\n{patterns.strip()}\n\nVocabulary (one item per line):\n"
+            + "\n".join(f"- {w}" for w in _vocab_items(words)))
     if fixed:
         user += "\n\nFIXED DIALOGUE (keep exactly these turns):\n" + "\n".join(f"{f['role']}: {f['en']}" for f in fixed)
     elif n_turns:
@@ -1622,6 +1643,11 @@ def _teacher_gen(ctx, dialogs):
          "scene_desc": _s(scene), "char_desc": {"A": _s(da), "B": _s(db)}, "slots": slots,
          "turns": [{"role": (_s(r.get("role")) or "A").upper()[:1], "en": _s(r.get("en")), "zh": _s(r.get("zh"))}
                    for r in df_t.to_dict("records") if _s(r.get("en"))]}
+    miss = _missing_vocab(words, slots, g["turns"])
+    if miss:
+        st.warning("⚠️ 單字表裡這些字沒有做成圖卡、也沒出現在句子裡：**" + "、".join(miss)
+                   + "**。要練的話，請在上面「替換字」表格最下面加一列（欄位填 subject 之類的欄位名，"
+                     "英文、中文填好）；同一組字有兩個欄位（例如 subject、subject2）就兩個欄位都要加。")
 
     st.markdown("##### 👀 預覽（隨機抽兩輪替換字；有是非問句時，一輪「是」、一輪「不是」）")
     by_w = {s: {c["en"]: c for c in cs} for s, cs in slots.items()}
