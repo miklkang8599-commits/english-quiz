@@ -25,7 +25,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 import streamlit as st
 
-DLG_VERSION = "2.9.567"   # 只改這個模組時，老師端「🗣️ 對話練習」最上面會顯示這個版本
+DLG_VERSION = "2.9.568"   # 只改這個模組時，老師端「🗣️ 對話練習」最上面會顯示這個版本
 
 # ------------------------------------------------------------------------------
 # 內建示範對話
@@ -385,7 +385,10 @@ def _pick_branch(text, yes):
     if "||" not in (text or ""):
         return text
     a, b = text.split("||", 1)
-    return (a if yes else b).strip()
+    if yes:
+        return a.strip()
+    # 「不是」的說法裡要講真正的答案：寫成 {?day} 也當作 {day}（V2.9.568）
+    return re.sub(r"\{\s*\?", "{", b).strip()
 
 
 def _resolve_turns(turns, combo_words):
@@ -1327,8 +1330,11 @@ that practises the patterns, with swappable words written as {slot} placeholders
  "slots": {"slot_name": [{"en": "word", "zh": "Traditional Chinese", "img": "one emoji",
                           "desc": "English description of a flashcard picture for this word"}]}}
 Rules:
-- 4 to 8 turns, A and B alternate, A speaks first. Use the given sentence patterns as exactly as possible;
-  every pattern should appear at least once. Keep sentences short and at the students' level.
+- 4 to 8 turns (unless the user gives a number), A and B alternate, A speaks first. Use the given sentence
+  patterns as exactly as possible; every pattern should appear at least once. Keep sentences short and at the
+  students' level. No extra small talk beyond the patterns.
+- If the user gives a FIXED DIALOGUE, keep exactly those turns (same roles, same English, same order); only
+  add "zh", the slots/cards, title, names, scene_desc and char_desc.
 - A and B each have at least 2 lines (students may play either role).
 - Write {slot_name} (lowercase ascii, e.g. {day}) where a vocabulary word can be swapped. The same
   placeholder must appear in both "en" and "zh" of that turn ("zh" shows the Chinese meaning there).
@@ -1348,18 +1354,49 @@ Rules:
 _GEN_MODELS = ["gpt-4o", "gpt-4o-mini"]
 
 
-def _ai_dialog(lesson, patterns, words, level):
+_FIX_RE = re.compile(r"^\s*([ABab])(?:\s*[:：｜]\s*|\s+)(.+?)\s*$")
+
+
+def _parse_fixed(text):
+    """老師直接貼的對話：每行「A⇥句子」或「A: 句子」→ [{role, en}]（V2.9.568）"""
+    out = []
+    for ln in (text or "").splitlines():
+        m = _FIX_RE.match(ln)
+        if m:
+            en = re.sub(r"\s+", " ", m.group(2))
+            if "||" in en:
+                a, b = en.split("||", 1)
+                en = f"{a.strip()} || {_pick_branch('||' + b, False)}"
+            out.append({"role": m.group(1).upper(), "en": en})
+    return out
+
+
+def _apply_fixed(g, fixed):
+    """AI 回來後，句子一律換回老師貼的原句（中文照 AI 翻的，句數不同就留空讓老師補）"""
+    if not fixed:
+        return g
+    zh = [t["zh"] for t in g["turns"]] if len(g["turns"]) == len(fixed) else []
+    g["turns"] = [{"role": f["role"], "en": f["en"], "zh": zh[i] if zh else ""} for i, f in enumerate(fixed)]
+    return g
+
+
+def _ai_dialog(lesson, patterns, words, level, n_turns=0, fixed_text=""):
     import openai
     cl = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+    fixed = _parse_fixed(fixed_text)
     user = (f"Lesson: {lesson or '(not given)'}\nStudent level: {level or '國小'}\n\n"
             f"Target sentence patterns:\n{patterns.strip()}\n\nVocabulary:\n{words.strip()}")
+    if fixed:
+        user += "\n\nFIXED DIALOGUE (keep exactly these turns):\n" + "\n".join(f"{f['role']}: {f['en']}" for f in fixed)
+    elif n_turns:
+        user += f"\n\nWrite EXACTLY {int(n_turns)} turns."
     last = None
     for model in _GEN_MODELS:
         try:
             r = cl.chat.completions.create(
                 model=model, temperature=0.7, response_format={"type": "json_object"},
                 messages=[{"role": "system", "content": _GEN_SYS}, {"role": "user", "content": user}])
-            return _norm_gen(json.loads(r.choices[0].message.content))
+            return _apply_fixed(_norm_gen(json.loads(r.choices[0].message.content)), fixed)
         except Exception as e:
             last = e
     raise RuntimeError(f"{type(last).__name__}: {last}")
@@ -1487,11 +1524,19 @@ def _teacher_gen(ctx, dialogs):
                         placeholder="What day is today?\nIt's Sunday.\nIs it Monday today?\nYes, it is.\nNo, it isn't. It's Tuesday.")
     words = p2.text_area("課文單字（一行一個）", height=170, key="dlg_g_words",
                          placeholder="Sunday\nMonday\nTuesday\n…\nday\ntoday")
+    f1, f2 = st.columns([3, 1])
+    fixed_text = f1.text_area(
+        "指定對話（可空白；有填就照這幾句，AI 只補中文、圖卡和情境）", height=120, key="dlg_g_fixed",
+        placeholder="A\tWhat day is today?\nB\tIt's {day}.\nA\tIs it {?day} today?\nB\tYes, it is. || No, it isn't. It's {day}.")
+    fixed = _parse_fixed(fixed_text)
+    n_turns = f2.number_input("句數（0＝AI 決定）", 0, 12, 4, key="dlg_g_nturns", disabled=bool(fixed))
+    if fixed:
+        f2.caption(f"照指定對話：{len(fixed)} 句")
     if st.button("🪄 AI 產生對話" if not st.session_state.get("dlg_gen") else "🔁 重新產生一版",
-                 type="primary", key="dlg_g_go", disabled=not pats.strip()):
+                 type="primary", key="dlg_g_go", disabled=not (pats.strip() or fixed)):
         with st.spinner("AI 正在擬對話…（約 10～20 秒）"):
             try:
-                st.session_state["dlg_gen"] = _ai_dialog(lesson, pats, words, level)
+                st.session_state["dlg_gen"] = _ai_dialog(lesson, pats, words, level, n_turns, fixed_text)
                 st.session_state["dlg_gen_n"] = st.session_state.get("dlg_gen_n", 0) + 1
             except Exception as e:
                 st.error(f"AI 產生失敗：{type(e).__name__}: {e}")
