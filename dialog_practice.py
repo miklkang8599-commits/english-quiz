@@ -25,7 +25,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 import streamlit as st
 
-DLG_VERSION = "2.9.570"   # 只改這個模組時，老師端「🗣️ 對話練習」最上面會顯示這個版本
+DLG_VERSION = "2.9.571"   # 只改這個模組時，老師端「🗣️ 對話練習」最上面會顯示這個版本
 
 # ------------------------------------------------------------------------------
 # 內建示範對話
@@ -1684,6 +1684,19 @@ def _pick_dialog(dialogs, key):
                         format_func=lambda i: f"{i}｜{dialogs[i]['title']}" + (f"（{dialogs[i]['level']}）" if dialogs[i]["level"] else ""))
 
 
+def _zh_mismatch(turns):
+    """V2.9.571 英文和中文的 {欄位} 或「||」不一致的句子（多半是中文欄錯開一格）→ 回傳回合編號"""
+    out = []
+    for t in turns:
+        if not t.get("zh"):
+            continue
+        en_s = set(re.findall(r"\{\s*(\??\w+)\s*\}", t["en"]))
+        zh_s = set(re.findall(r"\{\s*(\??\w+)\s*\}", t["zh"]))
+        if en_s != zh_s or (("||" in t["en"]) != ("||" in t["zh"])):
+            out.append(t["turn"])
+    return out
+
+
 def _teacher_cards(ctx, dialogs):
     c1, c2 = st.columns([5, 1])
     with c1:
@@ -1693,10 +1706,15 @@ def _teacher_cards(ctx, dialogs):
         _load_card_images.clear()
         st.rerun()
     d = dialogs[did]
+    bad = _zh_mismatch(d["turns"])
+    if bad:
+        st.error("⚠️ 這些句子的英文和中文對不上（中文提示會顯示錯的句子），請到試算表「對話範本」修改中文欄："
+                 + "、".join(f"第 {n} 句" for n in bad))
     with st.expander("📜 對話內容", expanded=True):
         for t in d["turns"]:
             st.markdown(f"**{t['turn']}. {html.escape(d['names'].get(t['role'], t['role']))}**："
-                        f"{html.escape(t['en'])}　<span style='color:#888'>{html.escape(t['zh'])}</span>",
+                        f"{html.escape(t['en'])}　<span style='color:#888'>{html.escape(t['zh'])}</span>"
+                        + ("　<b style='color:#d33'>⚠️ 中英不一致</b>" if t["turn"] in bad else ""),
                         unsafe_allow_html=True)
     _teacher_scene(ctx, did, d)
     missing_slots = [s for s in _slots_in(d) if not d["cards"].get(s)]
