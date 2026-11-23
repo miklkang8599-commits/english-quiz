@@ -25,7 +25,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 import streamlit as st
 
-DLG_VERSION = "2.9.573"   # 只改這個模組時，老師端「🗣️ 對話練習」最上面會顯示這個版本
+DLG_VERSION = "2.9.574"   # 只改這個模組時，老師端「🗣️ 對話練習」最上面會顯示這個版本
 
 # ------------------------------------------------------------------------------
 # 內建示範對話
@@ -798,7 +798,7 @@ def _render_run(ctx):
 
     # V2.9.563：① 全文示範不用選角色，一開始就直接看示範
     if stage == STAGE_DEMO:
-        _render_demo(d, run, combo, run.get("role"), names, speed, rno, n)
+        _render_demo(d, run, combo, run.get("role"), names, speed, rno, n, ctx, combo_words)
         return
 
     # ── ② ③ 才選角色 ──
@@ -1055,7 +1055,18 @@ function toggle(){const s=document.querySelector('.dm-start');if(s)s.remove();
     return (_CSS + _DEMO_CSS + stage + f"<div class='dm-tr'>{''.join(rows)}</div>" + js)
 
 
-def _render_demo(d, run, combo, me, names, speed, rno, n):
+def _demo_log(ctx, run, rno, combo_words):
+    """V2.9.574 ② 全文示範看完一輪 → 記一筆「🎬」（回合 0，每輪只記一次）"""
+    if ctx is None:
+        return
+    done = run.setdefault("demo_logged", [])
+    if rno in done:
+        return
+    if _save_log(ctx, run, STAGE_DEMO, rno + 1, 0, combo_words or {}, "🎬", None):
+        done.append(rno)
+
+
+def _render_demo(d, run, combo, me, names, speed, rno, n, ctx=None, combo_words=None):
     st.progress((rno + 1) / n, text=f"第 {rno + 1} / {n} 輪（每輪換一組單字）")
     tags = {r: names[r] + ("（你）" if r == me else "") for r in ("A", "B")}
     page = _demo_html(d, combo, tags=tags, emo=None, speed=speed)
@@ -1069,10 +1080,12 @@ def _render_demo(d, run, combo, me, names, speed, rno, n):
         run["round"] = rno - 1
         st.rerun()
     if rno < n - 1 and c2.button("🔀 換一組單字（下一輪）", key="dlg_demo_next", use_container_width=True):
+        _demo_log(ctx, run, rno, combo_words)
         run["round"] = rno + 1
         st.rerun()
     nxt = run["stages"].index(STAGE_DEMO) + 1 if STAGE_DEMO in run["stages"] else len(run["stages"])
     if nxt < len(run["stages"]) and c3.button(f"進入 {run['stages'][nxt]} ➡️", key="dlg_demo_stage", type="primary", use_container_width=True):
+        _demo_log(ctx, run, rno, combo_words)
         run["goto_stage"] = run["stages"][nxt]
         run["round"] = 0
         st.rerun()
@@ -1202,6 +1215,8 @@ def _render_flow(ctx, d, run, stage, combo, combo_words, me, names, speed, rno, 
             if rec is None:
                 st.caption("錄好音，「▶️ 繼續」才會亮起來。沒有麥克風可以按下面略過。")
                 if st.button("⏭ 這句先不錄，直接繼續", key=f"dlg_f_skip_{k}"):
+                    # V2.9.574 略過也記一筆（沒錄音），學習報告才看得到有練
+                    _save_log(ctx, run, stage, rno + 1, stop_t["turn"], combo_words, "⏭", None)
                     replay(q + 1)
         else:
             got = sum(1 for kk in run["checks"] if kk.startswith(f"{sk}|"))
