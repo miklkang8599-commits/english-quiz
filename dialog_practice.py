@@ -25,7 +25,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 import streamlit as st
 
-DLG_VERSION = "2.9.574"   # 只改這個模組時，老師端「🗣️ 對話練習」最上面會顯示這個版本
+DLG_VERSION = "2.9.575"   # 只改這個模組時，老師端「🗣️ 對話練習」最上面會顯示這個版本
 
 # ------------------------------------------------------------------------------
 # 內建示範對話
@@ -1249,10 +1249,10 @@ def _render_flow(ctx, d, run, stage, combo, combo_words, me, names, speed, rno, 
 # ------------------------------------------------------------------------------
 # 老師端
 # ------------------------------------------------------------------------------
-def _gen_image(prompt, size="1024x1024", transparent=False, quality="low"):
+def _gen_image(prompt, size="1024x1024", transparent=False, quality="low", api_key=None):
     import base64
     import openai
-    cl = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+    cl = openai.OpenAI(api_key=api_key or st.secrets["OPENAI_API_KEY"])
     last = None
     gkw = {"quality": quality, "size": size}
     if transparent:
@@ -1340,17 +1340,53 @@ def _kind(card):
     return {"_scene": "scene", "_char": "char"}.get(card.get("slot"), "card")
 
 
-def _gen_for(card, desc, hint=""):
-    """依種類（圖卡／背景／立繪）產生圖片；hint＝老師的額外要求"""
+def _gen_spec(card, desc, hint=""):
+    """依種類（圖卡／背景／立繪）組出 (prompt, 參數)；hint＝老師的額外要求"""
     k = _kind(card)
     if k != "card" and _s(hint):
         desc = f"{desc}. {_s(hint)}"
     scene_style, char_style = STYLE_SETS.get(st.session_state.get("dlg_style"), next(iter(STYLE_SETS.values())))
     if k == "scene":
-        return _gen_image(f"{scene_style} Scene: {desc}.{SCENE_TAIL}", size="1536x1024", quality="medium")
+        return f"{scene_style} Scene: {desc}.{SCENE_TAIL}", {"size": "1536x1024", "quality": "medium"}
     if k == "char":
-        return _gen_image(f"{char_style} Character: {desc}.", size="1024x1536", transparent=True, quality="medium")
-    return _gen_image(_card_prompt(desc, hint))
+        return f"{char_style} Character: {desc}.", {"size": "1024x1536", "transparent": True, "quality": "medium"}
+    return _card_prompt(desc, hint), {}
+
+
+def _gen_for(card, desc, hint=""):
+    p, kw = _gen_spec(card, desc, hint)
+    return _gen_image(p, **kw)
+
+
+def _gen_many(ctx, did, items, workers=4):
+    """V2.9.575 多張圖同時產生（最多 4 張一起畫），畫好一張就存一張。items＝[(card, desc, hint)]。回傳成功張數"""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    if not items:
+        return 0
+    key = st.secrets["OPENAI_API_KEY"]
+    specs = [(c,) + _gen_spec(c, d, h) for c, d, h in items]   # prompt 在主執行緒組好（要讀畫面狀態）
+    bar = st.progress(0.0, text=f"0/{len(specs)}（{min(workers, len(specs))} 張同時畫）")
+    ok = 0
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        futs = {ex.submit(_gen_image, p, api_key=key, **kw): c for c, p, kw in specs}
+        for i, f in enumerate(as_completed(futs), 1):
+            c = futs[f]
+            try:
+                _save_card_image(ctx, did, c, f.result()[0])
+                ok += 1
+            except Exception as e:
+                st.error(f"{c.get('zh') or c['en']}：{type(e).__name__}: {e}")
+            bar.progress(i / len(specs), text=f"{i}/{len(specs)}")
+    return ok
+
+
+def _rerun_frag():
+    """V2.9.575 只重畫目前這個分頁（fragment）；不支援時才整頁重跑"""
+    from streamlit.errors import StreamlitAPIException
+    try:
+        st.rerun(scope="fragment")
+    except (TypeError, StreamlitAPIException):
+        st.rerun()
 
 
 def _save_card_image(ctx, dialog_id, card, raw):
@@ -1590,6 +1626,8 @@ def _append_rows(book, title, rows, headers):
 def _teacher_gen(ctx, dialogs):
     st.markdown("#### 🪄 貼上課文的句型和單字，AI 幫你擬一段替換字對話")
     st.caption("AI 會自己判斷哪些單字可以替換、怎麼排成 A／B 對話，並寫好情境和角色描述（之後可以一鍵畫圖）。產生後可以先修改再存。")
+    if st.session_state.get("dlg_gen_msg"):
+        st.success(st.session_state.pop("dlg_gen_msg"))
     c1, c2, c3 = st.columns([3, 2, 1])
     lesson = c1.text_input("課名／單元", key="dlg_g_lesson", placeholder="例：Wonder World B05 L03")
     auto_id = re.sub(r"[^A-Za-z0-9]+", "-", lesson).strip("-").upper()[:30]
@@ -1696,8 +1734,12 @@ def _teacher_gen(ctx, dialogs):
                 st.session_state[_k] = did
             _read_sheet.clear()
             st.session_state.pop("dlg_gen", None)
-            st.success(f"✅ 已存進試算表：{did}。接著到「🖼️ 對話與圖卡」選它，一鍵產生情境畫面和圖卡圖片，再到「📌 指派」。")
+            st.session_state["dlg_gen_msg"] = (f"✅ 已存進試算表：{did}。接著到「🖼️ 對話與圖卡」選它，"
+                                               "一鍵產生情境畫面和圖卡圖片，再到「📌 指派」。")
+            st.rerun()   # V2.9.575 整頁重跑一次，其他分頁才看得到新對話
         except Exception as e:
+            if type(e).__name__ in ("StopException", "RerunException", "RerunData"):
+                raise
             st.error(f"寫入試算表失敗：{type(e).__name__}: {e}　→ 可以用下面「手動貼上」的內容自己貼進試算表。")
     with st.expander("📋 手動貼上用（複製後貼到試算表最下面一列）"):
         st.caption("「對話範本」分頁（欄位順序：對話ID｜標題｜程度｜回合｜角色｜角色名稱｜英文｜中文｜情境｜角色描述）")
@@ -1710,17 +1752,49 @@ def render_teacher(ctx):
     st.markdown(_CSS, unsafe_allow_html=True)
     st.caption(f"對話練習模組 V{DLG_VERSION}")
     dialogs = load_dialogs(ctx)
+    st.session_state["_dlg_run_tok"] = st.session_state.get("_dlg_run_tok", 0) + 1   # 整頁重跑的編號
     tabs = st.tabs(["🪄 AI 產生對話", "🖼️ 對話與圖卡", "📌 指派", "🎧 學生紀錄", "⚙️ 設定說明"])
+    # V2.9.575 每個分頁各自是一個 fragment：在分頁裡改字、按按鈕，只重畫這一頁，
+    # 不再把整個老師頁面（其他分頁、作答統計…）全部重跑，等待時間少很多
     with tabs[0]:
-        _teacher_gen(ctx, dialogs)
+        _frag_gen(ctx, dialogs)
     with tabs[1]:
-        _teacher_cards(ctx, dialogs)
+        _frag_cards(ctx, dialogs)
     with tabs[2]:
-        _teacher_assign(ctx, dialogs)
+        _frag_assign(ctx, dialogs)
     with tabs[3]:
-        _teacher_records(ctx, dialogs)
+        _frag_records(ctx, dialogs)
     with tabs[4]:
         _teacher_setup()
+
+
+def _fresh_dialogs(ctx, dialogs, name):
+    """整頁重跑時用剛讀好的 dialogs；只有分頁自己重跑時（例如剛存好圖）才重新讀，才看得到新圖"""
+    tok, k = st.session_state.get("_dlg_run_tok"), "_dlg_tok_" + name
+    if st.session_state.get(k) == tok:
+        return load_dialogs(ctx)
+    st.session_state[k] = tok
+    return dialogs
+
+
+@st.fragment
+def _frag_gen(ctx, dialogs):
+    _teacher_gen(ctx, dialogs)
+
+
+@st.fragment
+def _frag_cards(ctx, dialogs):
+    _teacher_cards(ctx, _fresh_dialogs(ctx, dialogs, "cards"))
+
+
+@st.fragment
+def _frag_assign(ctx, dialogs):
+    _teacher_assign(ctx, dialogs)
+
+
+@st.fragment
+def _frag_records(ctx, dialogs):
+    _teacher_records(ctx, dialogs)
 
 
 def _pick_dialog(dialogs, key):
@@ -1777,18 +1851,11 @@ def _teacher_cards(ctx, dialogs):
     st.caption("💡 星期、月份、數字這類光看圖分不出來的字，建議用各組下面的「🈶 中文字卡」：不用 AI、馬上做好、字一定正確。"
                "AI 畫中文字常會寫錯。")
     if no_img and st.button(f"🎨 一次 AI 產生 {len(no_img)} 張缺圖", key="dlg_gen_all"):
-        bar = st.progress(0.0)
-        ok = 0
-        for i, c in enumerate(no_img):
-            try:
-                raw, _m = _gen_image(_card_prompt(c.get('desc') or c['en'], hint))
-                _save_card_image(ctx, did, c, raw)
-                ok += 1
-            except Exception as e:
-                st.error(f"{c['en']}：{e}")
-            bar.progress((i + 1) / len(no_img), text=f"{i + 1}/{len(no_img)}")
-        st.success(f"完成 {ok} 張")
-        st.rerun()
+        ok = _gen_many(ctx, did, [(c, c.get("desc") or c["en"], hint) for c in no_img])   # V2.9.575 同時畫
+        st.session_state["dlg_cards_msg"] = f"完成 {ok}／{len(no_img)} 張"
+        _rerun_frag()
+    if st.session_state.get("dlg_cards_msg"):
+        st.success(st.session_state.pop("dlg_cards_msg"))
 
     ncol = 2 if ctx.get("is_phone") else 4
     for slot, cards in d["cards"].items():
@@ -1801,7 +1868,7 @@ def _teacher_cards(ctx, dialogs):
                     _save_card_image(ctx, did, c, _text_card_svg(c.get("zh") or c["en"], j))
                 except Exception as e:
                     st.error(f"{c['en']}：{type(e).__name__}: {e}")
-            st.rerun()
+            _rerun_frag()
         for i in range(0, len(cards), ncol):
             cols = st.columns(ncol)
             for j, (col, c) in enumerate(zip(cols, cards[i:i + ncol])):
@@ -1830,15 +1897,8 @@ def _teacher_scene(ctx, did, d):
     go_redo = b2.button("🔁 三張全部用目前畫風重畫", key=f"dlg_scene_redo_{did}")
     todo = items if go_redo else (missing if go_missing else [])
     if todo:
-        bar = st.progress(0.0)
-        for i, c in enumerate(todo):
-            try:
-                raw, _m = _gen_for(c, c["desc"])
-                _save_card_image(ctx, did, c, raw)
-            except Exception as e:
-                st.error(f"{c['zh']}：{e}")
-            bar.progress((i + 1) / len(todo), text=f"{i + 1}/{len(todo)}")
-        st.rerun()
+        _gen_many(ctx, did, [(c, c["desc"], "") for c in todo], workers=3)   # V2.9.575 背景和兩個角色同時畫
+        _rerun_frag()
     cols = st.columns(3)
     for col, c, lbl in zip(cols, items, ["🏞️ 背景", f"🧍 A：{d['names'].get('A', 'A')}", f"🧍 B：{d['names'].get('B', 'B')}"]):
         with col:
@@ -1862,7 +1922,7 @@ def _card_editor(ctx, did, c, hint="", idx=0):
             try:
                 _save_card_image(ctx, did, c, up.getvalue())
                 st.success("已儲存")
-                st.rerun()
+                _rerun_frag()
             except Exception as e:
                 st.error(f"儲存失敗：{type(e).__name__}: {e}")
         st.markdown("---")
@@ -1871,7 +1931,7 @@ def _card_editor(ctx, did, c, hint="", idx=0):
             if st.button("🈶 改用中文字卡（不用 AI）", key=f"dlg_tcok_{hk}", disabled=not tc.strip()):
                 try:
                     _save_card_image(ctx, did, c, _text_card_svg(tc.strip(), idx))
-                    st.rerun()
+                    _rerun_frag()
                 except Exception as e:
                     st.error(f"儲存失敗：{type(e).__name__}: {e}")
             st.markdown("---")
@@ -1894,12 +1954,12 @@ def _card_editor(ctx, did, c, hint="", idx=0):
                 try:
                     _save_card_image(ctx, did, c, raw)
                     st.session_state.pop(pend_key, None)
-                    st.rerun()
+                    _rerun_frag()
                 except Exception as e:
                     st.error(f"儲存失敗：{type(e).__name__}: {e}")
             if a2.button("🗑️ 不要", key=f"dlg_gendel_{hk}"):
                 st.session_state.pop(pend_key, None)
-                st.rerun()
+                _rerun_frag()
 
 
 def _teacher_assign(ctx, dialogs):
@@ -1972,7 +2032,15 @@ def _teacher_assign(ctx, dialogs):
         if c2.button("🗑️", key=f"dlg_a_del_{a['id']}", help="刪除這個指派"):
             ctx["sb"]().table("dialog_assignments").update({"status": "已刪除"}).eq("id", a["id"]).execute()
             _bump_assign()
-            st.rerun()
+            _rerun_frag()
+
+
+@st.cache_data(ttl=120, show_spinner=False)
+def _load_dlg_logs(_sb_factory, aid, ver=0):
+    """V2.9.575 學生紀錄快取 2 分鐘（以前每改一個欄位都重讀 2000 筆）；按「🔄 重新整理」馬上重讀"""
+    q = _sb_factory().table("dialog_logs").select("*").order("created_at", desc=True).limit(2000)
+    q = q.is_("assign_id", "null") if aid is None else q.eq("assign_id", aid)
+    return q.execute().data or []
 
 
 def _teacher_records(ctx, dialogs):
@@ -1986,11 +2054,10 @@ def _teacher_records(ctx, dialogs):
                        format_func=lambda i: "🧪 老師試玩紀錄" if i is None else f"#{i}｜{titles.get(i, '')}")
     if st.button("🔄 重新整理", key="dlg_r_reload"):
         st.session_state.pop("dlg_r_urls", None)
+        st.session_state["dlg_r_ver"] = st.session_state.get("dlg_r_ver", 0) + 1
     sb = ctx["sb"]()
     try:
-        q = sb.table("dialog_logs").select("*").order("created_at", desc=True).limit(2000)
-        q = q.is_("assign_id", "null") if aid is None else q.eq("assign_id", aid)
-        data = q.execute().data or []
+        data = _load_dlg_logs(ctx["sb"], aid, st.session_state.get("dlg_r_ver", 0))
     except Exception as e:
         _setup_hint(f"{type(e).__name__}: {e}")
         return
