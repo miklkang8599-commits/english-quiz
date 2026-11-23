@@ -25,7 +25,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 import streamlit as st
 
-DLG_VERSION = "2.9.568"   # 只改這個模組時，老師端「🗣️ 對話練習」最上面會顯示這個版本
+DLG_VERSION = "2.9.569"   # 只改這個模組時，老師端「🗣️ 對話練習」最上面會顯示這個版本
 
 # ------------------------------------------------------------------------------
 # 內建示範對話
@@ -1610,6 +1610,8 @@ def _teacher_gen(ctx, dialogs):
             _append_rows(book, "對話範本", rows_t, ["對話ID", "標題", "程度", "回合", "角色", "角色名稱", "英文", "中文", "情境", "角色描述"])
             _append_rows(book, "替換字", rows_c, ["對話ID", "欄位", "英文", "中文", "圖", "圖片描述"])
             st.session_state.setdefault("dlg_pending", {})[did] = _gen_as_dialog(level, g)
+            for _k in ("dlg_t_pick", "dlg_a_pick"):   # V2.9.569 其他分頁直接選到剛存的對話
+                st.session_state[_k] = did
             _read_sheet.clear()
             st.session_state.pop("dlg_gen", None)
             st.success(f"✅ 已存進試算表：{did}。接著到「🖼️ 對話與圖卡」選它，一鍵產生情境畫面和圖卡圖片，再到「📌 指派」。")
@@ -1640,7 +1642,10 @@ def render_teacher(ctx):
 
 
 def _pick_dialog(dialogs, key):
-    ids = list(dialogs.keys())
+    # V2.9.569 最新加的對話排最前面（預設選它），內建示範 D00 放最後，免得指派時不小心選到示範
+    ids = [i for i in reversed(list(dialogs.keys())) if i != DEMO_ID] + ([DEMO_ID] if DEMO_ID in dialogs else [])
+    if st.session_state.get(key) not in ids:
+        st.session_state.pop(key, None)
     return st.selectbox("對話", ids, key=key,
                         format_func=lambda i: f"{i}｜{dialogs[i]['title']}" + (f"（{dialogs[i]['level']}）" if dialogs[i]["level"] else ""))
 
@@ -1776,6 +1781,14 @@ def _card_editor(ctx, did, c):
 def _teacher_assign(ctx, dialogs):
     did = _pick_dialog(dialogs, "dlg_a_pick")
     d = dialogs[did]
+    # V2.9.569 先讓老師看清楚選到的是哪段對話（學生練的就是這幾句）
+    st.markdown("<div style='background:#f6f8fa;border-radius:8px;padding:8px 12px;font-size:.92rem'>"
+                + f"<b>學生會練的對話：{html.escape(did)}｜{html.escape(d['title'])}</b><br>"
+                + "<br>".join(f"{html.escape(t['role'])}｜{html.escape(d['names'].get(t['role'], t['role']))}："
+                              f"{html.escape(t['en'])}" for t in d["turns"])
+                + "</div>", unsafe_allow_html=True)
+    if did == DEMO_ID:
+        st.warning("⚠️ 目前選的是內建的「天氣示範」對話。要指派自己的對話，請在上面「對話」改選。")
     sel = {}
     for slot in _slots_in(d):
         cards = d["cards"].get(slot, [])
@@ -1827,8 +1840,10 @@ def _teacher_assign(ctx, dialogs):
     for a in rows:
         c1, c2 = st.columns([5, 1])
         n_stu = len([x for x in str(a.get("students") or "").split(",") if x.strip()])
+        _ad = dialogs.get(a.get("dialog_id"))
         c1.markdown(f"**{html.escape(a.get('title') or '')}**  \n"
-                    f"<span style='color:#888;font-size:.85rem'>#{a['id']}｜{a.get('rounds')} 輪｜{n_stu} 人｜截止 {str(a.get('end_date') or '')[:10]}</span>",
+                    f"<span style='color:#888;font-size:.85rem'>#{a['id']}｜對話 {html.escape(str(a.get('dialog_id') or ''))}"
+                    f"｜{html.escape(_ad['title'] if _ad else '找不到')}｜{a.get('rounds')} 輪｜{n_stu} 人｜截止 {str(a.get('end_date') or '')[:10]}</span>",
                     unsafe_allow_html=True)
         if c2.button("🗑️", key=f"dlg_a_del_{a['id']}", help="刪除這個指派"):
             ctx["sb"]().table("dialog_assignments").update({"status": "已刪除"}).eq("id", a["id"]).execute()
