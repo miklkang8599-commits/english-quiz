@@ -1,6 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.578 - 導師中心加快開啟)
+# 🧩 英文全能練習系統 (V2.9.579 - 任務列表搜尋)
 # ==============================================================================
+# 🆕 2.9.579：導師中心「📋 任務列表」加「🔍 搜尋任務」：關鍵字（任務名稱／班級／學生／說明）＋班級、題型、狀態、日期篩選。
 # 🆕 2.9.578：導師中心「📖 題目講解」的答題紀錄改成按「📥 載入答題紀錄」才讀（開導師中心不再下載全部 logs）。
 # 🆕 2.9.558：對話練習加情境畫面（背景＋角色立繪）；dialog_practice.py 更新時自動重新載入（不用重開 App）。
 # 🆕 2.9.557：對話練習紀錄寫入失敗時，錯誤訊息留在畫面上。
@@ -116,7 +117,7 @@ if dlgp is not None:
     except Exception as _e_dlg2:
         _DLG_ERR = f"{type(_e_dlg2).__name__}: {_e_dlg2}"
 
-VERSION = "2.9.578"
+VERSION = "2.9.579"
 
 def _dlg_ctx():
     """V2.9.555：給對話練習模組的共用資料"""
@@ -2392,8 +2393,80 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
         else:
             df_a2 = st.session_state[_a2_cache_key]
 
+        # ── V2.9.579：任務列表搜尋（關鍵字＋條件篩選）──────────────────────
+        def _tl_type(name):
+            """任務名稱「[T12] 單選-…」→ 題型「單選」"""
+            return re.sub(r'^\[T\d+\]\s*', '', str(name)).split('-')[0].strip() or '其他'
+
+        def _tl_groups(v):
+            return [g.strip() for g in re.split(r'[,，、]', str(v or '')) if g.strip() and g.strip() != 'nan']
+
+        def _filter_task_list(df, kw, groups, types, status, period, today):
+            if df.empty:
+                return df
+            m = pd.Series(True, index=df.index)
+            if kw.strip():
+                hay = pd.Series('', index=df.index)
+                for _c in ['任務名稱', '對象班級', '指派學生', '任務說明', '任務編號']:
+                    if _c in df.columns:
+                        hay = hay + ' ' + df[_c].fillna('').astype(str)
+                hay = hay.str.lower()
+                for _w in kw.lower().split():   # 空白分開的每個字都要出現
+                    m &= hay.str.contains(_w, regex=False)
+            if groups and '對象班級' in df.columns:
+                _gs = set(groups)
+                m &= df['對象班級'].apply(lambda v: bool(_gs & set(_tl_groups(v))))
+            if types:
+                m &= df['任務名稱'].apply(_tl_type).isin(types)
+            if status != '全部' and '狀態' in df.columns:
+                _stt = df['狀態'].fillna('').astype(str).replace('', '進行中')
+                m &= (_stt == status)
+            if period != '全部':
+                _s = pd.to_datetime(df.get('開始日期', pd.Series('', index=df.index)), errors='coerce').dt.date
+                _e = pd.to_datetime(df.get('結束日期', pd.Series('', index=df.index)), errors='coerce').dt.date
+                if period == '期間內（今天）':
+                    m &= (_s.isna() | (_s <= today)) & (_e.isna() | (_e >= today))
+                elif period == '已過結束日':
+                    m &= _e.notna() & (_e < today)
+                elif period == '還沒開始':
+                    m &= _s.notna() & (_s > today)
+            return df[m]
+
+        if not df_a2.empty and '任務名稱' in df_a2.columns:
+            with st.expander("🔍 搜尋任務", expanded=bool(st.session_state.get('tl_kw') or st.session_state.get('tl_groups')
+                                                          or st.session_state.get('tl_types'))):
+                _tl_c1, _tl_c2 = st.columns([3, 1])
+                _tl_kw = _tl_c1.text_input("關鍵字（任務名稱、班級、學生、說明；空白分開＝全部都要符合）",
+                                           key="tl_kw", placeholder="例如：單選 801 王小明")
+                _tl_c2.write("")
+                if _tl_c2.button("✖ 清除條件", key="tl_clear", use_container_width=True):
+                    for _k in ('tl_kw', 'tl_groups', 'tl_types', 'tl_status', 'tl_period'):
+                        st.session_state.pop(_k, None)
+                    st.rerun()
+                _tl_c3, _tl_c4, _tl_c5, _tl_c6 = st.columns(4)
+                _tl_gopts = sorted({g for v in df_a2.get('對象班級', pd.Series(dtype=str)) for g in _tl_groups(v)})
+                _tl_groups_sel = _tl_c3.multiselect("👥 班級", _tl_gopts, key="tl_groups",
+                                                    format_func=lambda g: _group_label(g))
+                _tl_topts = sorted(set(df_a2['任務名稱'].apply(_tl_type)))
+                _tl_types_sel = _tl_c4.multiselect("📝 題型", _tl_topts, key="tl_types")
+                _tl_sopts = ['全部'] + sorted(set(df_a2.get('狀態', pd.Series(dtype=str)).fillna('').astype(str).replace('', '進行中')))
+                _tl_status = _tl_c5.selectbox("📌 狀態", _tl_sopts, key="tl_status")
+                _tl_period = _tl_c6.selectbox("📅 日期", ['全部', '期間內（今天）', '已過結束日', '還沒開始'], key="tl_period")
+            _tl_n0 = len(df_a2)
+            df_a2 = _filter_task_list(df_a2, _tl_kw, _tl_groups_sel, _tl_types_sel, _tl_status, _tl_period, get_now().date())
+            _tl_sig = (_tl_kw, tuple(_tl_groups_sel), tuple(_tl_types_sel), _tl_status, _tl_period)
+            if st.session_state.get('_tl_sig') != _tl_sig:   # 條件變了 → 每位老師的分頁回到第 1 頁
+                st.session_state['_tl_sig'] = _tl_sig
+                for _k in [k for k in st.session_state.keys() if str(k).startswith('task_page_')]:
+                    st.session_state[_k] = 0
+            if len(df_a2) != _tl_n0:
+                st.caption(f"🔍 符合條件：{len(df_a2)} / {_tl_n0} 個任務")
+            if df_a2.empty:
+                st.info("沒有符合搜尋條件的任務。")
+
         if df_a2.empty or '任務名稱' not in df_a2.columns:
-            st.info("目前尚無任務。")
+            if _a2_cache_key in st.session_state and st.session_state[_a2_cache_key].empty:
+                st.info("目前尚無任務。")
         else:
             teachers = sorted(df_a2['_teacher'].unique().tolist()) if '_teacher' in df_a2.columns else []
 
