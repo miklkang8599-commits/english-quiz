@@ -1,6 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.581 - 任務列表搜尋)
+# 🧩 英文全能練習系統 (V2.9.582 - 任務列表快速刪除)
 # ==============================================================================
+# 🆕 2.9.582：任務列表每一列加「🗑️」快速刪除（不用展開，要再按確定）；有篩選時可一次刪除篩選出來的全部任務。
 # 🆕 2.9.581：任務列表搜尋加「⚙️ 題目範圍」（版本／單元／年度／冊編號／課編號＋學校、卷別，同單選題範圍的篩選方式），依任務的題目ID清單判斷。
 # 🆕 2.9.580：任務列表「✖ 清除條件」確實把關鍵字欄清空（之前畫面上的字會殘留）。
 # 🆕 2.9.579：導師中心「📋 任務列表」加「🔍 搜尋任務」：關鍵字（任務名稱／班級／學生／說明）＋班級、題型、狀態、日期篩選。
@@ -119,7 +120,7 @@ if dlgp is not None:
     except Exception as _e_dlg2:
         _DLG_ERR = f"{type(_e_dlg2).__name__}: {_e_dlg2}"
 
-VERSION = "2.9.581"
+VERSION = "2.9.582"
 
 def _dlg_ctx():
     """V2.9.555：給對話練習模組的共用資料"""
@@ -2434,6 +2435,26 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     m &= _s.notna() & (_s > today)
             return df[m]
 
+        def _tl_delete_tasks(created_list):
+            """V2.9.582：把任務標記為「已刪除」（和展開後的「🗑️ 刪除此任務」相同做法），完成後重新整理任務列表"""
+            _ok, _err = 0, []
+            sb = get_supabase()
+            for _ct in [str(c) for c in created_list if str(c or '').strip() and str(c) != 'nan']:
+                try:
+                    sb.table("assignments").update({"status": "已刪除"}).eq("created_at", _ct).execute()
+                    _ok += 1
+                except Exception as e:
+                    _err.append(f"{_ct}：{e}")
+            load_assignments.clear()
+            st.session_state['_a2_cache_stale'] = True
+            st.session_state.pop('_tl_qdel', None)
+            st.session_state.pop('_tl_bulk', None)
+            st.session_state['_tl_del_msg'] = (f"✅ 已刪除 {_ok} 個任務" + (f"；{len(_err)} 個失敗：" + "；".join(_err[:3]) if _err else ""))
+            st.rerun()
+
+        if st.session_state.get('_tl_del_msg'):
+            st.success(st.session_state.pop('_tl_del_msg'))
+
         # V2.9.581：題目範圍（同「單選題範圍」）：版本／單元／年度／冊編號／課編號／學校／卷別
         _TL_DIMS = ['版本', '單元', '年度', '冊編號', '課編號', '學校', '卷別']
 
@@ -2548,6 +2569,21 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     st.session_state[_k] = 0
             if len(df_a2) != _tl_n0:
                 st.caption(f"🔍 符合條件：{len(df_a2)} / {_tl_n0} 個任務")
+                # V2.9.582：一次刪除篩選出來的全部任務（要再按一次確認）
+                if not df_a2.empty:
+                    _bd_sig = repr(_tl_sig)
+                    if st.session_state.get('_tl_bulk') != _bd_sig:
+                        if st.button(f"🗑️ 刪除這 {len(df_a2)} 個篩選出來的任務", key="tl_bulk_del"):
+                            st.session_state['_tl_bulk'] = _bd_sig
+                            st.rerun()
+                    else:
+                        st.warning(f"⚠️ 確定要刪除符合條件的 {len(df_a2)} 個任務？（包含其他老師分頁裡的任務）")
+                        _bc1, _bc2 = st.columns(2)
+                        if _bc1.button(f"✅ 確定刪除 {len(df_a2)} 個任務", key="tl_bulk_ok", type="primary", use_container_width=True):
+                            _tl_delete_tasks(df_a2.get('建立時間', pd.Series(dtype=str)).tolist())
+                        if _bc2.button("取消", key="tl_bulk_no", use_container_width=True):
+                            st.session_state.pop('_tl_bulk', None)
+                            st.rerun()
             if df_a2.empty:
                 st.info("沒有符合搜尋條件的任務。")
 
@@ -2604,12 +2640,25 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                         _exp_key     = f"exp_{teacher}_{idx}"
 
                         # 標題列：任務名稱 + 展開/收起按鈕
-                        _col1, _col2 = st.columns([8, 1])
+                        _col1, _col2, _col3 = st.columns([8, 1, 1])
                         _col1.markdown(f"**{done_icon} {task_name}**　{task_group}　{date_info}")
                         _is_open = st.session_state.get(_exp_key, False)
                         if _col2.button("▼" if not _is_open else "▲", key=f"btn_{_exp_key}", use_container_width=True):
                             st.session_state[_exp_key] = not _is_open
                             st.rerun()
+                        # V2.9.582：不用展開就能刪除（按 🗑️ 後要再按一次「確定刪除」）
+                        _qd_key = str(row.get('建立時間', '')) or f"{teacher}_{idx}"
+                        if _col3.button("🗑️", key=f"qdel_{_exp_key}", use_container_width=True, help="刪除這個任務"):
+                            st.session_state['_tl_qdel'] = _qd_key
+                            st.rerun()
+                        if st.session_state.get('_tl_qdel') == _qd_key:
+                            _qc1, _qc2, _qc3 = st.columns([6, 2, 2])
+                            _qc1.warning(f"確定要刪除「{task_name}」？")
+                            if _qc2.button("✅ 確定刪除", key=f"qdel_ok_{_exp_key}", type="primary", use_container_width=True):
+                                _tl_delete_tasks([row.get('建立時間', '')])
+                            if _qc3.button("取消", key=f"qdel_no_{_exp_key}", use_container_width=True):
+                                st.session_state.pop('_tl_qdel', None)
+                                st.rerun()
 
                         if _is_open:
                             # ── 展開後才計算 ─────────────────────────────────
