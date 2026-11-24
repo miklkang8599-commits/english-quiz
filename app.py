@@ -1,6 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.558 - 對話練習情境畫面)
+# 🧩 英文全能練習系統 (V2.9.578 - 導師中心加快開啟)
 # ==============================================================================
+# 🆕 2.9.578：導師中心「📖 題目講解」的答題紀錄改成按「📥 載入答題紀錄」才讀（開導師中心不再下載全部 logs）。
 # 🆕 2.9.558：對話練習加情境畫面（背景＋角色立繪）；dialog_practice.py 更新時自動重新載入（不用重開 App）。
 # 🆕 2.9.557：對話練習紀錄寫入失敗時，錯誤訊息留在畫面上。
 # 🆕 2.9.556：對話練習「指派班級（整班）」選項後面列出該班學生名字；設定 SQL 補上資料表讀寫規則（RLS）。
@@ -115,7 +116,7 @@ if dlgp is not None:
     except Exception as _e_dlg2:
         _DLG_ERR = f"{type(_e_dlg2).__name__}: {_e_dlg2}"
 
-VERSION = "2.9.558"
+VERSION = "2.9.578"
 
 def _dlg_ctx():
     """V2.9.555：給對話練習模組的共用資料"""
@@ -2865,6 +2866,14 @@ CREATE TABLE IF NOT EXISTS students (
         def _t3_topic_explanation():
             st.subheader("📖 題目講解")
             # 題目講解獨立更新鍵（需要 assignments + logs）
+            # V2.9.578：答題紀錄（全班全部 logs）很大，開導師中心時先不載入，老師按了才讀
+            if not st.session_state.get("t3_logs_on"):
+                st.info("答題紀錄要按下面的按鈕才會載入（讓導師中心開得快一點）。"
+                        "看學生作答紀錄也可以直接用「全班學習報告」。")
+                if st.button("📥 載入答題紀錄", key="t3_logs_load", type="primary"):
+                    st.session_state["t3_logs_on"] = True
+                    st.rerun(scope="fragment")
+                return
             _t3_col1, _t3_col2 = st.columns([5, 1])
             # 在 fragment 內獨立載入 logs
             _df_a_local = load_assignments()
