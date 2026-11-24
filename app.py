@@ -1,6 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.579 - 任務列表搜尋)
+# 🧩 英文全能練習系統 (V2.9.580 - 任務列表搜尋)
 # ==============================================================================
+# 🆕 2.9.580：任務列表「✖ 清除條件」確實把關鍵字欄清空（之前畫面上的字會殘留）。
 # 🆕 2.9.579：導師中心「📋 任務列表」加「🔍 搜尋任務」：關鍵字（任務名稱／班級／學生／說明）＋班級、題型、狀態、日期篩選。
 # 🆕 2.9.578：導師中心「📖 題目講解」的答題紀錄改成按「📥 載入答題紀錄」才讀（開導師中心不再下載全部 logs）。
 # 🆕 2.9.558：對話練習加情境畫面（背景＋角色立繪）；dialog_practice.py 更新時自動重新載入（不用重開 App）。
@@ -117,7 +118,7 @@ if dlgp is not None:
     except Exception as _e_dlg2:
         _DLG_ERR = f"{type(_e_dlg2).__name__}: {_e_dlg2}"
 
-VERSION = "2.9.579"
+VERSION = "2.9.580"
 
 def _dlg_ctx():
     """V2.9.555：給對話練習模組的共用資料"""
@@ -2439,10 +2440,11 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 _tl_kw = _tl_c1.text_input("關鍵字（任務名稱、班級、學生、說明；空白分開＝全部都要符合）",
                                            key="tl_kw", placeholder="例如：單選 801 王小明")
                 _tl_c2.write("")
-                if _tl_c2.button("✖ 清除條件", key="tl_clear", use_container_width=True):
-                    for _k in ('tl_kw', 'tl_groups', 'tl_types', 'tl_status', 'tl_period'):
-                        st.session_state.pop(_k, None)
-                    st.rerun()
+
+                def _tl_reset():   # 用 callback 把每個欄位設回預設值（只 pop 的話，畫面上的字會殘留）
+                    st.session_state.update({'tl_kw': '', 'tl_groups': [], 'tl_types': [],
+                                             'tl_status': '全部', 'tl_period': '全部'})
+                _tl_c2.button("✖ 清除條件", key="tl_clear", use_container_width=True, on_click=_tl_reset)
                 _tl_c3, _tl_c4, _tl_c5, _tl_c6 = st.columns(4)
                 _tl_gopts = sorted({g for v in df_a2.get('對象班級', pd.Series(dtype=str)) for g in _tl_groups(v)})
                 _tl_groups_sel = _tl_c3.multiselect("👥 班級", _tl_gopts, key="tl_groups",
