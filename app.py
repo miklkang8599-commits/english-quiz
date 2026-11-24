@@ -1,6 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.580 - 任務列表搜尋)
+# 🧩 英文全能練習系統 (V2.9.581 - 任務列表搜尋)
 # ==============================================================================
+# 🆕 2.9.581：任務列表搜尋加「⚙️ 題目範圍」（版本／單元／年度／冊編號／課編號＋學校、卷別，同單選題範圍的篩選方式），依任務的題目ID清單判斷。
 # 🆕 2.9.580：任務列表「✖ 清除條件」確實把關鍵字欄清空（之前畫面上的字會殘留）。
 # 🆕 2.9.579：導師中心「📋 任務列表」加「🔍 搜尋任務」：關鍵字（任務名稱／班級／學生／說明）＋班級、題型、狀態、日期篩選。
 # 🆕 2.9.578：導師中心「📖 題目講解」的答題紀錄改成按「📥 載入答題紀錄」才讀（開導師中心不再下載全部 logs）。
@@ -118,7 +119,7 @@ if dlgp is not None:
     except Exception as _e_dlg2:
         _DLG_ERR = f"{type(_e_dlg2).__name__}: {_e_dlg2}"
 
-VERSION = "2.9.580"
+VERSION = "2.9.581"
 
 def _dlg_ctx():
     """V2.9.555：給對話練習模組的共用資料"""
@@ -2433,9 +2434,69 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     m &= _s.notna() & (_s > today)
             return df[m]
 
+        # V2.9.581：題目範圍（同「單選題範圍」）：版本／單元／年度／冊編號／課編號／學校／卷別
+        _TL_DIMS = ['版本', '單元', '年度', '冊編號', '課編號', '學校', '卷別']
+
+        def _tl_num_key(x):
+            s = str(x)
+            return (0, float(s), '') if re.fullmatch(r'\d+(\.\d+)?', s) else (1, 0.0, s)
+
+        def _tl_scope_map(df):
+            """每個任務的題目範圍：從「題目ID清單」解析版本／年度／冊／單元／課；學校／卷別查題庫"""
+            try:   # 任務內容沒變就沿用上次算好的（不用 id(df_a)，每次重跑都會變）
+                sk = '_tl_scope_' + str(len(df)) + '_' + str(int(pd.util.hash_pandas_object(
+                    df.get('題目ID清單', pd.Series('', index=df.index)).astype(str), index=True).sum()))
+            except Exception:
+                sk = '_tl_scope_' + _a2_cache_key
+            if sk in st.session_state:
+                return st.session_state[sk]
+            for _k in [k for k in st.session_state.keys() if str(k).startswith('_tl_scope_')]:
+                del st.session_state[_k]
+            sp = {}
+            _need = ['版本', '年度', '冊編號', '單元', '課編號', '句編號']
+            for _bank, _pfx in ((df_mcq, ''), (df_q, ''), (df_rm, 'RM_'), (df_r, 'R_'), (df_v, 'V_')):
+                if _bank is None or _bank.empty or not ({'學校', '卷別'} & set(_bank.columns)) \
+                        or not all(c in _bank.columns for c in _need):
+                    continue
+                _ids = _pfx + _bank['版本'].astype(str)
+                for c in _need[1:]:
+                    _ids = _ids + '_' + _bank[c].astype(str)
+                _sch = _bank['學校'].astype(str) if '學校' in _bank.columns else pd.Series('', index=_bank.index)
+                _pap = _bank['卷別'].astype(str) if '卷別' in _bank.columns else pd.Series('', index=_bank.index)
+                for _i, _s, _p in zip(_ids, _sch, _pap):
+                    _s, _p = _s.strip(), _p.strip()
+                    if (_s and _s != 'nan') or (_p and _p != 'nan'):
+                        sp[_i] = (_s if _s != 'nan' else '', _p if _p != 'nan' else '')
+            out = {}
+            for _ix, _ids_str in df.get('題目ID清單', pd.Series('', index=df.index)).items():
+                d = {k: set() for k in _TL_DIMS}
+                for q in str(_ids_str or '').split(','):
+                    q = q.strip()
+                    if not q or q == 'nan':
+                        continue
+                    parts = q.split('_')
+                    if parts[0] == 'LP':
+                        continue
+                    if parts[0] in ('V', 'R', 'RM', 'LS'):
+                        parts = parts[1:]
+                    if len(parts) < 6:
+                        continue
+                    d['版本'].add('_'.join(parts[:-5])); d['年度'].add(parts[-5]); d['冊編號'].add(parts[-4])
+                    d['單元'].add(parts[-3]); d['課編號'].add(parts[-2])
+                    _sp = sp.get(q)
+                    if _sp:
+                        if _sp[0]: d['學校'].add(_sp[0])
+                        if _sp[1]: d['卷別'].add(_sp[1])
+                out[_ix] = d
+            st.session_state[sk] = out
+            return out
+
+        _tl_m = None
+        _tl_scope_sel = ()
         if not df_a2.empty and '任務名稱' in df_a2.columns:
-            with st.expander("🔍 搜尋任務", expanded=bool(st.session_state.get('tl_kw') or st.session_state.get('tl_groups')
-                                                          or st.session_state.get('tl_types'))):
+            _tl_scope = _tl_scope_map(df_a2)
+            _tl_open = any(st.session_state.get(k) for k in ['tl_kw', 'tl_groups', 'tl_types'] + [f'tl_s_{j}' for j in range(len(_TL_DIMS))])
+            with st.expander("🔍 搜尋任務", expanded=_tl_open):
                 _tl_c1, _tl_c2 = st.columns([3, 1])
                 _tl_kw = _tl_c1.text_input("關鍵字（任務名稱、班級、學生、說明；空白分開＝全部都要符合）",
                                            key="tl_kw", placeholder="例如：單選 801 王小明")
@@ -2443,8 +2504,30 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
 
                 def _tl_reset():   # 用 callback 把每個欄位設回預設值（只 pop 的話，畫面上的字會殘留）
                     st.session_state.update({'tl_kw': '', 'tl_groups': [], 'tl_types': [],
-                                             'tl_status': '全部', 'tl_period': '全部'})
+                                             'tl_status': '全部', 'tl_period': '全部',
+                                             **{f'tl_s_{j}': [] for j in range(len(_TL_DIMS))}})
                 _tl_c2.button("✖ 清除條件", key="tl_clear", use_container_width=True, on_click=_tl_reset)
+
+                st.markdown("**⚙️ 題目範圍**（空白 = 全部）")
+                _tl_sc = st.columns(5)
+                _tl_m = pd.Series(True, index=df_a2.index)
+                _tl_ixs = df_a2.index.to_series()
+                for _j, _dim in enumerate(_TL_DIMS):
+                    _opts = sorted({v for ix in df_a2.index[_tl_m] for v in _tl_scope.get(ix, {}).get(_dim, ())}, key=_tl_num_key)
+                    _key = f'tl_s_{_j}'
+                    if st.session_state.get(_key):   # 上一層改了 → 不在選項裡的選擇拿掉
+                        st.session_state[_key] = [v for v in st.session_state[_key] if v in _opts]
+                    if _dim in ('學校', '卷別'):
+                        if not _opts:
+                            continue
+                        _sel = st.multiselect(("🏫 學校" if _dim == '學校' else "📄 卷別") + "（可複選，空白 = 全部）", _opts, key=_key)
+                    else:
+                        _sel = _tl_sc[_j].multiselect(_dim, _opts, key=_key)
+                    if _sel:
+                        _ss = set(_sel)
+                        _tl_m &= _tl_ixs.map(lambda ix, _d=_dim, _s=_ss: bool(_s & _tl_scope.get(ix, {}).get(_d, set())))
+                        _tl_scope_sel += ((_dim, tuple(_sel)),)
+
                 _tl_c3, _tl_c4, _tl_c5, _tl_c6 = st.columns(4)
                 _tl_gopts = sorted({g for v in df_a2.get('對象班級', pd.Series(dtype=str)) for g in _tl_groups(v)})
                 _tl_groups_sel = _tl_c3.multiselect("👥 班級", _tl_gopts, key="tl_groups",
@@ -2455,8 +2538,10 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 _tl_status = _tl_c5.selectbox("📌 狀態", _tl_sopts, key="tl_status")
                 _tl_period = _tl_c6.selectbox("📅 日期", ['全部', '期間內（今天）', '已過結束日', '還沒開始'], key="tl_period")
             _tl_n0 = len(df_a2)
+            if _tl_m is not None:
+                df_a2 = df_a2[_tl_m]
             df_a2 = _filter_task_list(df_a2, _tl_kw, _tl_groups_sel, _tl_types_sel, _tl_status, _tl_period, get_now().date())
-            _tl_sig = (_tl_kw, tuple(_tl_groups_sel), tuple(_tl_types_sel), _tl_status, _tl_period)
+            _tl_sig = (_tl_kw, tuple(_tl_groups_sel), tuple(_tl_types_sel), _tl_status, _tl_period, _tl_scope_sel)
             if st.session_state.get('_tl_sig') != _tl_sig:   # 條件變了 → 每位老師的分頁回到第 1 頁
                 st.session_state['_tl_sig'] = _tl_sig
                 for _k in [k for k in st.session_state.keys() if str(k).startswith('task_page_')]:
