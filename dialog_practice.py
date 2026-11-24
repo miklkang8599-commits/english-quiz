@@ -25,7 +25,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 import streamlit as st
 
-DLG_VERSION = "2.9.575"   # 只改這個模組時，老師端「🗣️ 對話練習」最上面會顯示這個版本
+DLG_VERSION = "2.9.576"   # 只改這個模組時，老師端「🗣️ 對話練習」最上面會顯示這個版本
 
 # ------------------------------------------------------------------------------
 # 內建示範對話
@@ -1647,8 +1647,12 @@ def _teacher_gen(ctx, dialogs):
     n_turns = f2.number_input("句數（0＝AI 決定）", 0, 12, 4, key="dlg_g_nturns", disabled=bool(fixed))
     if fixed:
         f2.caption(f"照指定對話：{len(fixed)} 句")
-    if st.button("🪄 AI 產生對話" if not st.session_state.get("dlg_gen") else "🔁 重新產生一版",
-                 type="primary", key="dlg_g_go", disabled=not (pats.strip() or fixed)):
+    # V2.9.576 按鈕不再「沒填就變灰」：剛打完字直接按，字還沒送出時按鈕是灰的，第一下會被吃掉（看起來沒反應）
+    go = st.button("🪄 AI 產生對話" if not st.session_state.get("dlg_gen") else "🔁 重新產生一版",
+                   type="primary", key="dlg_g_go")
+    if go and not (pats.strip() or fixed):
+        st.warning("請先填「課文句型」或「指定對話」。")
+    elif go:
         with st.spinner("AI 正在擬對話…（約 10～20 秒）"):
             try:
                 st.session_state["dlg_gen"] = _ai_dialog(lesson, pats, words, level, n_turns, fixed_text)
@@ -1723,8 +1727,11 @@ def _teacher_gen(ctx, dialogs):
     elif exists:
         st.error(f"對話ID「{did}」已經存在，請換一個 ID（例如加 -2）。")
     rows_t, rows_c = _gen_rows(did, level, g)
-    if st.button(f"💾 存進試算表（對話ID：{did or '—'}）", type="primary", key="dlg_g_save",
-                 disabled=not did or exists or not g["turns"]):
+    save = st.button(f"💾 存進試算表（對話ID：{did or '—'}）", type="primary", key="dlg_g_save")   # V2.9.576 不變灰
+    if save and (not did or exists or not g["turns"]):
+        st.warning("還不能存：" + ("請填「課名／單元」或「對話ID」。" if not did else
+                                   f"對話ID「{did}」已經存在。" if exists else "對話至少要有一句。"))
+    elif save:
         try:
             book = _gspread_book()
             _append_rows(book, "對話範本", rows_t, ["對話ID", "標題", "程度", "回合", "角色", "角色名稱", "英文", "中文", "情境", "角色描述"])
