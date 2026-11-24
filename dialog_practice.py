@@ -25,7 +25,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 import streamlit as st
 
-DLG_VERSION = "2.9.576"   # 只改這個模組時，老師端「🗣️ 對話練習」最上面會顯示這個版本
+DLG_VERSION = "2.9.577"   # 只改這個模組時，老師端「🗣️ 對話練習」最上面會顯示這個版本
 
 # ------------------------------------------------------------------------------
 # 內建示範對話
@@ -2050,7 +2050,13 @@ def _load_dlg_logs(_sb_factory, aid, ver=0):
     return q.execute().data or []
 
 
+DLG_RECORDS_PAUSED = True   # V2.9.577 「🎧 學生紀錄」分頁暫停（每次開老師頁都要讀 Supabase，拖慢載入）；改 False 就恢復
+
+
 def _teacher_records(ctx, dialogs):
+    if DLG_RECORDS_PAUSED:
+        st.info("⏸️ 「學生紀錄」暫停使用中（為了讓網頁載入快一點）。學生練習的紀錄還是照常存著，之後恢復就看得到。")
+        return
     rows, err = _load_assignments(ctx["sb"], _assign_ver())
     if err:
         _setup_hint(err)
