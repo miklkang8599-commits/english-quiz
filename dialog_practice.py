@@ -25,7 +25,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 import streamlit as st
 
-DLG_VERSION = "2.9.578"   # 只改這個模組時，老師端「🗣️ 對話練習」最上面會顯示這個版本
+DLG_VERSION = "2.9.583"   # 只改這個模組時，老師端「🗣️ 對話練習」最上面會顯示這個版本
 
 # ------------------------------------------------------------------------------
 # 內建示範對話
@@ -639,7 +639,9 @@ def _save_log(ctx, run, stage, rno, tno, combo_words, check, audio_bytes):
             "group_id": str(ctx.get("group_id") or ""),
             "assign_id": int(aid) if aid not in (None, "") else None, "dialog_id": str(run["dialog_id"]),
             "stage": str(stage), "round_no": int(rno), "turn_no": int(tno),
-            "words": ";".join(f"{k}={v}" for k, v in combo_words.items()),
+            # V2.9.583 最後加「@=代號」：每次進入一關換一個代號，學習報告用它把每一次分開
+            "words": ";".join([f"{k}={v}" for k, v in combo_words.items()]
+                              + ([f"@={run['att']}"] if run.get("att") else [])),
             "self_check": str(check), "audio_path": path,
         }).execute()
         return True
@@ -787,6 +789,9 @@ def _render_run(ctx):
     speed_lbl = c2.radio("語速", ["正常", "慢速"], horizontal=True, key="dlg_speed")
     speed = 1.0 if speed_lbl == "正常" else 0.75
     st.caption("💡 " + STAGE_HELP.get(stage, ""))
+    if run.get("att_stage") != stage:   # V2.9.583 每次按「測驗」「看圖練習說」…都算新的一次
+        run["att_stage"] = stage
+        run["att"] = datetime.utcnow().strftime("%y%m%d%H%M%S%f")[:-3]
 
     n = run["rounds"]
     rno = min(run["round"], n - 1)
@@ -2054,7 +2059,7 @@ def _teacher_records(ctx, dialogs):
     # V2.9.578 開老師頁時先不讀 Supabase（以前每次開都要讀，拖慢載入）；老師按了才載入
     if not st.session_state.get("dlg_r_on"):
         st.info("學生紀錄要按下面的按鈕才會載入（讓老師頁開得快一點）。也可以直接看「全班學習報告」。")
-        if st.button("📥 載入學生紀錄", key="dlg_r_load", type="primary"):
+        if st.button("📥 載入學生紀錄", key="dlg_r_open", type="primary"):
             st.session_state["dlg_r_on"] = True
             _rerun_frag()
         return
@@ -2094,7 +2099,7 @@ def _teacher_records(ctx, dialogs):
     wrows = []
     for _, r in df.iterrows():
         for kv in str(r.get("words") or "").split(";"):
-            if "=" in kv:
+            if "=" in kv and not kv.startswith("@"):
                 wrows.append({"圖卡": kv.split("=", 1)[1], "self_check": r["self_check"]})
     if wrows:
         wdf = pd.DataFrame(wrows)
