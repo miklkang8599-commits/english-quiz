@@ -1,6 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.591 - 任務題目列表與翻譯解析頁)
+# 🧩 英文全能練習系統 (V2.9.592 - 任務題目列表與翻譯解析頁)
 # ==============================================================================
+# 🆕 2.9.592：「📼 全部錄完一起評分」的紀錄帶上練習方式和開始時間（學習報告顯示成「📼 全部錄完一起評分」，不再是推測）。
 # 🆕 2.9.591：朗讀任務分成「🎤 每題評分」「⏩ 每題評分-接續上次作答」「📼 全部錄完一起評分」「🏋️ 練習模式」，
 #              結束後列出每題分數和 AI 聽到的內容（全部錄完一起評分：每題只錄音，最後同時送出評分）。
 # 🆕 2.9.590：朗讀題「⚡ 快速答題」錄音後直接顯示分數和 AI 聽到的內容（不產生示範音檔），停在分數畫面，
@@ -130,7 +131,7 @@ if dlgp is not None:
     except Exception as _e_dlg2:
         _DLG_ERR = f"{type(_e_dlg2).__name__}: {_e_dlg2}"
 
-VERSION = "2.9.591"
+VERSION = "2.9.592"
 
 def _dlg_ctx():
     """V2.9.555：給對話練習模組的共用資料"""
@@ -373,6 +374,7 @@ def _current_practice_mode() -> str:
     if _ss.get("typing_mode"):   return "⌨️ 多次打字練習"
     if _ss.get("replay_mode"):   return "🔊 多次撥放"
     if _ss.get("ec_mode"):       return "🇨🇳 英選中"
+    if _ss.get("rd_batch_mode"): return "📼 全部錄完一起評分"   # V2.9.592
     return "⚡ 快速答題"
 
 def _ensure_practice_session():
@@ -709,6 +711,10 @@ def _rd_batch_record(q, read_text):
     import time as _tm
     qi = st.session_state.q_idx
     store = st.session_state.get("rd_batch") or {}
+    try:
+        _ensure_practice_session()   # V2.9.592：記下這次的開始時間和練習方式（評分時才寫紀錄）
+    except Exception:
+        pass
     rec = st.audio_input("🎙️ 錄音", key=f"rdb_{qi}_{st.session_state.get(f'rd_rec_n_{qi}', 0)}")
     if rec is not None:
         try:
@@ -755,6 +761,9 @@ def _rd_batch_score():
                                      "題目ID": it["qid"], "結果": "練習" if st.session_state.get("practice_mode") else "🎤 朗讀",
                                      "學生答案": heard, "分數": score,
                                      "任務名稱": st.session_state.get("current_task_name", ""), "作答秒數": it["sec"]}))
+            if st.session_state.get("_ps_start"):   # V2.9.592：回到主選單才評分 → 自己補上練習方式和開始時間
+                rows[-1]["practice_mode"] = "📼 全部錄完一起評分"
+                rows[-1]["session_start"] = str(st.session_state.get("_ps_start"))
         if rows:
             sb = get_supabase()
             try:
@@ -765,7 +774,7 @@ def _rd_batch_score():
             except Exception:
                 for r in rows:
                     try:
-                        _insert_log(sb, r)
+                        _insert_log(sb, dict(r))
                     except Exception as e:
                         st.error(f"❌ 寫入失敗：{e}")
 
