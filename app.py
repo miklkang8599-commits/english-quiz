@@ -1,6 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.582 - 任務列表快速刪除)
+# 🧩 英文全能練習系統 (V2.9.584 - 任務題目列表與翻譯解析頁)
 # ==============================================================================
+# 🆕 2.9.584：任務展開後、下載 PDF 前面加「📋 題目列表」（序號、題目、正確答案），勾選題目後產生完整題目／中文翻譯／解析頁，可下載 HTML 列印。
 # 🆕 2.9.582：任務列表每一列加「🗑️」快速刪除（不用展開，要再按確定）；有篩選時可一次刪除篩選出來的全部任務。
 # 🆕 2.9.581：任務列表搜尋加「⚙️ 題目範圍」（版本／單元／年度／冊編號／課編號＋學校、卷別，同單選題範圍的篩選方式），依任務的題目ID清單判斷。
 # 🆕 2.9.580：任務列表「✖ 清除條件」確實把關鍵字欄清空（之前畫面上的字會殘留）。
@@ -120,7 +121,7 @@ if dlgp is not None:
     except Exception as _e_dlg2:
         _DLG_ERR = f"{type(_e_dlg2).__name__}: {_e_dlg2}"
 
-VERSION = "2.9.582"
+VERSION = "2.9.584"
 
 def _dlg_ctx():
     """V2.9.555：給對話練習模組的共用資料"""
@@ -1143,6 +1144,228 @@ def _rm_passage_html(passage):
     if not re.search(r"<(table|div|p|ul|ol)\b", p, re.I):
         p = p.replace("\n", "<br>")
     return f"<div class='rm-passage'>{p}</div>"
+
+
+
+# ── V2.9.584：任務展開後的「📋 題目列表」：勾選題目 → 產生完整題目／翻譯／解析頁 ─────────────
+_TQ_CSS = """<style>
+.tq-page { font-size:1rem; line-height:1.6; }
+.tq-grp { margin:10px 0 4px; padding:10px 12px; border-radius:8px; border:1px dashed rgba(128,128,128,.5); }
+.tq-item { margin:10px 0; padding:10px 12px; border-radius:8px; border:1px solid rgba(128,128,128,.35); break-inside:avoid; }
+.tq-h { font-weight:700; margin-bottom:4px; }
+.tq-tag { font-size:.8rem; font-weight:400; opacity:.7; margin-left:6px; }
+.tq-cols { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+@media (max-width:640px) { .tq-cols { grid-template-columns:1fr; } }
+.tq-lbl { font-size:.8rem; opacity:.7; }
+.tq-opt { padding:1px 0 1px 8px; }
+.tq-ok { color:#30a46c; font-weight:600; }
+.tq-ans { margin-top:6px; color:#30a46c; font-weight:600; }
+.tq-ex { margin-top:6px; padding:6px 9px; border-radius:6px; background:rgba(128,128,128,.10); }
+.tq-page table { border-collapse:collapse; font-size:.85rem; max-width:560px; }
+.tq-page th, .tq-page td { border:1px solid rgba(128,128,128,.45); padding:3px 5px; text-align:center; }
+.tq-page img { max-width:100%; }
+</style>"""
+
+_TQ_KEYS = ['版本', '年度', '冊編號', '單元', '課編號', '句編號']
+
+
+def _tq_index():
+    """題庫：題目ID → (題型, 那一列)。和出題時的題目ID產生方式相同"""
+    sig = tuple(len(d) if isinstance(d, pd.DataFrame) else -1 for d in (df_q, df_mcq, df_r, df_v, df_rm, df_ls, df_lp))
+    cached = st.session_state.get("_tq_index")
+    if cached and cached[0] == sig:
+        return cached[1]
+    idx = {}
+
+    def add(df, pfx, kind, fn=None):
+        if not isinstance(df, pd.DataFrame) or df.empty:
+            return
+        if fn is None and not all(c in df.columns for c in _TQ_KEYS):
+            return
+        for rec in df.to_dict('records'):
+            q = fn(rec) if fn else pfx + '_'.join(str(rec.get(c, '')) for c in _TQ_KEYS)
+            idx[q] = (kind, rec)
+    add(df_q, '', '重組')
+    add(df_mcq, '', '單選')          # 同一個 ID 時單選優先（和下載 PDF 相同）
+    add(df_r, 'R_', '朗讀')
+    add(df_v, 'V_', '單字')
+    add(df_rm, 'RM_', '閱讀')
+    add(df_ls, 'LS_', '聽力重組')
+    add(df_lp, '', '聽力音標', _get_lp_qid)
+    st.session_state["_tq_index"] = (sig, idx)
+    return idx
+
+
+def _tq_find(idx, qid):
+    q = str(qid).strip()
+    if q in idx:
+        return idx[q]
+    if q.startswith('V_') and q[2:] in idx:
+        return idx[q[2:]]
+    return None
+
+
+def _tq_fields(kind, r):
+    """→ (題目, 正確答案, 選項[(字母,內容)], 中文翻譯, 解析)"""
+    def g(*cs):
+        for c in cs:
+            v = str(r.get(c, '') or '').strip()
+            if v and v != 'nan':
+                return v
+        return ''
+    opts = []
+    if kind == '單選':
+        q, a = g('單選題目', '中文題目'), g('單選答案')
+        zh, ex = g('中文翻譯', '單選中文翻譯', '翻譯'), g('解析', '單選解析')
+    elif kind == '閱讀':
+        q, a = g('題目'), g('正確選項列出').upper()
+        opts = [(o, g(f'選項{o}')) for o in 'ABCD' if g(f'選項{o}')]
+        zh, ex = g('翻譯', '中文翻譯'), g('解析')
+    elif kind == '重組':
+        q, a = g('重組中文題目', '中文題目'), g('重組英文答案', '英文答案')
+        zh, ex = g('中文翻譯'), g('解析')
+    elif kind == '朗讀':
+        q = a = g('朗讀句子')
+        zh, ex = g('中文翻譯', '中文'), g('解析')
+    elif kind == '單字':
+        q, a = g('英文單字'), g('中文意思')
+        zh, ex = '', g('解析')
+    elif kind == '聽力重組':
+        q = a = g('聽力重組英文答案')
+        zh, ex = g('聽力重組中文翻譯'), g('解析')
+    else:
+        q, a = g('單字', '英文單字'), g('KK符號')
+        zh, ex = '', g('解析')
+    return q, a, opts, zh, ex
+
+
+def _tq_rows(qid_str):
+    """任務的題目ID清單（照出題順序、去重複）→ 題目列表"""
+    idx = _tq_index()
+    out, seen = [], set()
+    for q in str(qid_str or '').split(','):
+        q = q.strip()
+        if not q or q == 'nan' or q in seen:
+            continue
+        seen.add(q)
+        hit = _tq_find(idx, q)
+        if hit:
+            kind, rec = hit
+            text, ans, opts, zh, ex = _tq_fields(kind, rec)
+            if opts:
+                text = text + ' ' + ' '.join(f"({o}) {t}" for o, t in opts)
+        else:
+            kind, rec, text, ans = '（題庫找不到）', {}, q, ''
+        out.append({'序號': len(out) + 1, '題型': kind, '題目': re.sub(r'<[^>]+>', '', text).replace('\n', ' '),
+                    '正確答案': ans, '_qid': q, '_kind': kind, '_rec': rec})
+    return out
+
+
+def _tq_txt(s):
+    import html as _h
+    return _h.escape(str(s or '').strip()).replace('\n', '<br>')
+
+
+def _tq_rich(s):
+    """題庫裡本來就有的 HTML（文章表格、<u> 底線）保留，其他換行變 <br>"""
+    s = str(s or '').strip()
+    if not re.search(r"<(table|div|p|ul|ol)\b", s, re.I):
+        s = s.replace('\n', '<br>')
+    return s.replace('\r', '').replace('\n', ' ')
+
+
+def _tq_img_html(v):
+    try:
+        b = _get_reading_image(v)
+    except Exception:
+        b = None
+    if isinstance(b, (bytes, bytearray)):
+        import base64 as _b64
+        mt = 'image/png' if bytes(b[:4]) == b'\x89PNG' else 'image/jpeg'
+        return f"<img src='data:{mt};base64,{_b64.b64encode(bytes(b)).decode()}'>"
+    if isinstance(b, str) and b.startswith('http'):
+        return f"<img src='{_tq_txt(b)}'>"
+    return f"<div class='tq-lbl'>⚠️ 圖片讀取失敗：{_tq_txt(v)}</div>" if v else ''
+
+
+def _tq_page_html(rows, title=''):
+    """勾選的題目 → 完整題目／中文翻譯／正確答案／解析（閱讀題組先列整篇文章和全文翻譯）"""
+    parts = [f"<h3>{_tq_txt(title)}</h3>" if title else '']
+    shown_grp = set()
+    for r in rows:
+        kind, rec = r['_kind'], r['_rec']
+        if not rec:
+            parts.append(f"<div class='tq-item'><div class='tq-h'>{r['序號']}. {_tq_txt(r['_qid'])}</div>題庫裡找不到這一題</div>")
+            continue
+        text, ans, opts, zh, ex = _tq_fields(kind, rec)
+        grp = str(rec.get('題組', '') or '').strip() if kind == '閱讀' else ''
+        if kind == '閱讀' and (grp or str(rec.get('答案', '') or '').strip()) and (grp or r['_qid']) not in shown_grp:
+            shown_grp.add(grp or r['_qid'])
+            sib = [x for x in (df_rm.to_dict('records') if isinstance(df_rm, pd.DataFrame) and grp else [rec])
+                   if not grp or str(x.get('題組', '') or '').strip() == grp]
+            passage = next((str(x.get('答案', '') or '').strip() for x in sib if str(x.get('答案', '') or '').strip()), '')
+            full_zh = next((str(x.get('全文翻譯', '') or '').strip() for x in sib if str(x.get('全文翻譯', '') or '').strip()), '')
+            imgs = []
+            for x in sib:
+                v = str(x.get('圖片', '') or '').strip()
+                if v and v not in imgs:
+                    imgs.append(v)
+            src = '・'.join(v for v in [str(rec.get('考卷年度', '') or '').strip(), str(rec.get('學校', '') or '').strip(),
+                                        (str(rec.get('卷別', '')).strip() + '卷') if str(rec.get('卷別', '') or '').strip() else ''] if v)
+            parts.append("<div class='tq-grp'><div class='tq-h'>📖 閱讀文章" + (f"<span class='tq-tag'>{_tq_txt(src)}</span>" if src else '')
+                         + "</div><div class='tq-cols'><div>" + _tq_rich(passage) + ''.join(_tq_img_html(v) for v in imgs)
+                         + "</div><div><div class='tq-lbl'>🈶 全文翻譯</div>" + (_tq_txt(full_zh) or '（沒有全文翻譯）') + "</div></div></div>")
+        en = _tq_rich(text) if kind == '閱讀' else _tq_txt(text)
+        if opts:
+            en += ''.join(f"<div class='tq-opt{' tq-ok' if o == ans else ''}'>{'✅ ' if o == ans else ''}({o}) {_tq_rich(t)}</div>" for o, t in opts)
+        parts.append(
+            f"<div class='tq-item'><div class='tq-h'>{r['序號']}.<span class='tq-tag'>{_tq_txt(kind)}</span></div>"
+            f"<div class='tq-cols'><div><div class='tq-lbl'>🇬🇧 題目</div>{en}"
+            + (f"<div class='tq-ans'>✅ 正確答案：{_tq_txt(ans)}</div>" if ans and kind != '朗讀' else '')
+            + f"</div><div><div class='tq-lbl'>🈶 中文翻譯</div>{_tq_txt(zh) or '（沒有中文翻譯）'}</div></div>"
+            f"<div class='tq-ex'><b>📝 解析</b><br>{_tq_txt(ex) or '（沒有解析）'}</div></div>")
+    return "<div class='tq-page'>" + ''.join(parts) + "</div>"
+
+
+def _tq_render(qid_str, key, title=''):
+    rows = _tq_rows(qid_str)
+    if not rows:
+        return
+    st.divider()
+    st.markdown(f"**📋 題目列表**（共 {len(rows)} 題）")
+    st.caption("👆 勾選表格最左邊的方框（最上面的方框＝全選），再按「📖 產生翻譯解析頁」")
+    view = pd.DataFrame(rows)[['序號', '題型', '題目', '正確答案']]
+    cfg = {"序號": st.column_config.NumberColumn("序號", width=50), "題型": st.column_config.TextColumn("題型", width=60),
+           "題目": st.column_config.TextColumn("題目", width="large"), "正確答案": st.column_config.TextColumn("正確答案", width=110)}
+    try:
+        ev = st.dataframe(view, use_container_width=True, hide_index=True, column_config=cfg,
+                          on_select="rerun", selection_mode="multi-row", key=f"tq_tbl_{key}")
+        sel = sorted(int(i) for i in ev.selection.rows)
+    except TypeError:
+        st.dataframe(view, use_container_width=True, hide_index=True, column_config=cfg)
+        sel = []
+    c1, c2 = st.columns([2, 1])
+    if c1.button(f"📖 產生翻譯解析頁（已勾選 {len(sel)} 題）", key=f"tq_go_{key}", type="primary",
+                 use_container_width=True, disabled=not sel):
+        st.session_state[f"tq_pick_{key}"] = [rows[i]['_qid'] for i in sel if 0 <= i < len(rows)]
+    picked = st.session_state.get(f"tq_pick_{key}") or []
+    if picked and c2.button("✖ 關閉解析頁", key=f"tq_close_{key}", use_container_width=True):
+        st.session_state.pop(f"tq_pick_{key}", None)
+        st.rerun()
+    pick_rows = [r for r in rows if r['_qid'] in set(picked)]
+    if not pick_rows:
+        return
+    page = _tq_page_html(pick_rows)
+    with st.container(border=True):
+        st.markdown(f"#### 📖 翻譯解析（{len(pick_rows)} 題）")
+        st.markdown(_TQ_CSS + page.replace('$', '&#36;'), unsafe_allow_html=True)
+    doc = ("<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
+           f"<title>{_tq_txt(title or '翻譯解析')}</title>" + _TQ_CSS.replace('<style>', '<style>body{font-family:sans-serif;max-width:1000px;margin:20px auto;padding:0 16px;}')
+           + "</head><body>" + _tq_page_html(pick_rows, title=f"{title}｜翻譯解析（{len(pick_rows)} 題）") + "</body></html>")
+    fname = re.sub(r'[\\/:*?<>|]', '_', title or '翻譯解析')[:80] + '-翻譯解析.html'   # f-string 裡不能放反斜線（舊版 Python）
+    st.download_button("⬇️ 下載這頁（HTML，用瀏覽器開啟可列印）", data=doc.encode('utf-8'),
+                       file_name=fname,
+                       mime="text/html", key=f"tq_dl_{key}")
 
 
 
@@ -2783,6 +3006,15 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                                 except Exception as e:
                                     st.error(f"刪除失敗：{e}")
         
+                            # ── V2.9.584：題目列表＋勾選產生翻譯解析頁 ─────────────
+                            if task_q_ids and task_q_ids != 'nan':
+                                try:
+                                    _tq_render(task_q_ids, key=f"{idx}", title=re.sub(r'^\[T\d+\]\s*', '', str(task_name)))
+                                except Exception as _tq_e:
+                                    if type(_tq_e).__name__ in ("StopException", "RerunException", "RerunData"):
+                                        raise
+                                    st.warning(f"題目列表顯示失敗：{type(_tq_e).__name__}: {_tq_e}")
+
                             # ── 下載 PDF（功能5）─────────────────────────────
                             if q_ids_set:
                                 st.divider()
