@@ -1,6 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.588 - 任務題目列表與翻譯解析頁)
+# 🧩 英文全能練習系統 (V2.9.589 - 任務題目列表與翻譯解析頁)
 # ==============================================================================
+# 🆕 2.9.589：任務列表的老師分頁改成會記住的選擇鈕（刪除任務、翻頁後停在原本的老師，不再跳回第一位）。
 # 🆕 2.9.588：題目列表的浮動視窗，閱讀題同一篇的題目一次列出（👉 標出點的那一題），上一／下一改成一次跳一篇。
 # 🆕 2.9.587：題目列表改成獨立重跑（fragment）：點一題不再讓整個導師中心變灰重畫，浮動視窗馬上出現。
 # 🆕 2.9.586：題目列表改成一次選一題，跳出浮動視窗看題目／翻譯／解析（可上一題／下一題）；選另一題直接換過去。
@@ -125,7 +126,7 @@ if dlgp is not None:
     except Exception as _e_dlg2:
         _DLG_ERR = f"{type(_e_dlg2).__name__}: {_e_dlg2}"
 
-VERSION = "2.9.588"
+VERSION = "2.9.589"
 
 def _dlg_ctx():
     """V2.9.555：給對話練習模組的共用資料"""
@@ -2899,11 +2900,13 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 teachers = [current_teacher] + [t for t in teachers if t != current_teacher]
 
             if len(teachers) == 1:
-                teacher_tabs = [st.container()]
-                teacher_map  = {teachers[0]: teacher_tabs[0]}
+                teacher_map  = {teachers[0]: st.container()}
             else:
-                teacher_tabs = st.tabs(teachers)
-                teacher_map  = {t: teacher_tabs[i] for i, t in enumerate(teachers)}
+                # V2.9.589：st.tabs 在重新整理後會跳回第一個分頁 → 改用會記住的選擇鈕，只畫選到的老師
+                if st.session_state.get('tl_teacher') not in teachers:
+                    st.session_state['tl_teacher'] = teachers[0]
+                _tl_t = st.radio("👩‍🏫 老師", teachers, key="tl_teacher", horizontal=True, label_visibility="collapsed")
+                teacher_map  = {_tl_t: st.container()}
 
             for teacher, tab_container in teacher_map.items():
                 with tab_container:
