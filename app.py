@@ -1,6 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.585 - 任務題目列表與翻譯解析頁)
+# 🧩 英文全能練習系統 (V2.9.586 - 任務題目列表與翻譯解析頁)
 # ==============================================================================
+# 🆕 2.9.586：題目列表改成一次選一題，跳出浮動視窗看題目／翻譯／解析（可上一題／下一題）；選另一題直接換過去。
 # 🆕 2.9.585：題目列表勾選後直接產生翻譯解析頁（不用再按按鈕）；閱讀題多一欄「文章」（第幾篇＋文章開頭），看得出哪幾題是同一個題組。
 # 🆕 2.9.584：任務展開後、下載 PDF 前面加「📋 題目列表」（序號、題目、正確答案），勾選題目後產生完整題目／中文翻譯／解析頁，可下載 HTML 列印。
 # 🆕 2.9.582：任務列表每一列加「🗑️」快速刪除（不用展開，要再按確定）；有篩選時可一次刪除篩選出來的全部任務。
@@ -122,7 +123,7 @@ if dlgp is not None:
     except Exception as _e_dlg2:
         _DLG_ERR = f"{type(_e_dlg2).__name__}: {_e_dlg2}"
 
-VERSION = "2.9.585"
+VERSION = "2.9.586"
 
 def _dlg_ctx():
     """V2.9.555：給對話練習模組的共用資料"""
@@ -1346,13 +1347,41 @@ def _tq_page_html(rows, title=''):
     return "<div class='tq-page'>" + ''.join(parts) + "</div>"
 
 
+def _tq_dialog_body(rows, key):
+    """V2.9.586 浮動視窗：一次看一題（閱讀題先列整篇文章），可以上一題／下一題"""
+    ck = f"tq_cur_{key}"
+    i = max(0, min(int(st.session_state.get(ck, 0)), len(rows) - 1))
+    c1, c2, c3 = st.columns([1, 2, 1])
+    c1.button("◀ 上一題", key=f"tq_prev_{key}", disabled=i == 0, use_container_width=True,
+              on_click=lambda: st.session_state.update({ck: i - 1}))
+    c2.markdown(f"<div style='text-align:center;padding-top:.4rem'>第 {rows[i]['序號']} / {len(rows)} 題</div>",
+                unsafe_allow_html=True)
+    c3.button("下一題 ▶", key=f"tq_next_{key}", disabled=i >= len(rows) - 1, use_container_width=True,
+              on_click=lambda: st.session_state.update({ck: i + 1}))
+    st.markdown(_TQ_CSS + _tq_page_html([rows[i]]).replace('$', '&#36;'), unsafe_allow_html=True)
+
+
+def _tq_open(rows, key):
+    try:
+        @st.dialog("📖 題目・中文翻譯・解析", width="large")
+        def _dlg():
+            _tq_dialog_body(rows, key)
+        _dlg()
+    except Exception as e:
+        if type(e).__name__ in ("StopException", "RerunException", "RerunData"):
+            raise
+        with st.container(border=True):   # 舊版 Streamlit 沒有浮動視窗時，放在表格下面
+            _tq_dialog_body(rows, key)
+
+
 def _tq_render(qid_str, key, title=''):
     rows = _tq_rows(qid_str)
     if not rows:
         return
     st.divider()
     st.markdown(f"**📋 題目列表**（共 {len(rows)} 題）")
-    st.caption("👆 勾選表格最左邊的方框（最上面的方框＝全選），下面會直接出現翻譯解析")
+    st.caption("👆 點表格最左邊的方框選一題，會跳出浮動視窗看題目、中文翻譯和解析（視窗裡可以按上一題／下一題）；"
+               "選另一題會自動換過去")
     _has_art = any(r.get('文章') for r in rows)
     view = pd.DataFrame(rows)[['序號', '題型'] + (['文章'] if _has_art else []) + ['題目', '正確答案']]
     cfg = {"序號": st.column_config.NumberColumn("序號", width=50), "題型": st.column_config.TextColumn("題型", width=60),
@@ -1360,25 +1389,29 @@ def _tq_render(qid_str, key, title=''):
            "題目": st.column_config.TextColumn("題目", width="large"), "正確答案": st.column_config.TextColumn("正確答案", width=110)}
     try:
         ev = st.dataframe(view, use_container_width=True, hide_index=True, column_config=cfg,
-                          on_select="rerun", selection_mode="multi-row", key=f"tq_tbl_{key}")
-        sel = sorted(int(i) for i in ev.selection.rows)
+                          on_select="rerun", selection_mode="single-row", key=f"tq_tbl_{key}")
+        sel = [int(i) for i in ev.selection.rows]
     except TypeError:
         st.dataframe(view, use_container_width=True, hide_index=True, column_config=cfg)
         sel = []
-    pick_rows = [rows[i] for i in sel if 0 <= i < len(rows)]   # V2.9.585 勾選後直接產生
-    if not pick_rows:
-        return
-    page = _tq_page_html(pick_rows)
-    with st.container(border=True):
-        st.markdown(f"#### 📖 翻譯解析（{len(pick_rows)} 題）")
-        st.markdown(_TQ_CSS + page.replace('$', '&#36;'), unsafe_allow_html=True)
-    doc = ("<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
-           f"<title>{_tq_txt(title or '翻譯解析')}</title>" + _TQ_CSS.replace('<style>', '<style>body{font-family:sans-serif;max-width:1000px;margin:20px auto;padding:0 16px;}')
-           + "</head><body>" + _tq_page_html(pick_rows, title=f"{title}｜翻譯解析（{len(pick_rows)} 題）") + "</body></html>")
-    fname = re.sub(r'[\\/:*?<>|]', '_', title or '翻譯解析')[:80] + '-翻譯解析.html'   # f-string 裡不能放反斜線（舊版 Python）
-    st.download_button("⬇️ 下載這頁（HTML，用瀏覽器開啟可列印）", data=doc.encode('utf-8'),
-                       file_name=fname,
-                       mime="text/html", key=f"tq_dl_{key}")
+    # V2.9.586 單選：選另一題會直接取代原本的；只有「選的題目換了」才跳出視窗（其他按鈕重跑時不會一直跳）
+    cur = sel[0] if sel and 0 <= sel[0] < len(rows) else None
+    if cur != st.session_state.get(f"tq_last_{key}"):
+        st.session_state[f"tq_last_{key}"] = cur
+        if cur is not None:
+            st.session_state[f"tq_cur_{key}"] = cur
+            _tq_open(rows, key)
+
+    # 全部題目的翻譯解析檔（要列印時才產生，避免每次都把圖片打包）
+    if st.button(f"📄 產生全部 {len(rows)} 題的翻譯解析檔（可列印）", key=f"tq_mk_{key}"):
+        st.session_state[f"tq_doc_{key}"] = True
+    if st.session_state.get(f"tq_doc_{key}"):
+        doc = ("<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
+               f"<title>{_tq_txt(title or '翻譯解析')}</title>" + _TQ_CSS.replace('<style>', '<style>body{font-family:sans-serif;max-width:1000px;margin:20px auto;padding:0 16px;}')
+               + "</head><body>" + _tq_page_html(rows, title=f"{title}｜翻譯解析（{len(rows)} 題）") + "</body></html>")
+        fname = re.sub(r'[\\/:*?<>|]', '_', title or '翻譯解析')[:80] + '-翻譯解析.html'   # f-string 裡不能放反斜線（舊版 Python）
+        st.download_button("⬇️ 下載翻譯解析檔（HTML，用瀏覽器開啟可列印）", data=doc.encode('utf-8'),
+                           file_name=fname, mime="text/html", key=f"tq_dl_{key}")
 
 
 
