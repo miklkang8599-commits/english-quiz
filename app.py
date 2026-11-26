@@ -1,6 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.587 - 任務題目列表與翻譯解析頁)
+# 🧩 英文全能練習系統 (V2.9.588 - 任務題目列表與翻譯解析頁)
 # ==============================================================================
+# 🆕 2.9.588：題目列表的浮動視窗，閱讀題同一篇的題目一次列出（👉 標出點的那一題），上一／下一改成一次跳一篇。
 # 🆕 2.9.587：題目列表改成獨立重跑（fragment）：點一題不再讓整個導師中心變灰重畫，浮動視窗馬上出現。
 # 🆕 2.9.586：題目列表改成一次選一題，跳出浮動視窗看題目／翻譯／解析（可上一題／下一題）；選另一題直接換過去。
 # 🆕 2.9.585：題目列表勾選後直接產生翻譯解析頁（不用再按按鈕）；閱讀題多一欄「文章」（第幾篇＋文章開頭），看得出哪幾題是同一個題組。
@@ -124,7 +125,7 @@ if dlgp is not None:
     except Exception as _e_dlg2:
         _DLG_ERR = f"{type(_e_dlg2).__name__}: {_e_dlg2}"
 
-VERSION = "2.9.587"
+VERSION = "2.9.588"
 
 def _dlg_ctx():
     """V2.9.555：給對話練習模組的共用資料"""
@@ -1164,6 +1165,7 @@ _TQ_CSS = """<style>
 .tq-ok { color:#30a46c; font-weight:600; }
 .tq-ans { margin-top:6px; color:#30a46c; font-weight:600; }
 .tq-ex { margin-top:6px; padding:6px 9px; border-radius:6px; background:rgba(128,128,128,.10); }
+.tq-cur { border:2px solid #f59e0b; }
 .tq-page table { border-collapse:collapse; font-size:.85rem; max-width:560px; }
 .tq-page th, .tq-page td { border:1px solid rgba(128,128,128,.45); padding:3px 5px; text-align:center; }
 .tq-page img { max-width:100%; }
@@ -1309,7 +1311,7 @@ def _tq_img_html(v):
     return f"<div class='tq-lbl'>⚠️ 圖片讀取失敗：{_tq_txt(v)}</div>" if v else ''
 
 
-def _tq_page_html(rows, title=''):
+def _tq_page_html(rows, title='', cur_qid=None):
     """勾選的題目 → 完整題目／中文翻譯／正確答案／解析（閱讀題組先列整篇文章和全文翻譯）"""
     parts = [f"<h3>{_tq_txt(title)}</h3>" if title else '']
     shown_grp = set()
@@ -1340,7 +1342,8 @@ def _tq_page_html(rows, title=''):
         if opts:
             en += ''.join(f"<div class='tq-opt{' tq-ok' if o == ans else ''}'>{'✅ ' if o == ans else ''}({o}) {_tq_rich(t)}</div>" for o, t in opts)
         parts.append(
-            f"<div class='tq-item'><div class='tq-h'>{r['序號']}.<span class='tq-tag'>{_tq_txt(kind)}</span></div>"
+            f"<div class='tq-item{' tq-cur' if cur_qid and r['_qid'] == cur_qid else ''}'><div class='tq-h'>"
+            f"{'👉 ' if cur_qid and r['_qid'] == cur_qid else ''}{r['序號']}.<span class='tq-tag'>{_tq_txt(kind)}</span></div>"
             f"<div class='tq-cols'><div><div class='tq-lbl'>🇬🇧 題目</div>{en}"
             + (f"<div class='tq-ans'>✅ 正確答案：{_tq_txt(ans)}</div>" if ans and kind != '朗讀' else '')
             + f"</div><div><div class='tq-lbl'>🈶 中文翻譯</div>{_tq_txt(zh) or '（沒有中文翻譯）'}</div></div>"
@@ -1348,18 +1351,39 @@ def _tq_page_html(rows, title=''):
     return "<div class='tq-page'>" + ''.join(parts) + "</div>"
 
 
+def _tq_units(rows):
+    """V2.9.588 閱讀題同一篇（題組）算一組，其他每題一組 → [[列號, ...], ...]（照第一次出現的順序）"""
+    units, pos = [], {}
+    for i, r in enumerate(rows):
+        g = str(r['_rec'].get('題組', '') or '').strip() if r['_kind'] == '閱讀' and r['_rec'] else ''
+        if g and g in pos:
+            units[pos[g]].append(i)
+            continue
+        if g:
+            pos[g] = len(units)
+        units.append([i])
+    return units
+
+
 def _tq_dialog_body(rows, key):
-    """V2.9.586 浮動視窗：一次看一題（閱讀題先列整篇文章），可以上一題／下一題"""
+    """浮動視窗：一次看一組（閱讀題同一篇的題目一起列，👉 標出點的那一題），上一／下一一次跳一組"""
     ck = f"tq_cur_{key}"
     i = max(0, min(int(st.session_state.get(ck, 0)), len(rows) - 1))
+    units = _tq_units(rows)
+    u = next((k for k, un in enumerate(units) if i in un), 0)
+    unit = units[u]
+    multi = len(unit) > 1
     c1, c2, c3 = st.columns([1, 2, 1])
-    c1.button("◀ 上一題", key=f"tq_prev_{key}", disabled=i == 0, use_container_width=True,
-              on_click=lambda: st.session_state.update({ck: i - 1}))
-    c2.markdown(f"<div style='text-align:center;padding-top:.4rem'>第 {rows[i]['序號']} / {len(rows)} 題</div>",
-                unsafe_allow_html=True)
-    c3.button("下一題 ▶", key=f"tq_next_{key}", disabled=i >= len(rows) - 1, use_container_width=True,
-              on_click=lambda: st.session_state.update({ck: i + 1}))
-    st.markdown(_TQ_CSS + _tq_page_html([rows[i]]).replace('$', '&#36;'), unsafe_allow_html=True)
+    c1.button("◀ 上一篇" if multi else "◀ 上一題", key=f"tq_prev_{key}", disabled=u == 0, use_container_width=True,
+              on_click=lambda: st.session_state.update({ck: units[max(u - 1, 0)][0]}))
+    nums = [rows[k]['序號'] for k in unit]
+    lbl = (f"第 {nums[0]}–{nums[-1]} 題" if nums == list(range(nums[0], nums[-1] + 1)) else "第 " + "、".join(map(str, nums)) + " 題") \
+        if multi else f"第 {nums[0]} 題"
+    c2.markdown(f"<div style='text-align:center;padding-top:.4rem'>{lbl}（共 {len(rows)} 題）</div>", unsafe_allow_html=True)
+    c3.button("下一篇 ▶" if multi else "下一題 ▶", key=f"tq_next_{key}", disabled=u >= len(units) - 1,
+              use_container_width=True, on_click=lambda: st.session_state.update({ck: units[min(u + 1, len(units) - 1)][0]}))
+    st.markdown(_TQ_CSS + _tq_page_html([rows[k] for k in unit], cur_qid=rows[i]['_qid'] if multi else None)
+                .replace('$', '&#36;'), unsafe_allow_html=True)
 
 
 def _tq_open(rows, key):
