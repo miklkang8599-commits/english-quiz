@@ -1,6 +1,8 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.590 - 任務題目列表與翻譯解析頁)
+# 🧩 英文全能練習系統 (V2.9.591 - 任務題目列表與翻譯解析頁)
 # ==============================================================================
+# 🆕 2.9.591：朗讀任務分成「🎤 每題評分」「⏩ 每題評分-接續上次作答」「📼 全部錄完一起評分」「🏋️ 練習模式」，
+#              結束後列出每題分數和 AI 聽到的內容（全部錄完一起評分：每題只錄音，最後同時送出評分）。
 # 🆕 2.9.590：朗讀題「⚡ 快速答題」錄音後直接顯示分數和 AI 聽到的內容（不產生示範音檔），停在分數畫面，
 #              學生自己選「下一題」或「🎙️ 重錄」；完全唸對直接 100 分不再問 AI；其他模式兩個示範音檔同時產生。
 # 🆕 2.9.589：任務列表的老師分頁改成會記住的選擇鈕（刪除任務、翻頁後停在原本的老師，不再跳回第一位）。
@@ -128,7 +130,7 @@ if dlgp is not None:
     except Exception as _e_dlg2:
         _DLG_ERR = f"{type(_e_dlg2).__name__}: {_e_dlg2}"
 
-VERSION = "2.9.590"
+VERSION = "2.9.591"
 
 def _dlg_ctx():
     """V2.9.555：給對話練習模組的共用資料"""
@@ -655,6 +657,143 @@ def append_to_sheet(worksheet_name: str, new_row: pd.DataFrame):
     except Exception as e:
         st.error(f"❌ Supabase 寫入失敗：{type(e).__name__}: {e}")
         return False
+
+
+# ── V2.9.591：朗讀測驗「全部錄完一起評分」＋結束後列出結果 ─────────────────────
+_RD_MODE_LBL = {"⚡ 快速答題": "🎤 每題評分", "⏩ 快速作答-接續上一次作答": "⏩ 每題評分-接續上次作答"}
+
+
+def _rd_grade(score):
+    if score is None:
+        return "⚠️ 沒有評分"
+    if score >= 90:
+        return "✅ 優秀"
+    if score >= 70:
+        return "🟡 不錯"
+    if score >= 50:
+        return "🟠 需加強"
+    return "❌ 請再試試"
+
+
+def _rd_result_add(qi, text, heard, score):
+    """記下這一題（同一題重錄就蓋掉舊的）→ 結束後列出結果"""
+    res = st.session_state.get("rd_results") or {}
+    res[int(qi)] = {"題號": int(qi) + 1, "評語": _rd_grade(score), "分數": score, "句子": text, "AI 聽到的內容": heard}
+    st.session_state["rd_results"] = res
+
+
+def _rd_score_audio(client, audio_bytes, read_text):
+    """一段錄音 → (AI 聽到的內容, 分數)，和每題評分用同一套方法"""
+    import io as _io
+    tr = client.audio.transcriptions.create(model="whisper-1", file=("audio.wav", _io.BytesIO(audio_bytes), "audio/wav"), language="en")
+    stt_text = tr.text.strip()
+    read_clean = re.sub(r'[.,?!:;\'\"()\-]', '', read_text).strip()
+    stt_clean = re.sub(r'[.,?!:;\'\"()\-]', '', stt_text).strip()
+    if stt_clean and " ".join(stt_clean.lower().split()) == " ".join(read_clean.lower().split()):
+        return stt_text, 100
+    resp = client.chat.completions.create(
+        model="gpt-4o-mini", max_tokens=10,
+        messages=[{"role": "user", "content": (
+            f"You are an English pronunciation evaluator for students.\n"
+            f"Standard sentence: \"{read_clean}\"\n"
+            f"Student said (transcribed): \"{stt_clean}\"\n"
+            f"Ignore punctuation differences when comparing. "
+            f"Score accuracy and completeness from 0 to 100. "
+            f"Reply with ONLY a single integer, nothing else.")}])
+    raw = resp.choices[0].message.content.strip()
+    return stt_text, max(0, min(100, int(re.sub(r'[^0-9]', '', raw) or '0')))
+
+
+def _rd_batch_record(q, read_text):
+    """全部錄完一起評分：這一題只錄音、先存起來"""
+    import time as _tm
+    qi = st.session_state.q_idx
+    store = st.session_state.get("rd_batch") or {}
+    rec = st.audio_input("🎙️ 錄音", key=f"rdb_{qi}_{st.session_state.get(f'rd_rec_n_{qi}', 0)}")
+    if rec is not None:
+        try:
+            b = rec.getvalue()
+        except Exception:
+            b = b""
+        if b:
+            old = store.get(qi) or {}
+            store[qi] = {"audio": b, "text": read_text, "qid": q.get("題目ID", "N/A"),
+                         "sec": old.get("sec") or round(_tm.time() - st.session_state.get(f"_q_start_time_{qi}", _tm.time()))}
+            st.session_state["rd_batch"] = store
+    if qi in store:
+        st.success("✅ 這題錄好了，按「下一題」繼續（想重錄就再錄一次，會用最新的錄音）")
+    else:
+        st.caption("👇 按麥克風錄音；全部錄完後一起評分")
+    st.caption(f"📼 已錄 {len(store)} 題")
+
+
+def _rd_batch_score():
+    """把存起來的錄音一次評分（同時送出），寫入紀錄，結果放進 rd_results"""
+    store = st.session_state.get("rd_batch") or {}
+    st.session_state["rd_batch"] = {}
+    if not store:
+        return
+    from concurrent.futures import ThreadPoolExecutor
+    import openai
+    client = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+    items = sorted(store.items())
+    with st.spinner(f"🔄 {len(items)} 題一起評分中，請稍候..."):
+        def _one(it):
+            try:
+                return _rd_score_audio(client, it[1]["audio"], it[1]["text"])
+            except Exception as e:
+                return (f"（評分失敗：{type(e).__name__}）", None)
+        with ThreadPoolExecutor(max_workers=min(6, len(items))) as ex:
+            outs = list(ex.map(_one, items))
+        now = get_now().strftime("%Y-%m-%d %H:%M:%S")
+        rows = []
+        for (qi, it), (heard, score) in zip(items, outs):
+            _rd_result_add(qi, it["text"], heard, score)
+            if score is None:
+                continue
+            rows.append(_to_en_logs({"時間": now, "姓名": st.session_state.user_name, "分組": st.session_state.group_id,
+                                     "題目ID": it["qid"], "結果": "練習" if st.session_state.get("practice_mode") else "🎤 朗讀",
+                                     "學生答案": heard, "分數": score,
+                                     "任務名稱": st.session_state.get("current_task_name", ""), "作答秒數": it["sec"]}))
+        if rows:
+            sb = get_supabase()
+            try:
+                if st.session_state.get("_log_extra_unsupported"):
+                    raise RuntimeError("slim")
+                sb.table("logs").insert(rows).execute()
+                st.session_state["_my_logs_ver"] = st.session_state.get("_my_logs_ver", 0) + 1
+            except Exception:
+                for r in rows:
+                    try:
+                        _insert_log(sb, r)
+                    except Exception as e:
+                        st.error(f"❌ 寫入失敗：{e}")
+
+
+def _rd_render_summary():
+    """朗讀結束：列出每一題的分數和 AI 聽到的內容"""
+    sm = st.session_state.get("rd_summary") or {}
+    rows = sm.get("rows") or []
+    st.markdown(f"## 🎤 朗讀結果　{sm.get('mode', '')}")
+    sc = [r["分數"] for r in rows if isinstance(r.get("分數"), (int, float))]
+    c1, c2, c3 = st.columns(3)
+    c1.metric("📝 完成題數", len(sc))
+    c2.metric("📊 平均分數", round(sum(sc) / len(sc)) if sc else "—")
+    c3.metric("✅ 90 分以上", sum(1 for x in sc if x >= 90))
+    if rows:
+        df = pd.DataFrame(rows)[["題號", "評語", "分數", "句子", "AI 聽到的內容"]]
+        df["分數"] = df["分數"].apply(lambda x: "" if x is None else int(x))
+        st.dataframe(df, hide_index=True, use_container_width=True,
+                     column_config={"題號": st.column_config.NumberColumn("題號", width="small"),
+                                    "分數": st.column_config.TextColumn("分數", width="small")})
+        _low = [r for r in rows if isinstance(r.get("分數"), (int, float)) and r["分數"] < 70]
+        if _low:
+            st.caption("💡 70 分以下的題目：" + "、".join(f"第 {r['題號']} 題" for r in _low) + "，可以用練習模式再多唸幾次")
+    if st.button("✅ 回任務列表", type="primary", use_container_width=True, key="rd_sum_close"):
+        st.session_state["rd_summary"] = None
+        st.rerun()
+    show_version_caption()
+    st.stop()
 
 # ------------------------------------------------------------------------------
 # 🔐 【權限控管與登入】
@@ -3966,6 +4105,19 @@ CREATE TABLE IF NOT EXISTS students (
 # ------------------------------------------------------------------------------
 if not st.session_state.quiz_loaded:
 
+    # V2.9.591：朗讀測驗結束 → 全部錄完的先一起評分，再列出結果
+    if st.session_state.get("rd_batch"):
+        _rd_batch_score()
+    if st.session_state.get("rd_results"):
+        _rd_mode_name = "📼 全部錄完一起評分" if st.session_state.get("rd_batch_mode") else \
+            ("🏋️ 練習模式" if st.session_state.get("practice_mode") else "🎤 每題評分")
+        st.session_state["rd_summary"] = {"mode": _rd_mode_name,
+                                          "rows": [v for _, v in sorted(st.session_state["rd_results"].items())]}
+        st.session_state["rd_results"] = {}
+    st.session_state["rd_batch_mode"] = False
+    if st.session_state.get("rd_summary"):
+        _rd_render_summary()
+
     # ══════════════════════════════════════════════════════════════════════
     # 🆕 學生任務列表（登入後優先顯示）
     # ══════════════════════════════════════════════════════════════════════
@@ -4191,13 +4343,16 @@ if not st.session_state.quiz_loaded:
                                 _retry_opts = ["⚡ 快速答題", "⌨️ 多次打字練習", "🔊 多次撥放", "🏋️ 練習模式", "🎤 跟著唸和錄音", "🇨🇳 英選中"]
                             elif task_type in ("一般", "混合", ""):
                                 _retry_opts = ["⚡ 快速答題", "⌨️ 多次打字練習", "🔊 多次撥放", "🏋️ 練習模式", "🎤 跟著唸和錄音"]
+                            elif is_reading_task:   # V2.9.591
+                                _retry_opts = ["⚡ 快速答題", "📼 全部錄完一起評分", "🏋️ 練習模式"]
                             else:
                                 _retry_opts = ["⚡ 快速答題", "🏋️ 練習模式", "🎤 跟著唸和錄音"]
                             _retry_mode = st.radio(
                                 "答題方式",
                                 _retry_opts,
                                 horizontal=False,
-                                key=f"retry_mode_{_task_idx}"
+                                key=f"retry_mode_{_task_idx}",
+                                format_func=(lambda o: _RD_MODE_LBL.get(o, o)) if is_reading_task else str
                             )
                             _rr_cols = st.columns(2)
                             retry_start = _rr_cols[0].number_input(
@@ -4221,8 +4376,9 @@ if not st.session_state.quiz_loaded:
                             _is_typing   = (_retry_mode == "⌨️ 多次打字練習")
                             _is_replay   = (_retry_mode == "🔊 多次撥放")
                             _is_ec       = (_retry_mode == "🇨🇳 英選中")
+                            _is_rdbatch  = (_retry_mode == "📼 全部錄完一起評分")
                             _do_retry    = False
-                            if st.button(f"🚀 開始{_retry_mode}", key=f"retry_go_{_task_idx}", type="primary", use_container_width=True):
+                            if st.button(f"🚀 開始{_RD_MODE_LBL.get(_retry_mode, _retry_mode) if is_reading_task else _retry_mode}", key=f"retry_go_{_task_idx}", type="primary", use_container_width=True):
                                 _do_retry = True
                                 st.session_state.pop(_retry_key, None)
                                 st.session_state[f"_retry_started_{task_id_key}"] = True
@@ -4251,6 +4407,8 @@ if not st.session_state.quiz_loaded:
                                         records = records[:_retry_end_idx + 1]
                                     for rec in records:
                                         rec['_type'] = 'reading'
+                                    st.session_state.update({"rd_batch_mode": locals().get("_is_rdbatch", False), "rd_batch": {},
+                                                             "rd_results": {}, "rd_summary": None})
                                     for _k in [k for k in list(st.session_state.keys()) if k.startswith("vocab_pool_") or k.startswith("vocab_ans_") or k.startswith("vocab_used_") or k.startswith("mcq_order_") or k.startswith("rm_order_") or k.startswith("mcq_written_")]:
                                         del st.session_state[_k]
                                     st.session_state.update({
@@ -4385,6 +4543,8 @@ if not st.session_state.quiz_loaded:
                             _shadow_ok = is_vocab_task or task_type in ("一般", "混合", "")
                             if is_vocab_task:
                                 _mode_opts = ["⚡ 快速答題", "⏩ 快速作答-接續上一次作答", "⌨️ 多次打字練習", "🔊 多次撥放", "🏋️ 練習模式", "🎤 跟著唸和錄音", "🇨🇳 英選中"]
+                            elif is_reading_task:   # V2.9.591：朗讀任務
+                                _mode_opts = ["⚡ 快速答題", "⏩ 快速作答-接續上一次作答", "📼 全部錄完一起評分", "🏋️ 練習模式"]
                             elif task_type in ("一般", "混合", ""):
                                 _mode_opts = ["⚡ 快速答題", "⏩ 快速作答-接續上一次作答", "⌨️ 多次打字練習", "🔊 多次撥放", "🏋️ 練習模式", "🎤 跟著唸和錄音"]
                             else:
@@ -4395,11 +4555,12 @@ if not st.session_state.quiz_loaded:
                                 "練習方式",
                                 _mode_opts,
                                 horizontal=True,
-                                key=f"start_mode_{_task_idx}"
+                                key=f"start_mode_{_task_idx}",
+                                format_func=(lambda o: _RD_MODE_LBL.get(o, o)) if is_reading_task else str
                             )
                             if _mode == "⏩ 快速作答-接續上一次作答":
-                                st.caption("⏩ 自動從這個任務上次最後作答的下一題開始（快速答題方式），不用記題號")
-                            if _mode in ("🏋️ 練習模式", "⚡ 快速答題", "🎤 跟著唸和錄音", "⌨️ 多次打字練習", "🔊 多次撥放", "🇨🇳 英選中"):
+                                st.caption("⏩ 自動從這個任務上次最後作答的下一題開始（" + ("每題評分" if is_reading_task else "快速答題") + "方式），不用記題號")
+                            if _mode in ("🏋️ 練習模式", "⚡ 快速答題", "🎤 跟著唸和錄音", "⌨️ 多次打字練習", "🔊 多次撥放", "🇨🇳 英選中", "📼 全部錄完一起評分"):
                                 _range_cols = st.columns(2)
                                 _start_from = _range_cols[0].number_input(
                                     "從第幾題",
@@ -4413,6 +4574,10 @@ if not st.session_state.quiz_loaded:
                                 )
                                 if _mode == "🏋️ 練習模式":
                                     st.caption("🏋️ 練習模式：可回上一題，作答紀錄標記為「練習」不列入正式記錄")
+                                elif _mode == "⚡ 快速答題" and is_reading_task:
+                                    st.caption("🎤 每題評分：錄完立刻顯示分數和 AI 聽到的內容，再選下一題或重錄；結束後列出全部結果")
+                                elif _mode == "📼 全部錄完一起評分":
+                                    st.caption("📼 全部錄完一起評分：每題只錄音不評分，最後一次評分，列出每題分數和 AI 聽到的內容")
                                 elif _mode == "⚡ 快速答題":
                                     st.caption("⚡ 快速答題：答完立即顯示對錯，自動跳下一題")
                                 elif _mode == "🎤 跟著唸和錄音":
@@ -4459,6 +4624,12 @@ if not st.session_state.quiz_loaded:
                                        f"⚡ 快速答題{_range_suffix}"))))))
                             if _mode == "⏩ 快速作答-接續上一次作答":
                                 label = "⏩ 快速作答-接續上一次作答"
+                            _is_rdbatch = (_mode == "📼 全部錄完一起評分")
+                            if is_reading_task:
+                                if _is_rdbatch:
+                                    label = f"📼 全部錄完一起評分{_range_suffix}"
+                                elif _mode in _RD_MODE_LBL:
+                                    label = _RD_MODE_LBL[_mode] + ("" if _mode == "⏩ 快速作答-接續上一次作答" else _range_suffix)
                             if st.button(f"🚀 {label}", key=btn_key, type="primary", use_container_width=True):
                                 _start_idx_fwd = max(0, int(_start_from) - 1)
                                 _end_idx_fwd   = (int(_end_from_val) - 1) if _end_from_val > 0 else None
@@ -4487,6 +4658,8 @@ if not st.session_state.quiz_loaded:
                                           records = records[:_end_idx_local + 1]
                                       for r in records:
                                           r['_type'] = 'reading'
+                                      st.session_state.update({"rd_batch_mode": locals().get("_is_rdbatch", False), "rd_batch": {},
+                                                               "rd_results": {}, "rd_summary": None})
                                       # 清除所有舊的字母池，避免題目字母錯誤
                                       for _k in [k for k in list(st.session_state.keys()) if k.startswith("vocab_pool_") or k.startswith("vocab_ans_") or k.startswith("vocab_used_") or k.startswith("mcq_order_") or k.startswith("rm_order_") or k.startswith("mcq_written_")]:
                                           del st.session_state[_k]
@@ -5408,7 +5581,8 @@ if st.session_state.quiz_loaded:
         _no_q_timer = False
 
     # 90 秒閒置：寫入超時記錄並跳回任務列表（多次打字練習模式跳過）
-    if _q_elapsed >= _idle_limit and not st.session_state.get("show_analysis") and not _typing_mode and not _replay_mode and not _ec_mode and not _no_q_timer:
+    _rd_recorded = bool(st.session_state.get("rd_batch_mode")) and st.session_state.q_idx in (st.session_state.get("rd_batch") or {})
+    if _q_elapsed >= _idle_limit and not st.session_state.get("show_analysis") and not _typing_mode and not _replay_mode and not _ec_mode and not _no_q_timer and not _rd_recorded:
         import pandas as _pd_timeout
         _timeout_row = {
             "時間": get_now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -6067,7 +6241,11 @@ if st.session_state.quiz_loaded:
         """, unsafe_allow_html=True)
 
         # 麥克風一直顯示（不管有沒有評分過）
-        audio_data = st.audio_input("🎙️ 錄音", key=f"audio_{st.session_state.q_idx}_{st.session_state.get(f'rd_rec_n_{st.session_state.q_idx}', 0)}")
+        if st.session_state.get("rd_batch_mode"):
+            audio_data = None
+            _rd_batch_record(q, read_text)
+        else:
+            audio_data = st.audio_input("🎙️ 錄音", key=f"audio_{st.session_state.q_idx}_{st.session_state.get(f'rd_rec_n_{st.session_state.q_idx}', 0)}")
 
         if audio_data:
             _scored_key = f"audio_scored_{st.session_state.q_idx}"
@@ -6147,6 +6325,7 @@ if st.session_state.quiz_loaded:
                             "tts_standard":   base64.b64encode(tts_std_raw).decode() if tts_std_raw else None,
                             "stt_text_shown": stt_text
                         })
+                        _rd_result_add(st.session_state.q_idx, read_text, stt_text, score)
 
                         # 寫入 Log（每次送出都記一筆）
                         log_data = pd.DataFrame([{
@@ -7138,6 +7317,10 @@ if st.session_state.quiz_loaded:
         nxt_col = c_nav[1]
 
     nxt_label = "下一題 ➡️" if st.session_state.q_idx + 1 < len(st.session_state.quiz_list) else ("🏆 查看成績" if _race_mode else "🏁 結束練習")
+    if st.session_state.get("rd_batch_mode") and st.session_state.q_idx + 1 >= len(st.session_state.quiz_list):
+        nxt_label = "📊 全部錄完，開始評分"
+    elif is_reading and st.session_state.q_idx + 1 >= len(st.session_state.quiz_list) and st.session_state.get("rd_results"):
+        nxt_label = "🏁 結束，看結果"
     # Enter 鍵觸發下一題（非快速答題模式；快速答題的閱讀單句題也適用）
     if st.session_state.get("show_analysis") and (not _quick_mode or is_reading_mcq or is_reading):
         import streamlit.components.v1 as _cv1_nxt
