@@ -1,6 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.584 - 任務題目列表與翻譯解析頁)
+# 🧩 英文全能練習系統 (V2.9.585 - 任務題目列表與翻譯解析頁)
 # ==============================================================================
+# 🆕 2.9.585：題目列表勾選後直接產生翻譯解析頁（不用再按按鈕）；閱讀題多一欄「文章」（第幾篇＋文章開頭），看得出哪幾題是同一個題組。
 # 🆕 2.9.584：任務展開後、下載 PDF 前面加「📋 題目列表」（序號、題目、正確答案），勾選題目後產生完整題目／中文翻譯／解析頁，可下載 HTML 列印。
 # 🆕 2.9.582：任務列表每一列加「🗑️」快速刪除（不用展開，要再按確定）；有篩選時可一次刪除篩選出來的全部任務。
 # 🆕 2.9.581：任務列表搜尋加「⚙️ 題目範圍」（版本／單元／年度／冊編號／課編號＋學校、卷別，同單選題範圍的篩選方式），依任務的題目ID清單判斷。
@@ -121,7 +122,7 @@ if dlgp is not None:
     except Exception as _e_dlg2:
         _DLG_ERR = f"{type(_e_dlg2).__name__}: {_e_dlg2}"
 
-VERSION = "2.9.584"
+VERSION = "2.9.585"
 
 def _dlg_ctx():
     """V2.9.555：給對話練習模組的共用資料"""
@@ -1258,6 +1259,24 @@ def _tq_rows(qid_str):
             kind, rec, text, ans = '（題庫找不到）', {}, q, ''
         out.append({'序號': len(out) + 1, '題型': kind, '題目': re.sub(r'<[^>]+>', '', text).replace('\n', ' '),
                     '正確答案': ans, '_qid': q, '_kind': kind, '_rec': rec})
+    # V2.9.585：閱讀題的「文章」欄＝第幾篇＋文章開頭（同一個題組編號相同）
+    if any(r['_kind'] == '閱讀' for r in out):
+        g2p = {}
+        if isinstance(df_rm, pd.DataFrame) and not df_rm.empty and '題組' in df_rm.columns and '答案' in df_rm.columns:
+            for g_, p_ in zip(df_rm['題組'].astype(str).str.strip(), df_rm['答案'].astype(str).str.strip()):
+                if g_ and p_ and p_ != 'nan' and g_ not in g2p:
+                    g2p[g_] = p_
+        nums = {}
+        for r in out:
+            if r['_kind'] != '閱讀':
+                r['文章'] = ''
+                continue
+            g_ = str(r['_rec'].get('題組', '') or '').strip()
+            p_ = g2p.get(g_) or str(r['_rec'].get('答案', '') or '').strip()
+            k_ = g_ or p_[:200] or r['_qid']
+            nums.setdefault(k_, len(nums) + 1)
+            snip = re.sub(r'\s+', ' ', re.sub(r'<[^>]+>', ' ', p_)).strip()
+            r['文章'] = f"第{nums[k_]}篇｜" + (snip[:28] + ('…' if len(snip) > 28 else '') if snip else '（沒有文章）')
     return out
 
 
@@ -1333,9 +1352,11 @@ def _tq_render(qid_str, key, title=''):
         return
     st.divider()
     st.markdown(f"**📋 題目列表**（共 {len(rows)} 題）")
-    st.caption("👆 勾選表格最左邊的方框（最上面的方框＝全選），再按「📖 產生翻譯解析頁」")
-    view = pd.DataFrame(rows)[['序號', '題型', '題目', '正確答案']]
+    st.caption("👆 勾選表格最左邊的方框（最上面的方框＝全選），下面會直接出現翻譯解析")
+    _has_art = any(r.get('文章') for r in rows)
+    view = pd.DataFrame(rows)[['序號', '題型'] + (['文章'] if _has_art else []) + ['題目', '正確答案']]
     cfg = {"序號": st.column_config.NumberColumn("序號", width=50), "題型": st.column_config.TextColumn("題型", width=60),
+           "文章": st.column_config.TextColumn("文章（同一篇＝同一個題組）", width=230),
            "題目": st.column_config.TextColumn("題目", width="large"), "正確答案": st.column_config.TextColumn("正確答案", width=110)}
     try:
         ev = st.dataframe(view, use_container_width=True, hide_index=True, column_config=cfg,
@@ -1344,15 +1365,7 @@ def _tq_render(qid_str, key, title=''):
     except TypeError:
         st.dataframe(view, use_container_width=True, hide_index=True, column_config=cfg)
         sel = []
-    c1, c2 = st.columns([2, 1])
-    if c1.button(f"📖 產生翻譯解析頁（已勾選 {len(sel)} 題）", key=f"tq_go_{key}", type="primary",
-                 use_container_width=True, disabled=not sel):
-        st.session_state[f"tq_pick_{key}"] = [rows[i]['_qid'] for i in sel if 0 <= i < len(rows)]
-    picked = st.session_state.get(f"tq_pick_{key}") or []
-    if picked and c2.button("✖ 關閉解析頁", key=f"tq_close_{key}", use_container_width=True):
-        st.session_state.pop(f"tq_pick_{key}", None)
-        st.rerun()
-    pick_rows = [r for r in rows if r['_qid'] in set(picked)]
+    pick_rows = [rows[i] for i in sel if 0 <= i < len(rows)]   # V2.9.585 勾選後直接產生
     if not pick_rows:
         return
     page = _tq_page_html(pick_rows)
