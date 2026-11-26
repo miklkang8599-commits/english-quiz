@@ -1,6 +1,8 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.589 - 任務題目列表與翻譯解析頁)
+# 🧩 英文全能練習系統 (V2.9.590 - 任務題目列表與翻譯解析頁)
 # ==============================================================================
+# 🆕 2.9.590：朗讀題「⚡ 快速答題」錄音後直接顯示分數和 AI 聽到的內容（不產生示範音檔），停在分數畫面，
+#              學生自己選「下一題」或「🎙️ 重錄」；完全唸對直接 100 分不再問 AI；其他模式兩個示範音檔同時產生。
 # 🆕 2.9.589：任務列表的老師分頁改成會記住的選擇鈕（刪除任務、翻頁後停在原本的老師，不再跳回第一位）。
 # 🆕 2.9.588：題目列表的浮動視窗，閱讀題同一篇的題目一次列出（👉 標出點的那一題），上一／下一改成一次跳一篇。
 # 🆕 2.9.587：題目列表改成獨立重跑（fragment）：點一題不再讓整個導師中心變灰重畫，浮動視窗馬上出現。
@@ -126,7 +128,7 @@ if dlgp is not None:
     except Exception as _e_dlg2:
         _DLG_ERR = f"{type(_e_dlg2).__name__}: {_e_dlg2}"
 
-VERSION = "2.9.589"
+VERSION = "2.9.590"
 
 def _dlg_ctx():
     """V2.9.555：給對話練習模組的共用資料"""
@@ -6037,6 +6039,8 @@ if st.session_state.quiz_loaded:
             tts_std = st.session_state.get('tts_standard')
             stt_shown = st.session_state.get('stt_text_shown', '')
 
+            if stt_shown and not tts_stu:
+                st.markdown(f"**🎤 AI 認為你說的內容：** `{stt_shown}`")
             if tts_stu or tts_std:
                 import base64, io
                 if tts_stu:
@@ -6046,7 +6050,9 @@ if st.session_state.quiz_loaded:
                     st.markdown("**📢 標準發音：**")
                     st.audio(io.BytesIO(base64.b64decode(tts_std)), format="audio/mpeg")
 
-            if st.session_state.get('show_analysis') and is_reading:
+            if st.session_state.get('show_analysis') and is_reading and _quick_mode:
+                st.caption("👇 按「下一題」繼續，或按「🎙️ 重錄」再唸一次")
+            elif st.session_state.get('show_analysis') and is_reading:
                 st.caption("👇 如想提高成績，可重新錄音（系統自動評分）")
             else:
                 st.caption("👇 點擊下方按鈕開始錄音")
@@ -6061,7 +6067,7 @@ if st.session_state.quiz_loaded:
         """, unsafe_allow_html=True)
 
         # 麥克風一直顯示（不管有沒有評分過）
-        audio_data = st.audio_input("🎙️ 錄音", key=f"audio_{st.session_state.q_idx}")
+        audio_data = st.audio_input("🎙️ 錄音", key=f"audio_{st.session_state.q_idx}_{st.session_state.get(f'rd_rec_n_{st.session_state.q_idx}', 0)}")
 
         if audio_data:
             _scored_key = f"audio_scored_{st.session_state.q_idx}"
@@ -6089,9 +6095,13 @@ if st.session_state.quiz_loaded:
                         read_text_clean = re.sub(r'[.,?!:;\'\"()\-]', '', read_text).strip()
                         stt_text_clean  = re.sub(r'[.,?!:;\'\"()\-]', '', stt_text).strip()
 
-                        # Step 2：GPT-4o-mini 評分
+                        # Step 2：GPT-4o-mini 評分（V2.9.590：唸得和句子一模一樣就直接 100 分，不用再等 AI）
                         client = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
-                        score_resp = client.chat.completions.create(
+                        _rd_norm = lambda t: " ".join(t.lower().split())
+                        if stt_text_clean and _rd_norm(stt_text_clean) == _rd_norm(read_text_clean):
+                            score_resp = None
+                        else:
+                          score_resp = client.chat.completions.create(
                             model="gpt-4o-mini",
                             max_tokens=10,
                             messages=[{
@@ -6106,7 +6116,7 @@ if st.session_state.quiz_loaded:
                                 )
                             }]
                         )
-                        score_raw = score_resp.choices[0].message.content.strip()
+                        score_raw = score_resp.choices[0].message.content.strip() if score_resp is not None else "100"
                         score = max(0, min(100, int(re.sub(r'[^0-9]', '', score_raw) or '0')))
 
                         if score >= 90:
@@ -6120,13 +6130,15 @@ if st.session_state.quiz_loaded:
 
                         # TTS：產生學生版和標準版音檔，存為 base64 避免 rerun 後 bytes 失效
                         import base64
-                        tts_stu_raw = client.audio.speech.create(
-                            model="tts-1", voice="alloy", input=stt_text
-                        ).content if stt_text else None
-
-                        tts_std_raw = client.audio.speech.create(
-                            model="tts-1", voice="nova", input=read_text
-                        ).content if read_text else None
+                        # V2.9.590：快速答題不產生示範音檔（直接看分數）；其他模式兩個音檔同時產生
+                        tts_stu_raw = tts_std_raw = None
+                        if not _quick_mode:
+                            from concurrent.futures import ThreadPoolExecutor as _RdPool
+                            _rd_tts = lambda v, t: client.audio.speech.create(model="tts-1", voice=v, input=t).content if t else None
+                            with _RdPool(max_workers=2) as _rdp:
+                                _f_stu = _rdp.submit(_rd_tts, "alloy", stt_text)
+                                _f_std = _rdp.submit(_rd_tts, "nova", read_text)
+                                tts_stu_raw, tts_std_raw = _f_stu.result(), _f_std.result()
 
                         st.session_state.update({
                             "current_res":    result_display,
@@ -7007,7 +7019,7 @@ if st.session_state.quiz_loaded:
             if mcq_analysis:
                 st.info(f"📝 解析：{mcq_analysis}")
     st.divider()
-    _show_retry = _practice_mode and st.session_state.get('show_analysis', False)
+    _show_retry = (_practice_mode or (_quick_mode and is_reading)) and st.session_state.get('show_analysis', False)
     if _show_retry:
         c_nav = st.columns(3)
     else:
@@ -7039,7 +7051,7 @@ if st.session_state.quiz_loaded:
 
 
     # 快速答題模式：顯示對錯 1 秒後自動跳下一題（閱讀單句題例外：停下來看解析）
-    if _quick_mode and not is_reading_mcq and st.session_state.get('show_analysis'):
+    if _quick_mode and not is_reading_mcq and not is_reading and st.session_state.get('show_analysis'):
         if st.session_state.get('_quick_shown'):
             # 已顯示結果，執行跳題
             st.session_state.pop('_quick_shown', None)
@@ -7111,7 +7123,9 @@ if st.session_state.quiz_loaded:
 
     # 練習模式：對答後顯示「再練習一次」
     if _show_retry:
-        if c_nav[1].button("🔁 再練習一次", use_container_width=True, key="retry_q_btn"):
+        if c_nav[1].button("🎙️ 重錄" if is_reading else "🔁 再練習一次", use_container_width=True, key="retry_q_btn"):
+            _rdn = f"rd_rec_n_{st.session_state.q_idx}"
+            st.session_state[_rdn] = st.session_state.get(_rdn, 0) + 1   # 換一個新的錄音元件
             _clear_q()
             st.session_state.update({
                 "show_analysis": False, "current_res": "",
@@ -7125,7 +7139,7 @@ if st.session_state.quiz_loaded:
 
     nxt_label = "下一題 ➡️" if st.session_state.q_idx + 1 < len(st.session_state.quiz_list) else ("🏆 查看成績" if _race_mode else "🏁 結束練習")
     # Enter 鍵觸發下一題（非快速答題模式；快速答題的閱讀單句題也適用）
-    if st.session_state.get("show_analysis") and (not _quick_mode or is_reading_mcq):
+    if st.session_state.get("show_analysis") and (not _quick_mode or is_reading_mcq or is_reading):
         import streamlit.components.v1 as _cv1_nxt
         _cv1_nxt.html("""<script>
         window.parent.document.addEventListener('keydown', function _nxt(e){
@@ -7140,7 +7154,7 @@ if st.session_state.quiz_loaded:
         });
         </script>""", height=0)
     # 快速答題模式：不顯示下一題按鈕（自動跳題）；閱讀單句題答完後才顯示
-    if _quick_mode and not (is_reading_mcq and st.session_state.get("show_analysis")):
+    if _quick_mode and not ((is_reading_mcq or is_reading) and st.session_state.get("show_analysis")):
         nxt_col.empty()
     elif nxt_col.button(nxt_label, type="primary", use_container_width=True):
         if st.session_state.q_idx + 1 < len(st.session_state.quiz_list):
