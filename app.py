@@ -1,6 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.586 - 任務題目列表與翻譯解析頁)
+# 🧩 英文全能練習系統 (V2.9.587 - 任務題目列表與翻譯解析頁)
 # ==============================================================================
+# 🆕 2.9.587：題目列表改成獨立重跑（fragment）：點一題不再讓整個導師中心變灰重畫，浮動視窗馬上出現。
 # 🆕 2.9.586：題目列表改成一次選一題，跳出浮動視窗看題目／翻譯／解析（可上一題／下一題）；選另一題直接換過去。
 # 🆕 2.9.585：題目列表勾選後直接產生翻譯解析頁（不用再按按鈕）；閱讀題多一欄「文章」（第幾篇＋文章開頭），看得出哪幾題是同一個題組。
 # 🆕 2.9.584：任務展開後、下載 PDF 前面加「📋 題目列表」（序號、題目、正確答案），勾選題目後產生完整題目／中文翻譯／解析頁，可下載 HTML 列印。
@@ -123,7 +124,7 @@ if dlgp is not None:
     except Exception as _e_dlg2:
         _DLG_ERR = f"{type(_e_dlg2).__name__}: {_e_dlg2}"
 
-VERSION = "2.9.586"
+VERSION = "2.9.587"
 
 def _dlg_ctx():
     """V2.9.555：給對話練習模組的共用資料"""
@@ -1372,6 +1373,12 @@ def _tq_open(rows, key):
             raise
         with st.container(border=True):   # 舊版 Streamlit 沒有浮動視窗時，放在表格下面
             _tq_dialog_body(rows, key)
+
+
+@st.fragment
+def _tq_frag(qid_str, key, title=''):
+    """V2.9.587 題目列表自己重跑：點一題只重畫這一塊，不會整個導師中心變灰重跑"""
+    _tq_render(qid_str, key, title)
 
 
 def _tq_render(qid_str, key, title=''):
@@ -3055,7 +3062,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                             # ── V2.9.584：題目列表＋勾選產生翻譯解析頁 ─────────────
                             if task_q_ids and task_q_ids != 'nan':
                                 try:
-                                    _tq_render(task_q_ids, key=f"{idx}", title=re.sub(r'^\[T\d+\]\s*', '', str(task_name)))
+                                    _tq_frag(task_q_ids, key=f"{idx}", title=re.sub(r'^\[T\d+\]\s*', '', str(task_name)))
                                 except Exception as _tq_e:
                                     if type(_tq_e).__name__ in ("StopException", "RerunException", "RerunData"):
                                         raise
