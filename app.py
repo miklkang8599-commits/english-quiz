@@ -1,6 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.593 - 任務題目列表與翻譯解析頁)
+# 🧩 英文全能練習系統 (V2.9.594 - 任務題目列表與翻譯解析頁)
 # ==============================================================================
+# 🆕 2.9.594：題目列表的浮動視窗加「✏️ 修改」：老師可改中文翻譯／答案／解析（閱讀可改全文翻譯），直接寫回題庫試算表，並記在「題庫修改紀錄」分頁。
 # 🆕 2.9.593：老師「📋 任務列表」也列出對話練習（[D編號] 對話-…），可搜尋、篩選、展開看學生練習筆數、刪除。
 # 🆕 2.9.592：「📼 全部錄完一起評分」的紀錄帶上練習方式和開始時間（學習報告顯示成「📼 全部錄完一起評分」，不再是推測）。
 # 🆕 2.9.591：朗讀任務分成「🎤 每題評分」「⏩ 每題評分-接續上次作答」「📼 全部錄完一起評分」「🏋️ 練習模式」，
@@ -132,7 +133,7 @@ if dlgp is not None:
     except Exception as _e_dlg2:
         _DLG_ERR = f"{type(_e_dlg2).__name__}: {_e_dlg2}"
 
-VERSION = "2.9.593"
+VERSION = "2.9.594"
 
 def _dlg_ctx():
     """V2.9.555：給對話練習模組的共用資料"""
@@ -1408,6 +1409,7 @@ def _tq_rows(qid_str):
         hit = _tq_find(idx, q)
         if hit:
             kind, rec = hit
+            rec = _tq_ov(kind, rec)   # V2.9.594：這次登入改過的內容
             text, ans, opts, zh, ex = _tq_fields(kind, rec)
             if opts:
                 text = text + ' ' + ' '.join(f"({o}) {t}" for o, t in opts)
@@ -1476,7 +1478,7 @@ def _tq_page_html(rows, title='', cur_qid=None):
         grp = str(rec.get('題組', '') or '').strip() if kind == '閱讀' else ''
         if kind == '閱讀' and (grp or str(rec.get('答案', '') or '').strip()) and (grp or r['_qid']) not in shown_grp:
             shown_grp.add(grp or r['_qid'])
-            sib = [x for x in (df_rm.to_dict('records') if isinstance(df_rm, pd.DataFrame) and grp else [rec])
+            sib = [_tq_ov('閱讀', x) for x in (df_rm.to_dict('records') if isinstance(df_rm, pd.DataFrame) and grp else [rec])
                    if not grp or str(x.get('題組', '') or '').strip() == grp]
             passage = next((str(x.get('答案', '') or '').strip() for x in sib if str(x.get('答案', '') or '').strip()), '')
             full_zh = next((str(x.get('全文翻譯', '') or '').strip() for x in sib if str(x.get('全文翻譯', '') or '').strip()), '')
@@ -1517,9 +1519,184 @@ def _tq_units(rows):
     return units
 
 
+# ── V2.9.594：老師在浮動視窗修改翻譯／答案／解析 → 寫回題庫試算表 ─────────────
+_TQ_TAB = {'單選': '單選', '閱讀': '閱讀單句', '重組': '重組', '朗讀': '朗讀', '單字': '拼單字', '聽力重組': '聽力句子重組'}
+_TQ_EDIT = {
+    '單選': [('中文翻譯', ['中文翻譯', '單選中文翻譯', '翻譯']), ('正確答案', ['單選答案']), ('解析', ['解析', '單選解析'])],
+    '閱讀': [('中文翻譯', ['翻譯', '中文翻譯']), ('正確選項', ['正確選項列出']), ('解析', ['解析'])],
+    '重組': [('中文翻譯', ['中文翻譯']), ('解析', ['解析'])],
+    '朗讀': [('中文翻譯', ['中文翻譯', '中文']), ('解析', ['解析'])],
+    '單字': [('中文意思', ['中文意思']), ('解析', ['解析'])],
+    '聽力重組': [('中文翻譯', ['聽力重組中文翻譯']), ('解析', ['解析'])],
+}
+_TQ_LOG_TAB = '題庫修改紀錄'
+
+
+def _tq_n(v):
+    return re.sub(r'\.0$', '', str(v if v is not None else '').strip())
+
+
+def _tq_okey(kind, rec):
+    return (_TQ_TAB.get(kind, kind),) + tuple(_tq_n(rec.get(k, '')) for k in _TQ_KEYS)
+
+
+def _tq_ov(kind, rec):
+    """這次登入改過的內容（題庫快取 10 分鐘，先蓋上去讓老師馬上看到）"""
+    if not rec:
+        return rec
+    ov = st.session_state.get('_tq_over', {}).get(_tq_okey(kind, rec))
+    return {**rec, **ov} if ov else rec
+
+
+def _tq_ov_set(kind, rec, ch):
+    st.session_state.setdefault('_tq_over', {}).setdefault(_tq_okey(kind, rec), {}).update(ch)
+
+
+def _tq_col(rec, cands):
+    for c in cands:
+        if _tq_n(rec.get(c, '')) not in ('', 'nan'):
+            return c
+    return next((c for c in cands if c in rec), None)
+
+
+def _tq_book():
+    import gspread
+    from google.oauth2.service_account import Credentials
+    gs = st.secrets["connections"]["gsheets"]
+    info = {"type": "service_account", "project_id": gs["project_id"], "private_key_id": gs["private_key_id"],
+            "private_key": gs["private_key"], "client_email": gs["client_email"], "client_id": gs["client_id"],
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth", "token_uri": "https://oauth2.googleapis.com/token",
+            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+            "client_x509_cert_url": gs.get("client_x509_cert_url", "")}
+    gc = gspread.authorize(Credentials.from_service_account_info(
+        info, scopes=["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]))
+    ref = str(gs["spreadsheet"])
+    return gc.open_by_url(ref) if ref.startswith("http") else gc.open_by_key(ref)
+
+
+def _tq_save(kind, rec, changes, qid):
+    """用 版本／年度／冊編號／單元／課編號／句編號 找到那一列（要剛好一列）再寫入；回傳 (成功?, 訊息)"""
+    import gspread
+    tab = _TQ_TAB[kind]
+    book = _tq_book()
+    ws = book.worksheet(tab)
+    vals = ws.get_all_values()
+    if not vals:
+        return False, f"「{tab}」分頁是空的"
+    head = [str(h).strip() for h in vals[0]]
+    miss = [k for k in _TQ_KEYS if k not in head]
+    if miss:
+        return False, f"「{tab}」分頁找不到欄位：{'、'.join(miss)}"
+    ki = [head.index(k) for k in _TQ_KEYS]
+    want = [_tq_n(rec.get(k, '')) for k in _TQ_KEYS]
+    hits = [i for i, row in enumerate(vals[1:], start=2)
+            if [_tq_n(row[j]) if j < len(row) else '' for j in ki] == want]
+    if len(hits) != 1:
+        return False, f"「{tab}」分頁裡符合 {qid} 的有 {len(hits)} 列（要剛好 1 列），沒有寫入"
+    r = hits[0]
+    old = vals[r - 1]
+    data, logs = [], []
+    now = get_now().strftime("%Y-%m-%d %H:%M:%S")
+    who = str(st.session_state.get("user_name", "") or "")
+    for col, new in changes.items():
+        if col not in head:
+            return False, f"「{tab}」分頁沒有「{col}」欄，沒有寫入"
+        c = head.index(col) + 1
+        data.append({'range': gspread.utils.rowcol_to_a1(r, c), 'values': [[new]]})
+        logs.append([now, who, tab, qid, r, col, old[c - 1] if c - 1 < len(old) else '', new])
+    ws.batch_update(data, value_input_option='RAW')
+    try:   # 修改紀錄（失敗不影響已寫入的內容）
+        try:
+            lw = book.worksheet(_TQ_LOG_TAB)
+        except Exception:
+            lw = book.add_worksheet(title=_TQ_LOG_TAB, rows=200, cols=8)
+            lw.append_row(['時間', '老師', '分頁', '題目ID', '列', '欄位', '原本', '改成'], value_input_option='RAW')
+        lw.append_rows(logs, value_input_option='RAW')
+    except Exception:
+        pass
+    return True, f"已寫入「{tab}」第 {r} 列（{'、'.join(changes)}）"
+
+
+def _tq_rerun():
+    try:
+        st.rerun(scope="fragment")
+    except Exception as e:
+        if type(e).__name__ in ("StopException", "RerunException", "RerunData"):
+            raise
+        st.rerun()
+
+
+def _tq_editor(r, key, ek):
+    kind, rec = r['_kind'], r['_rec']
+    flds = []
+    for lbl, cands in _TQ_EDIT[kind]:
+        c = _tq_col(rec, cands)
+        if c:
+            flds.append((lbl, c, rec))
+    if kind == '閱讀' and '全文翻譯' in rec:
+        grp = str(rec.get('題組', '') or '').strip()
+        sib = [_tq_ov('閱讀', x) for x in df_rm.to_dict('records') if str(x.get('題組', '') or '').strip() == grp] \
+            if grp and isinstance(df_rm, pd.DataFrame) and not df_rm.empty else []
+        holder = next((x for x in sib if _tq_n(x.get('全文翻譯', '')) not in ('', 'nan')), rec)
+        flds.append(('全文翻譯（整篇共用）', '全文翻譯', holder))
+    if not flds:
+        st.warning("這一題在題庫裡沒有可以修改的欄位。")
+        return
+    st.markdown(f"**✏️ 修改第 {r['序號']} 題**（{kind}｜{r['_qid']}）")
+    fk = re.sub(r'\W', '_', f"{key}_{r['_qid']}")
+    with st.form(f"tq_form_{fk}"):
+        vals = []
+        for i, (lbl, c, tr) in enumerate(flds):
+            old = _tq_n(tr.get(c, ''))
+            old = '' if old == 'nan' else str(tr.get(c, '') or '').strip()
+            if lbl in ('正確答案', '正確選項'):
+                vals.append(st.text_input(f"{lbl}（改了以後，之前的作答紀錄不會重算對錯）", value=old, key=f"tq_f_{fk}_{i}"))
+            else:
+                vals.append(st.text_area(lbl, value=old, height=140 if '全文' in lbl else 90, key=f"tq_f_{fk}_{i}"))
+        b1, b2 = st.columns(2)
+        save = b1.form_submit_button("💾 儲存到題庫", type="primary", use_container_width=True)
+        cancel = b2.form_submit_button("取消", use_container_width=True)
+    if cancel:
+        st.session_state.pop(ek, None)
+        _tq_rerun()
+    if save:
+        groups = {}
+        for (lbl, c, tr), v in zip(flds, vals):
+            v = str(v or '').strip()
+            if lbl == '正確選項':
+                v = v.upper()
+            old = str(tr.get(c, '') or '').strip()
+            if v != ('' if old == 'nan' else old):
+                groups.setdefault(id(tr), (tr, {}))[1][c] = v
+        if not groups:
+            st.session_state[f"tq_msg_{key}"] = (True, "沒有改動")
+            st.session_state.pop(ek, None)
+        else:
+            msgs, all_ok = [], True
+            with st.spinner("寫入題庫中…"):
+                for tr, ch in groups.values():
+                    try:
+                        ok, m = _tq_save(kind, tr, ch, r['_qid'])
+                    except Exception as e:
+                        ok, m = False, f"寫入失敗：{type(e).__name__}: {e}"
+                    if ok:
+                        _tq_ov_set(kind, tr, ch)
+                    msgs.append(m)
+                    all_ok = all_ok and ok
+            st.session_state[f"tq_msg_{key}"] = (all_ok, "；".join(msgs)
+                                                 + ("。其他老師和學生約 10 分鐘內會看到新內容。" if all_ok else ""))
+            if all_ok:
+                st.session_state.pop(ek, None)
+        _tq_rerun()
+
+
 def _tq_dialog_body(rows, key):
     """浮動視窗：一次看一組（閱讀題同一篇的題目一起列，👉 標出點的那一題），上一／下一一次跳一組"""
     ck = f"tq_cur_{key}"
+    rows = [dict(r, _rec=_tq_ov(r['_kind'], r['_rec'])) for r in rows]   # V2.9.594：改過的內容馬上顯示
+    _msg = st.session_state.pop(f"tq_msg_{key}", None)
+    if _msg:
+        (st.success if _msg[0] else st.error)(("✅ " if _msg[0] else "❌ ") + _msg[1])
     i = max(0, min(int(st.session_state.get(ck, 0)), len(rows) - 1))
     units = _tq_units(rows)
     u = next((k for k, un in enumerate(units) if i in un), 0)
@@ -1536,6 +1713,18 @@ def _tq_dialog_body(rows, key):
               use_container_width=True, on_click=lambda: st.session_state.update({ck: units[min(u + 1, len(units) - 1)][0]}))
     st.markdown(_TQ_CSS + _tq_page_html([rows[k] for k in unit], cur_qid=rows[i]['_qid'] if multi else None)
                 .replace('$', '&#36;'), unsafe_allow_html=True)
+    # V2.9.594：✏️ 修改（寫回題庫試算表）
+    ek = f"tq_edit_{key}"
+    ed_rows = [rows[k] for k in unit if rows[k]['_kind'] in _TQ_EDIT and rows[k]['_rec']]
+    cur_ed = next((x for x in ed_rows if x['_qid'] == st.session_state.get(ek)), None)
+    if cur_ed is not None:
+        st.divider()
+        _tq_editor(cur_ed, key, ek)
+    elif ed_rows:
+        bc = st.columns(min(len(ed_rows), 5))
+        for j, x in enumerate(ed_rows):
+            bc[j % 5].button(f"✏️ 修改第 {x['序號']} 題", key=f"tq_eb_{key}_{x['_qid']}", use_container_width=True,
+                             on_click=lambda q=x['_qid']: st.session_state.update({ek: q}))
 
 
 def _tq_open(rows, key):
