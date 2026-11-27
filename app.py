@@ -1,6 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.592 - 任務題目列表與翻譯解析頁)
+# 🧩 英文全能練習系統 (V2.9.593 - 任務題目列表與翻譯解析頁)
 # ==============================================================================
+# 🆕 2.9.593：老師「📋 任務列表」也列出對話練習（[D編號] 對話-…），可搜尋、篩選、展開看學生練習筆數、刪除。
 # 🆕 2.9.592：「📼 全部錄完一起評分」的紀錄帶上練習方式和開始時間（學習報告顯示成「📼 全部錄完一起評分」，不再是推測）。
 # 🆕 2.9.591：朗讀任務分成「🎤 每題評分」「⏩ 每題評分-接續上次作答」「📼 全部錄完一起評分」「🏋️ 練習模式」，
 #              結束後列出每題分數和 AI 聽到的內容（全部錄完一起評分：每題只錄音，最後同時送出評分）。
@@ -131,7 +132,7 @@ if dlgp is not None:
     except Exception as _e_dlg2:
         _DLG_ERR = f"{type(_e_dlg2).__name__}: {_e_dlg2}"
 
-VERSION = "2.9.592"
+VERSION = "2.9.593"
 
 def _dlg_ctx():
     """V2.9.555：給對話練習模組的共用資料"""
@@ -2847,10 +2848,46 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
         else:
             df_a2 = st.session_state[_a2_cache_key]
 
+        # ── V2.9.593：對話練習的指派（另一張表 dialog_assignments）也列進任務列表 ──
+        _tl_dlg_err = ""
+        if dlgp is not None:
+            try:
+                _dlg_rows, _tl_dlg_err = dlgp._load_assignments(get_supabase, dlgp._assign_ver())
+            except Exception as _e_tld:
+                _dlg_rows, _tl_dlg_err = [], f"{type(_e_tld).__name__}: {_e_tld}"
+            if _dlg_rows:
+                _stu_grp = {}
+                if df_s is not None and not df_s.empty and '姓名' in df_s.columns and '分組' in df_s.columns:
+                    _stu_grp = dict(zip(df_s['姓名'].astype(str).str.strip(), df_s['分組'].astype(str).str.strip()))
+                _drs = []
+                for _a in _dlg_rows:
+                    _stus = [x.strip() for x in str(_a.get('students') or '').split(',') if x.strip()]
+                    _grps = sorted({_stu_grp.get(x, '') for x in _stus} - {'', 'nan'})
+                    _ttl = re.sub(r'^🗣️\s*', '', str(_a.get('title') or '')).strip() or str(_a.get('dialog_id') or '')
+                    _drs.append({
+                        '任務名稱': f"[D{_a.get('id')}] 對話-{_ttl}",
+                        '對象班級': '、'.join(_grps), '指派學生': ','.join(_stus),
+                        '開始日期': str(_a.get('created_at') or '')[:10], '結束日期': str(_a.get('end_date') or '')[:10],
+                        '狀態': str(_a.get('status') or '進行中'), '建立時間': f"DLG:{_a.get('id')}",
+                        '任務編號': f"D{_a.get('id')}", '題目ID清單': '',
+                        '任務說明': f"🗣️ 對話 {_a.get('dialog_id') or ''}｜{_a.get('rounds') or ''} 輪｜關卡：{_a.get('stages') or ''}",
+                        '_teacher': str(_a.get('created_by') or '').strip() or '未知',
+                        '_dlg': str(_a.get('id')), '_dlg_dialog': str(_a.get('dialog_id') or ''),
+                        '_dlg_rounds': str(_a.get('rounds') or ''),
+                    })
+                _base = (int(max(df_a2.index)) + 1) if not df_a2.empty else 0
+                _ddf = pd.DataFrame(_drs, index=range(_base, _base + len(_drs)))
+                df_a2 = pd.concat([df_a2, _ddf]) if not df_a2.empty else _ddf
+                df_a2 = df_a2.sort_values(
+                    by='任務名稱', kind='stable',
+                    key=lambda col: col.apply(lambda n: re.sub(r'^\[[TD]\d+\]\s*', '', str(n)).strip().lower()))
+        if _tl_dlg_err:
+            st.caption(f"⚠️ 對話練習的指派讀取失敗：{_tl_dlg_err}")
+
         # ── V2.9.579：任務列表搜尋（關鍵字＋條件篩選）──────────────────────
         def _tl_type(name):
             """任務名稱「[T12] 單選-…」→ 題型「單選」"""
-            return re.sub(r'^\[T\d+\]\s*', '', str(name)).split('-')[0].strip() or '其他'
+            return re.sub(r'^\[[TD]\d+\]\s*', '', str(name)).split('-')[0].strip() or '其他'
 
         def _tl_groups(v):
             return [g.strip() for g in re.split(r'[,，、]', str(v or '')) if g.strip() and g.strip() != 'nan']
@@ -2890,12 +2927,23 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
             """V2.9.582：把任務標記為「已刪除」（和展開後的「🗑️ 刪除此任務」相同做法），完成後重新整理任務列表"""
             _ok, _err = 0, []
             sb = get_supabase()
+            _dlg_del = False
             for _ct in [str(c) for c in created_list if str(c or '').strip() and str(c) != 'nan']:
                 try:
-                    sb.table("assignments").update({"status": "已刪除"}).eq("created_at", _ct).execute()
+                    if _ct.startswith("DLG:"):   # V2.9.593：對話練習的指派
+                        sb.table("dialog_assignments").update({"status": "已刪除"}).eq("id", int(_ct[4:])).execute()
+                        _dlg_del = True
+                    else:
+                        sb.table("assignments").update({"status": "已刪除"}).eq("created_at", _ct).execute()
                     _ok += 1
                 except Exception as e:
                     _err.append(f"{_ct}：{e}")
+            if _dlg_del and dlgp is not None:
+                try:
+                    dlgp._load_assignments.clear()
+                    dlgp._bump_assign()
+                except Exception:
+                    pass
             load_assignments.clear()
             st.session_state['_a2_cache_stale'] = True
             st.session_state.pop('_tl_qdel', None)
@@ -3112,6 +3160,38 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                             if _qc3.button("取消", key=f"qdel_no_{_exp_key}", use_container_width=True):
                                 st.session_state.pop('_tl_qdel', None)
                                 st.rerun()
+
+                        _dlg_id = str(row.get('_dlg', '') or '')
+                        if _dlg_id and _dlg_id != 'nan':   # V2.9.593：對話練習
+                            if _is_open:
+                                st.info(str(row.get('任務說明', '')))
+                                _d_stus = [x for x in str(row.get('指派學生', '')).split(',') if x.strip()]
+                                _d_logs = []
+                                try:
+                                    _d_logs = dlgp._load_dlg_logs(get_supabase, int(_dlg_id), dlgp._assign_ver()) if dlgp is not None else []
+                                except Exception as _e_dl:
+                                    st.caption(f"⚠️ 練習紀錄讀取失敗：{_e_dl}")
+                                _d_cnt, _d_rnd = {}, {}
+                                for _lg in _d_logs or []:
+                                    _nm = str(_lg.get('name') or '').strip()
+                                    _d_cnt[_nm] = _d_cnt.get(_nm, 0) + 1
+                                    try:
+                                        _d_rnd.setdefault(_nm, set()).add((str(_lg.get('stage') or ''), int(_lg.get('round_no') or 0)))
+                                    except Exception:
+                                        pass
+                                _dm1, _dm2, _dm3 = st.columns(3)
+                                _dm1.metric("指派人數", len(_d_stus))
+                                _dm2.metric("有練習的人", sum(1 for x in _d_stus if _d_cnt.get(x)))
+                                _dm3.metric("每關輪數", str(row.get('_dlg_rounds', '')))
+                                if _d_stus:
+                                    st.markdown("**學生練習狀況：**")
+                                    _dsc = st.columns(min(len(_d_stus), 5))
+                                    for _i, _nm in enumerate(_d_stus):
+                                        _n = _d_cnt.get(_nm, 0)
+                                        _dsc[_i % 5].markdown(f"{'🔄' if _n else '⬜'} **{_nm}**  \n"
+                                                              + (f"{_n} 句・{len(_d_rnd.get(_nm, ()))} 輪" if _n else "還沒練"))
+                                st.caption("錄音和每句的自評，請到「🗣️ 對話練習 → 學生紀錄」查看；要改內容請刪除後重新指派。")
+                            continue
 
                         if _is_open:
                             # ── 展開後才計算 ─────────────────────────────────
