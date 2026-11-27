@@ -1,6 +1,7 @@
 # ==============================================================================
-# 🧩 英文全能練習系統 (V2.9.595 - 任務題目列表與翻譯解析頁)
+# 🧩 英文全能練習系統 (V2.9.596 - 任務題目列表與翻譯解析頁)
 # ==============================================================================
+# 🆕 2.9.596：任務列表「🔍 搜尋任務」的題型多一個「🗣️ 對話練習」（排第一個），對話練習任務名稱改成「[D編號] 🗣️ 對話練習-…」。
 # 🆕 2.9.595：「✏️ 修改」也能改英文題目和選項（單選題目、閱讀題目＋選項A–D、重組／朗讀／聽力的英文句子、單字）。
 # 🆕 2.9.594：題目列表的浮動視窗加「✏️ 修改」：老師可改中文翻譯／答案／解析（閱讀可改全文翻譯），直接寫回題庫試算表，並記在「題庫修改紀錄」分頁。
 # 🆕 2.9.593：老師「📋 任務列表」也列出對話練習（[D編號] 對話-…），可搜尋、篩選、展開看學生練習筆數、刪除。
@@ -134,7 +135,7 @@ if dlgp is not None:
     except Exception as _e_dlg2:
         _DLG_ERR = f"{type(_e_dlg2).__name__}: {_e_dlg2}"
 
-VERSION = "2.9.595"
+VERSION = "2.9.596"
 
 def _dlg_ctx():
     """V2.9.555：給對話練習模組的共用資料"""
@@ -3062,7 +3063,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                     _grps = sorted({_stu_grp.get(x, '') for x in _stus} - {'', 'nan'})
                     _ttl = re.sub(r'^🗣️\s*', '', str(_a.get('title') or '')).strip() or str(_a.get('dialog_id') or '')
                     _drs.append({
-                        '任務名稱': f"[D{_a.get('id')}] 對話-{_ttl}",
+                        '任務名稱': f"[D{_a.get('id')}] 🗣️ 對話練習-{_ttl}",
                         '對象班級': '、'.join(_grps), '指派學生': ','.join(_stus),
                         '開始日期': str(_a.get('created_at') or '')[:10], '結束日期': str(_a.get('end_date') or '')[:10],
                         '狀態': str(_a.get('status') or '進行中'), '建立時間': f"DLG:{_a.get('id')}",
@@ -3249,7 +3250,7 @@ if is_admin(st.session_state.group_id) and st.session_state.view_mode == "管理
                 _tl_gopts = sorted({g for v in df_a2.get('對象班級', pd.Series(dtype=str)) for g in _tl_groups(v)})
                 _tl_groups_sel = _tl_c3.multiselect("👥 班級", _tl_gopts, key="tl_groups",
                                                     format_func=lambda g: _group_label(g))
-                _tl_topts = sorted(set(df_a2['任務名稱'].apply(_tl_type)))
+                _tl_topts = sorted(set(df_a2['任務名稱'].apply(_tl_type)), key=lambda x: (x != '🗣️ 對話練習', x))   # V2.9.596 對話練習排第一
                 _tl_types_sel = _tl_c4.multiselect("📝 題型", _tl_topts, key="tl_types")
                 _tl_sopts = ['全部'] + sorted(set(df_a2.get('狀態', pd.Series(dtype=str)).fillna('').astype(str).replace('', '進行中')))
                 _tl_status = _tl_c5.selectbox("📌 狀態", _tl_sopts, key="tl_status")
